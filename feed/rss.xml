@@ -9,12 +9,21 @@
     <language>en-us</language>
     <copyright>© 2025 Agenda</copyright>
     <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
-    <lastBuildDate>Sun, 14 Dec 2025 23:46:37 +0000</lastBuildDate>
+    <lastBuildDate>Sun, 14 Dec 2025 23:50:55 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
     <itunes:type>episodic</itunes:type>
     <itunes:explicit>false</itunes:explicit>
     <itunes:image href="https://agenda-podcast.github.io/podcast-archive/poster.jpg"/>
     <itunes:category text="News"><itunes:category text="Politics"/></itunes:category>
+    <item>
+      <title>Video Test</title>
+      <itunes:title>Video Test</itunes:title>
+      <guid isPermaLink="false">agenda-18352557</guid>
+      <pubDate>Sun, 14 Dec 2025 23:00:00 +0000</pubDate>
+      <description><![CDATA[Episod description]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20251214-Video_Test.mp3" length="3592390" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
     <item>
       <title>Episode 4: Litigation Risks, IP Conflicts, and Global Security Threats</title>
       <itunes:title>Episode 4: Litigation Risks, IP Conflicts, and Global Security Threats</itunes:title>

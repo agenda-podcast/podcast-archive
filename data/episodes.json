@@ -1,5 +1,14 @@
 {
   "episodes": {
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18352557-video-test.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18352557-video-test.mp3",
+      "guid": "agenda-18352557",
+      "title": "Video Test",
+      "pubDate_rfc822": "Sun, 14 Dec 2025 23:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20251214-Video_Test.mp3",
+      "length_bytes": 3592390,
+      "description_html": "Episod description"
+    },
     "enclosure:https://www.buzzsprout.com/2562524/episodes/18349874-episode-4-litigation-risks-ip-conflicts-and-global-security-threats.mp3": {
       "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18349874-episode-4-litigation-risks-ip-conflicts-and-global-security-threats.mp3",
       "guid": "agenda-18349874",
