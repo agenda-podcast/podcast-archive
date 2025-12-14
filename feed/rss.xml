@@ -5,6 +5,7 @@
   <channel>
     <atom:link href="https://agenda-podcast.github.io/podcast-archive/feed/rss.xml" rel="self" type="application/rss+xml"/>
     <title>Agenda</title>
+    <owner_email>deep.dive.podcast@unloca.com</owner_email>
     <link>https://agenda-podcast.github.io/podcast-archive/</link>
     <language>en-us</language>
     <copyright>© 2025 Agenda</copyright>
