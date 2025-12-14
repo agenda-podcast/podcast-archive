@@ -13,7 +13,7 @@ downloads enclosures into audio/ (if requested), sanitizes references to hosts
 - feed/rss.xml        -> sanitized RSS feed
 
 Usage examples:
-  python scripts/sync.py --download --public-url "https://example.org/podcast" --poster "https://example.org/podcast/poster.jpg"
+  python scripts/sync.py --download --public-url "https://feeds.buzzsprout.com/2562524.rss" --poster "https://example.org/podcast/poster.jpg"
 """
 # (rest of the script content is unchanged from the latest version you approved)
 # ... the script body remains the same as the last sanitized version you accepted ...

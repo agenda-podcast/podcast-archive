@@ -1,6 +1,6 @@
 # Copyright (c) Agenda Podcast
 # All rights reserved.
-# This workflow is owned by Agenda Podcast. Copying or reuse without permission is prohibited.
+# This workflow is owned by Agenda Podcast.  Copying or reuse without permission is prohibited. 
 name: Sync Podcast
 
 on:
@@ -13,19 +13,17 @@ permissions:
 
 concurrency:
   group: podcast-archive-sync
-  cancel-in-progress: true
+  cancel-in-progress:  true
 
 jobs:
-  sync:
+  sync: 
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    outputs:
-      release_tag: ${{ steps.tag.outputs.RELEASE_TAG }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses:  actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth:  0
           persist-credentials: true
 
       - name: Setup Python
@@ -33,43 +31,43 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Ensure Python packaging tools
+      - name:  Ensure Python packaging tools
         run: python -m pip install --upgrade pip setuptools wheel
 
       - name: Run sync (download enclosures into audio/)
         env:
           PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
-          POSTER_URL: ${{ secrets.POSTER_URL }}
-        run: |
+          POSTER_URL: ${{ secrets. POSTER_URL }}
+        run:  |
           PYPUBLIC="${PUBLIC_URL:-}"
           PYPOSTER="${POSTER_URL:-}"
-          python scripts/sync.py --download ${PYPUBLIC:+--public-url "${PYPUBLIC}"} ${PYPOSTER:+--poster "${PYPOSTER}"}
+          python scripts/sync.py --download ${PYPUBLIC: +--public-url "${PYPUBLIC}"} ${PYPOSTER:+--poster "${PYPOSTER}"}
 
-      - name: Commit metadata & feed changes
+      - name:  Commit metadata & feed changes
         env:
           GIT_AUTHOR_NAME: podcast-bot
           GIT_AUTHOR_EMAIL: bot@github.com
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets. GITHUB_TOKEN }}
         run: |
           git config user.name "${GIT_AUTHOR_NAME}"
           git config user.email "${GIT_AUTHOR_EMAIL}"
           if [ -n "$(git status --porcelain)" ]; then
             git add -A
-            git commit -m "chore: sync podcast metadata" || echo "No changes to commit"
+            git commit -m "chore:  sync podcast metadata" || echo "No changes to commit"
             git push
           else
             echo "No changes to commit"
           fi
 
       - name: Set release tag
-        id: tag
+        id:  set_tag
         run: |
           TAG="auto-archive-$(date -u +%Y%m%d%H%M%S)"
           echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
-          echo "::set-output name=RELEASE_TAG::${TAG}"
+          echo "Release tag set to ${TAG}"
 
       - name: Count MP3 files to upload
-        id: count
+        id: count_mp3
         run: |
           if [ -d audio ]; then
             COUNT=$(find audio -type f -name '*.mp3' -print | wc -l || echo 0)
@@ -80,14 +78,14 @@ jobs:
           echo "Found ${COUNT} mp3 files."
 
       - name: Create or update release and upload MP3s
-        if: env.AUDIO_COUNT != '0'
+        if:  env.AUDIO_COUNT != '0'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: "auto-archive ${{ env.RELEASE_TAG }}"
+          tag_name: ${{ env. RELEASE_TAG }}
+          name: auto-archive-${{ env.RELEASE_TAG }}
           files: "audio/**/*.mp3"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets. GITHUB_TOKEN }}
 
       - name: Release step skipped (no audio)
         if: env.AUDIO_COUNT == '0'
@@ -97,60 +95,69 @@ jobs:
     needs: sync
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository (after sync)
+      - name:  Checkout repository (after sync)
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
       - name: Validate feed XML and channel title
         env:
-          EXPECTED_CHANNEL_TITLE: ${{ secrets.EXPECTED_CHANNEL_TITLE }} # optional secret: expected channel title
+          EXPECTED_CHANNEL_TITLE:  ${{ secrets.EXPECTED_CHANNEL_TITLE }}
         run: |
-          python - <<'PY'
-import sys, json, xml.etree.ElementTree as ET, re, os
-DATA='data/episodes.json'
-FEED='feed/rss.xml'
-if not os.path.exists(FEED):
-    print("ERROR: feed/rss.xml missing")
-    sys.exit(1)
-# Check XML is well-formed
-try:
-    tree = ET.parse(FEED)
-    root = tree.getroot()
-except Exception as e:
-    print("ERROR: feed/rss.xml is not well-formed:", e)
-    sys.exit(2)
-chan = root.find('channel')
-if chan is None:
-    print("ERROR: <channel> not found in feed/rss.xml")
-    sys.exit(3)
-title_elem = chan.find('title')
-feed_title = (title_elem.text or '').strip() if title_elem is not None else ''
-expected = os.environ.get('EXPECTED_CHANNEL_TITLE') or ''
-# If data/episodes.json exists, prefer the channel.title from it
-if os.path.exists(DATA):
-    try:
-        with open(DATA,'r',encoding='utf-8') as fh:
-            d = json.load(fh)
-            ch_title = (d.get('channel',{}).get('title') or '').strip()
-            if ch_title:
-                expected = ch_title
-    except Exception as e:
-        print("WARNING: cannot read data/episodes.json:", e)
-# Validate not mentioning buzzsprout
-txt = open(FEED,'r',encoding='utf-8').read()
-if re.search(r'buzzsprout', txt, re.I):
-    print("ERROR: feed/rss.xml still contains 'buzzsprout' references")
-    sys.exit(4)
-if expected:
-    if feed_title != expected:
-        print("ERROR: feed title does not match expected.")
-        print("Feed title:", repr(feed_title))
-        print("Expected:", repr(expected))
-        sys.exit(5)
-    else:
-        print("OK: feed title matches expected:", expected)
-else:
-    print("OK: feed is well-formed and contains no buzzsprout references.")
-sys.exit(0)
-PY
+          python3 << 'VALIDATE_SCRIPT'
+          import sys
+          import json
+          import xml. etree.ElementTree as ET
+          import re
+          import os
+          
+          DATA = 'data/episodes.json'
+          FEED = 'feed/rss.xml'
+          
+          if not os.path.exists(FEED):
+              print("ERROR: feed/rss.xml missing")
+              sys.exit(1)
+          
+          try:
+              tree = ET.parse(FEED)
+              root = tree.getroot()
+          except Exception as e:
+              print("ERROR: feed/rss. xml is not well-formed:", e)
+              sys.exit(2)
+          
+          chan = root.find('channel')
+          if chan is None:
+              print("ERROR: <channel> not found in feed/rss.xml")
+              sys.exit(3)
+          
+          title_elem = chan.find('title')
+          feed_title = (title_elem. text or '').strip() if title_elem is not None else ''
+          expected = os.environ.get('EXPECTED_CHANNEL_TITLE') or ''
+          
+          if os.path.exists(DATA):
+              try:
+                  with open(DATA,'r',encoding='utf-8') as fh:
+                      d = json.load(fh)
+                      ch_title = (d.get('channel',{}).get('title') or '').strip()
+                      if ch_title:
+                          expected = ch_title
+              except Exception as e:
+                  print("WARNING: cannot read data/episodes. json:", e)
+          
+          txt = open(FEED,'r',encoding='utf-8').read()
+          if re.search(r'buzzsprout', txt, re.I):
+              print("ERROR: feed/rss.xml still contains 'buzzsprout' references")
+              sys.exit(4)
+          
+          if expected: 
+              if feed_title != expected:
+                  print("ERROR:  feed title does not match expected.")
+                  print("Feed title:", repr(feed_title))
+                  print("Expected:", repr(expected))
+                  sys.exit(5)
+              else:
+                  print("OK: feed title matches expected:", expected)
+          else:
+              print("OK: feed is well-formed and contains no buzzsprout references.")
+          sys.exit(0)
+          VALIDATE_SCRIPT
