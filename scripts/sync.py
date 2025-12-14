@@ -11,25 +11,25 @@ import feedparser
 from dateutil import parser as dtparser
 
 # -----------------------------
-# Environment
+# Environment (required)
 # -----------------------------
 BUZZSPROUT_RSS = os.environ.get("BUZZSPROUT_RSS", "").strip()
 REPO = os.environ.get("REPO", "").strip()  # e.g. "agenda-podcast/podcast-archive"
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 RELEASE_TAG = os.environ.get("RELEASE_TAG", "audio-archive").strip()
 
-# Optional metadata
-PODCAST_TITLE = os.environ.get("PODCAST_TITLE", "Agenda").strip() or "Agenda"
-PODCAST_LINK = os.environ.get("PODCAST_LINK", f"https://github.com/{REPO}".rstrip("/")).strip() or f"https://github.com/{REPO}"
-PODCAST_DESCRIPTION = os.environ.get("PODCAST_DESCRIPTION", "Podcast archive feed.").strip() or "Podcast archive feed."
-PODCAST_IMAGE = os.environ.get("PODCAST_IMAGE", "").strip()
-ITUNES_CATEGORY = os.environ.get("ITUNES_CATEGORY", "News").strip() or "News"
-ITUNES_SUBCATEGORY = os.environ.get("ITUNES_SUBCATEGORY", "").strip()
+# -----------------------------
+# Environment (optional metadata)
+# -----------------------------
+PODCAST_TITLE = (os.environ.get("PODCAST_TITLE", "Agenda") or "Agenda").strip()
+PODCAST_LINK = (os.environ.get("PODCAST_LINK", f"https://github.com/{REPO}") or f"https://github.com/{REPO}").strip()
+PODCAST_DESCRIPTION = (os.environ.get("PODCAST_DESCRIPTION", "Podcast archive feed.") or "Podcast archive feed.").strip()
+PODCAST_IMAGE = (os.environ.get("PODCAST_IMAGE", "") or "").strip()
+ITUNES_CATEGORY = (os.environ.get("ITUNES_CATEGORY", "News") or "News").strip()
+ITUNES_SUBCATEGORY = (os.environ.get("ITUNES_SUBCATEGORY", "") or "").strip()
 
 DATA_FILE = "data/episodes.json"
 RSS_OUT = "feed/rss.xml"
-
-# Local temp
 TMP_DIR = "audio_tmp"
 
 os.makedirs("data", exist_ok=True)
@@ -37,100 +37,127 @@ os.makedirs("feed", exist_ok=True)
 os.makedirs(TMP_DIR, exist_ok=True)
 
 # -----------------------------
-# Helpers
+# Stable identity + duplicate prevention
 # -----------------------------
-def safe_filename(s: str) -> str:
-    s = re.sub(r"[^a-zA-Z0-9._-]+", "_", s).strip("_")
-    return s[:180] if s else "episode"
+def source_key(entry) -> str:
+    """
+    Stable key to identify an episode from the SOURCE feed across runs.
+    This is what prevents duplicates in our internal state.
 
-def stable_guid(entry) -> str:
-    guid = entry.get("id") or entry.get("guid") or entry.get("link")
-    if guid:
-        return str(guid)
+    Priority:
+    1) Enclosure URL (best) - stable for the same episode
+    2) id/guid/link
+    3) hash(title|published)
+    """
+    # 1) enclosure
+    try:
+        if entry.get("enclosures"):
+            href = entry.enclosures[0].get("href") or ""
+            if isinstance(href, str) and href.startswith("http"):
+                return "enclosure:" + href
+    except Exception:
+        pass
+
+    # 2) id/guid/link
+    for k in ("id", "guid", "link"):
+        v = entry.get(k)
+        if v:
+            return f"{k}:{v}"
+
+    # 3) fallback hash
     raw = (entry.get("title", "") + "|" + entry.get("published", "")).encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
+    return "hash:" + hashlib.sha256(raw).hexdigest()
 
-def parse_pubdate(entry) -> datetime:
-    for k in ("published", "updated"):
-        if entry.get(k):
-            try:
-                dt = dtparser.parse(entry[k])
-                return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-            except Exception:
-                pass
-    return datetime.now(timezone.utc)
 
-def ensure_release(repo: str, token: str, tag: str) -> dict:
-    if not repo or not token:
-        raise RuntimeError("Missing REPO or GITHUB_TOKEN in environment.")
+def generate_guid(entry) -> str:
+    """
+    Generates a GUID that NEVER contains the word 'buzzsprout',
+    but remains stable for the same episode.
 
-    headers = {
+    Preferred: extract numeric episode id (e.g. Buzzsprout-18322949 -> agenda-18322949).
+    Otherwise: sha256(source_key).
+    """
+    raw = str(entry.get("id") or entry.get("guid") or entry.get("link") or "")
+
+    # Extract a long numeric token if present (Buzzsprout episode id)
+    m = re.search(r"(\d{5,})", raw)
+    if m:
+        return f"agenda-{m.group(1)}"
+
+    # Otherwise, hash stable key
+    key = source_key(entry)
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+# -----------------------------
+# GitHub Release helpers
+# -----------------------------
+def gh_headers(token: str, extra: dict | None = None) -> dict:
+    h = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "AgendaPodcastArchiver/1.0",
+        "User-Agent": "AgendaPodcastArchiver/2.0",
     }
+    if extra:
+        h.update(extra)
+    return h
 
-    # Try get release by tag
-    r = requests.get(f"https://api.github.com/repos/{repo}/releases/tags/{tag}", headers=headers, timeout=60)
+def ensure_release(repo: str, token: str, tag: str) -> dict:
+    r = requests.get(
+        f"https://api.github.com/repos/{repo}/releases/tags/{tag}",
+        headers=gh_headers(token),
+        timeout=60,
+    )
     if r.status_code == 200:
         return r.json()
 
-    # Create release
     r = requests.post(
         f"https://api.github.com/repos/{repo}/releases",
-        headers=headers,
+        headers=gh_headers(token),
         json={"tag_name": tag, "name": tag, "draft": False, "prerelease": False},
         timeout=60,
     )
     r.raise_for_status()
     return r.json()
 
-def list_release_assets(repo: str, token: str, release: dict) -> list:
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "AgendaPodcastArchiver/1.0",
-    }
-    r = requests.get(release["assets_url"], headers=headers, timeout=60)
+def list_assets(token: str, release: dict) -> list:
+    r = requests.get(release["assets_url"], headers=gh_headers(token), timeout=60)
     r.raise_for_status()
     return r.json()
 
-def delete_asset(token: str, asset_url: str) -> None:
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "AgendaPodcastArchiver/1.0",
-    }
-    r = requests.delete(asset_url, headers=headers, timeout=60)
+def delete_asset(token: str, asset_api_url: str) -> None:
+    r = requests.delete(asset_api_url, headers=gh_headers(token), timeout=60)
     if r.status_code not in (204, 404):
         r.raise_for_status()
 
 def upload_asset(repo: str, token: str, release: dict, file_path: str) -> None:
     filename = os.path.basename(file_path)
 
-    # Delete existing asset with same name (idempotent)
-    assets = list_release_assets(repo, token, release)
-    for a in assets:
+    # Idempotency: remove asset with same name
+    for a in list_assets(token, release):
         if a.get("name") == filename:
             delete_asset(token, a["url"])
             break
 
     upload_url = release["upload_url"].split("{")[0]
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "AgendaPodcastArchiver/1.0",
-        "Content-Type": "audio/mpeg",
-    }
-
     with open(file_path, "rb") as f:
-        r = requests.post(f"{upload_url}?name={filename}", headers=headers, data=f, timeout=300)
+        r = requests.post(
+            f"{upload_url}?name={filename}",
+            headers=gh_headers(token, {"Content-Type": "audio/mpeg"}),
+            data=f,
+            timeout=300,
+        )
     r.raise_for_status()
 
+# -----------------------------
+# Buzzsprout download helpers (403 hardening)
+# -----------------------------
 def resolve_download_url(url: str) -> str:
-    # Buzzsprout may protect "www.buzzsprout.com/...mp3" links; use browser-like headers + follow redirects
+    """
+    Follow redirects with browser-like headers.
+    Helps when Buzzsprout/Cloudflare protects direct downloads.
+    """
     headers = {
-        "User-Agent": f"AgendaPodcastArchiver/1.0 (+https://github.com/{REPO})",
+        "User-Agent": f"AgendaPodcastArchiver/2.0 (+https://github.com/{REPO})",
         "Referer": BUZZSPROUT_RSS,
         "Accept": "*/*",
     }
@@ -149,7 +176,7 @@ def resolve_download_url(url: str) -> str:
 
 def download_file(url: str, out_path: str) -> int:
     headers = {
-        "User-Agent": f"AgendaPodcastArchiver/1.0 (+https://github.com/{REPO})",
+        "User-Agent": f"AgendaPodcastArchiver/2.0 (+https://github.com/{REPO})",
         "Referer": BUZZSPROUT_RSS,
         "Accept": "*/*",
     }
@@ -163,22 +190,29 @@ def download_file(url: str, out_path: str) -> int:
                     total += len(chunk)
         return total
 
-def build_rss(episodes: list) -> str:
+# -----------------------------
+# RSS building
+# -----------------------------
+def build_rss(episodes_sorted: list) -> str:
     now = format_datetime(datetime.now(timezone.utc))
     atom_self = escape(f"{PODCAST_LINK.rstrip('/')}/feed/rss.xml")
     image_url = escape(PODCAST_IMAGE) if PODCAST_IMAGE else ""
 
     if ITUNES_CATEGORY and ITUNES_SUBCATEGORY:
-        cat_block = f'<itunes:category text="{escape(ITUNES_CATEGORY)}"><itunes:category text="{escape(ITUNES_SUBCATEGORY)}"/></itunes:category>'
+        cat_block = (
+            f'<itunes:category text="{escape(ITUNES_CATEGORY)}">'
+            f'<itunes:category text="{escape(ITUNES_SUBCATEGORY)}"/>'
+            f"</itunes:category>"
+        )
     else:
         cat_block = f'<itunes:category text="{escape(ITUNES_CATEGORY)}"/>'
 
     items = []
-    for ep in episodes:
+    for ep in episodes_sorted:
         title = escape(ep["title"])
         guid = escape(ep["guid"])
         pubdate = escape(ep["pubDate_rfc822"])
-        enc_url = escape(ep["audio_url"])
+        enc_url = escape(ep["audio_url"])  # absolute URL
         desc_html = ep.get("description_html", "")
 
         items.append(f"""    <item>
@@ -213,93 +247,163 @@ def build_rss(episodes: list) -> str:
 </rss>
 """
 
-def write_skeleton_outputs():
-    # Always create baseline outputs so the workflow can commit something even on first run / zero episodes.
-    state = {"episodes": {}}
+# -----------------------------
+# State I/O (backward compatible)
+# -----------------------------
+def load_state() -> dict:
+    """
+    New state schema:
+    {
+      "episodes": {
+        "<source_key>": {
+           "guid": "...",
+           "title": "...",
+           "pubDate_rfc822": "...",
+           "audio_url": "...",
+           "length_bytes": 123,
+           "description_html": "..."
+        },
+        ...
+      }
+    }
+
+    Backward compatibility:
+    - If episodes is a list, attempt migration by using ep["guid"] as a key.
+    - If old schema used different root keys, we still try to salvage.
+    """
+    if not os.path.exists(DATA_FILE):
+        return {"episodes": {}}
+
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    episodes = data.get("episodes")
+
+    if isinstance(episodes, dict):
+        return {"episodes": episodes}
+
+    if isinstance(episodes, list):
+        migrated = {}
+        for ep in episodes:
+            if isinstance(ep, dict):
+                # If we don't have a source_key, use guid as key (best possible salvage)
+                k = ep.get("source_key") or ep.get("guid")
+                if k:
+                    migrated[str(k)] = ep
+        return {"episodes": migrated}
+
+    # Try a couple of other common shapes
+    if isinstance(data, dict) and "channel" in data and "episodes" in data:
+        # already handled above, but keep here for safety
+        return {"episodes": data.get("episodes") or {}}
+
+    return {"episodes": {}}
+
+def save_state(state: dict) -> None:
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
-    with open(RSS_OUT, "w", encoding="utf-8") as f:
-        f.write(build_rss([]))
 
+# -----------------------------
+# Main
+# -----------------------------
 def main():
     if not BUZZSPROUT_RSS:
-        raise RuntimeError("BUZZSPROUT_RSS is empty. Set the BUZZSPROUT_RSS secret.")
+        raise RuntimeError("BUZZSPROUT_RSS is empty. Set it as a GitHub Actions secret.")
     if not REPO:
         raise RuntimeError("REPO is empty (should be set by workflow: github.repository).")
     if not GITHUB_TOKEN:
         raise RuntimeError("GITHUB_TOKEN is empty (should be secrets.GITHUB_TOKEN).")
 
-    # Always write skeleton first (prevents 'No changes' on brand-new repo)
-    write_skeleton_outputs()
+    # Always write skeleton outputs first to avoid "No changes" on clean repo
+    skeleton_state = {"episodes": {}}
+    save_state(skeleton_state)
+    with open(RSS_OUT, "w", encoding="utf-8") as f:
+        f.write(build_rss([]))
 
-    # Load state (backward compatible with list/dict)
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            state = json.load(f)
-    else:
-        state = {}
-
-    episodes_raw = state.get("episodes")
-    if isinstance(episodes_raw, dict):
-        episodes_map = episodes_raw
-    elif isinstance(episodes_raw, list):
+    state = load_state()
+    episodes_map = state.get("episodes", {})
+    if not isinstance(episodes_map, dict):
         episodes_map = {}
-        for ep in episodes_raw:
-            if isinstance(ep, dict) and ep.get("guid"):
-                episodes_map[str(ep["guid"])] = ep
-    else:
-        episodes_map = {}
-    state["episodes"] = episodes_map
+        state["episodes"] = episodes_map
 
-    # Parse SOURCE feed (Buzzsprout)
+    # Parse SOURCE feed
     src = feedparser.parse(BUZZSPROUT_RSS)
     if not src.entries:
-        # Write outputs and exit cleanly
-        episodes = []
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
+        # Write what we have (skeleton or existing state)
+        save_state(state)
         with open(RSS_OUT, "w", encoding="utf-8") as f:
-            f.write(build_rss(episodes))
+            f.write(build_rss([]))
         print("OK. SOURCE RSS has no entries. Wrote skeleton outputs.")
         return
 
-    # Ensure release exists
     release = ensure_release(REPO, GITHUB_TOKEN, RELEASE_TAG)
 
     new_count = 0
+    skipped_no_http = 0
+    skipped_download_errors = 0
 
     for entry in src.entries:
-        guid = stable_guid(entry)
-        if guid in episodes_map:
-            continue
+        skey = source_key(entry)
 
+        # Existing episode: keep GUID stable forever
+        if skey in episodes_map and isinstance(episodes_map[skey], dict) and episodes_map[skey].get("guid"):
+            guid = episodes_map[skey]["guid"]
+        else:
+            guid = generate_guid(entry)
+
+        # Get enclosure
         if not entry.get("enclosures"):
             continue
 
         audio_src = entry.enclosures[0].get("href")
         if not audio_src or not str(audio_src).startswith("http"):
+            skipped_no_http += 1
             continue
 
         title = entry.get("title", "Untitled")
         pub_dt = parse_pubdate(entry)
         pub_rfc822 = format_datetime(pub_dt)
 
+        # If we already have this episode and it already points to our GitHub release URL, skip download/upload
+        existing = episodes_map.get(skey) if isinstance(episodes_map.get(skey), dict) else None
+        if existing and isinstance(existing.get("audio_url"), str) and f"/releases/download/{RELEASE_TAG}/" in existing["audio_url"]:
+            # still ensure metadata up to date without changing GUID
+            episodes_map[skey] = {
+                "source_key": skey,
+                "guid": guid,
+                "title": title,
+                "pubDate_rfc822": pub_rfc822,
+                "audio_url": existing["audio_url"],
+                "length_bytes": int(existing.get("length_bytes", 0)),
+                "description_html": entry.get("summary", ""),
+            }
+            continue
+
+        # Download and upload
         filename = safe_filename(f"{pub_dt.strftime('%Y%m%d')}-{title}") + ".mp3"
         tmp_path = os.path.join(TMP_DIR, filename)
 
-        final_url = resolve_download_url(audio_src)
-        length = download_file(final_url, tmp_path)
+        try:
+            final_url = resolve_download_url(audio_src)
+            length = download_file(final_url, tmp_path)
+        except Exception as e:
+            skipped_download_errors += 1
+            # Keep metadata record (without audio) ONLY if it already existed.
+            # Otherwise skip to avoid publishing a broken enclosure.
+            print(f"WARNING: download failed for {title}: {e}")
+            continue
 
         upload_asset(REPO, GITHUB_TOKEN, release, tmp_path)
 
         target_url = f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/{filename}"
 
-        episodes_map[guid] = {
+        episodes_map[skey] = {
+            "source_key": skey,
             "guid": guid,
             "title": title,
             "pubDate_rfc822": pub_rfc822,
             "audio_url": target_url,
-            "length_bytes": length,
+            "length_bytes": int(length),
             "description_html": entry.get("summary", ""),
         }
 
@@ -310,23 +414,33 @@ def main():
 
         new_count += 1
 
-    # Sort newest first
+    # Sort episodes newest-first for RSS output
     episodes = list(episodes_map.values())
-    try:
-        episodes.sort(key=lambda e: dtparser.parse(e["pubDate_rfc822"]), reverse=True)
-    except Exception:
-        pass
 
-    # Persist state + RSS
+    def _sort_dt(ep):
+        try:
+            return dtparser.parse(ep.get("pubDate_rfc822", "1970-01-01T00:00:00Z"))
+        except Exception:
+            return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+    episodes.sort(key=_sort_dt, reverse=True)
+
+    # Persist state and RSS
     state["episodes"] = episodes_map
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
+    save_state(state)
 
+    rss_xml = build_rss(episodes)
     with open(RSS_OUT, "w", encoding="utf-8") as f:
-        f.write(build_rss(episodes))
+        f.write(rss_xml)
 
-    print(f"OK. New episodes archived: {new_count}. Total: {len(episodes)}")
+    # Hard guard: never allow "buzzsprout" in final RSS
+    if "buzzsprout" in rss_xml.lower():
+        raise RuntimeError("ERROR: 'buzzsprout' detected in final RSS output. Aborting.")
 
+    print(
+        f"OK. New archived: {new_count}. Total episodes in state: {len(episodes_map)}. "
+        f"Skipped non-http enclosures: {skipped_no_http}. Download errors: {skipped_download_errors}."
+    )
 
 if __name__ == "__main__":
     main()
