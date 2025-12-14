@@ -237,38 +237,34 @@ f"""    <item>
 """
 
 def main():
-# Load existing state
-if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        state = json.load(f)
-else:
-    state = {}
+    # Load existing state
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    else:
+        state = {}
 
-episodes_raw = state.get("episodes")
+    episodes_raw = state.get("episodes")
 
-# Migrate old formats to dict keyed by guid
-if isinstance(episodes_raw, dict):
-    episodes_map = episodes_raw
-elif isinstance(episodes_raw, list):
-    episodes_map = {}
-    for ep in episodes_raw:
-        if isinstance(ep, dict) and ep.get("guid"):
-            episodes_map[str(ep["guid"])] = ep
-elif episodes_raw is None:
-    episodes_map = {}
-else:
-    # Unknown type, reset safely
-    episodes_map = {}
+    # Normalize episodes to dict keyed by guid
+    if isinstance(episodes_raw, dict):
+        episodes_map = episodes_raw
+    elif isinstance(episodes_raw, list):
+        episodes_map = {}
+        for ep in episodes_raw:
+            if isinstance(ep, dict) and ep.get("guid"):
+                episodes_map[str(ep["guid"])] = ep
+    else:
+        episodes_map = {}
 
-state["episodes"] = episodes_map
+    state["episodes"] = episodes_map
 
-    # Parse SOURCE feed (Buzzsprout)
+    # Parse SOURCE RSS (Buzzsprout)
     src = feedparser.parse(BUZZSPROUT_RSS)
     if not src.entries:
-        raise RuntimeError("SOURCE RSS has no entries; check BUZZSPROUT_RSS")
+        raise RuntimeError("SOURCE RSS has no entries")
 
     release = ensure_release(RELEASE_TAG)
-
     new_count = 0
 
     for entry in src.entries:
@@ -276,32 +272,29 @@ state["episodes"] = episodes_map
         if guid in episodes_map:
             continue
 
-        # Buzzsprout enclosure URL must be absolute
         if not entry.get("enclosures"):
             continue
 
-        enc = entry.enclosures[0]
-        audio_src = enc.get("href")
-        if not audio_src or not str(audio_src).startswith("http"):
-            # If it is relative, it cannot be downloaded: skip
+        audio_src = entry.enclosures[0].get("href")
+        if not audio_src or not audio_src.startswith("http"):
             continue
 
-        title = entry.get("title","Untitled")
+        title = entry.get("title", "Untitled")
         pub_dt = parse_pubdate(entry)
         pub_rfc822 = format_datetime(pub_dt)
 
-        # filename
-        base = safe_filename(f"{pub_dt.strftime('%Y%m%d')}-{title}") + ".mp3"
-        tmp_path = os.path.join("audio_tmp", base)
+        filename = safe_filename(f"{pub_dt.strftime('%Y%m%d')}-{title}") + ".mp3"
+        tmp_path = os.path.join("audio_tmp", filename)
 
-        # download
-        length = download_file(audio_src, tmp_path)
+        final_url = resolve_download_url(audio_src)
+        length = download_file(final_url, tmp_path)
 
-        # upload to release
         upload_asset(release, tmp_path)
 
-        # target URL (stable)
-        target_url = f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/{base}"
+        target_url = (
+            f"https://github.com/{REPO}/releases/download/"
+            f"{RELEASE_TAG}/{filename}"
+        )
 
         episodes_map[guid] = {
             "guid": guid,
@@ -309,27 +302,20 @@ state["episodes"] = episodes_map
             "pubDate_rfc822": pub_rfc822,
             "audio_url": target_url,
             "length_bytes": length,
-            "description_html": entry.get("summary","")
+            "description_html": entry.get("summary", ""),
         }
 
-        # cleanup
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-
+        os.remove(tmp_path)
         new_count += 1
 
-    # Build sorted list newest-first
+    # Sort newest first
     episodes = list(episodes_map.values())
-    def sort_key(e):
-        try:
-            return dtparser.parse(e["pubDate_rfc822"])
-        except Exception:
-            return datetime(1970,1,1,tzinfo=timezone.utc)
-    episodes.sort(key=sort_key, reverse=True)
+    episodes.sort(
+        key=lambda e: dtparser.parse(e["pubDate_rfc822"]),
+        reverse=True,
+    )
 
-    # Save state
+    # Persist state
     state["episodes"] = episodes_map
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
@@ -340,6 +326,3 @@ state["episodes"] = episodes_map
         f.write(rss)
 
     print(f"OK. New episodes archived: {new_count}. Total: {len(episodes)}")
-
-if __name__ == "__main__":
-    main()
