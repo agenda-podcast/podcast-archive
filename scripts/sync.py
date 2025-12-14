@@ -338,7 +338,7 @@ def main():
         state["episodes"] = episodes_map
 
     # Parse SOURCE feed
-    src = feedparser.parse(BUZZSPROUT_RSS)
+    src = feedparser.parse(RSS)
     if not src.entries:
         save_state(state)
         with open(RSS_OUT, "w", encoding="utf-8") as f:
