@@ -237,14 +237,31 @@ f"""    <item>
 """
 
 def main():
-    # Load existing state
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            state = json.load(f)
-    else:
-        state = {"episodes": {}}
+# Load existing state
+if os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        state = json.load(f)
+else:
+    state = {}
 
-    episodes_map = state.get("episodes", {})
+episodes_raw = state.get("episodes")
+
+# Migrate old formats to dict keyed by guid
+if isinstance(episodes_raw, dict):
+    episodes_map = episodes_raw
+elif isinstance(episodes_raw, list):
+    episodes_map = {}
+    for ep in episodes_raw:
+        if isinstance(ep, dict) and ep.get("guid"):
+            episodes_map[str(ep["guid"])] = ep
+elif episodes_raw is None:
+    episodes_map = {}
+else:
+    # Unknown type, reset safely
+    episodes_map = {}
+
+state["episodes"] = episodes_map
+
     # Parse SOURCE feed (Buzzsprout)
     src = feedparser.parse(BUZZSPROUT_RSS)
     if not src.entries:
