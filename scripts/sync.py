@@ -130,9 +130,42 @@ def parse_pubdate(entry) -> datetime:
                 pass
     return datetime.now(timezone.utc)
 
+def resolve_download_url(url: str) -> str:
+    """
+    Buzzsprout sometimes serves episode .mp3 URLs that redirect (or are protected).
+    We resolve to the final URL using browser-like headers.
+    """
+    headers = {
+        "User-Agent": "AgendaPodcastArchiver/1.0 (+https://github.com/%s)" % REPO,
+        "Referer": BUZZSPROUT_RSS,
+        "Accept": "*/*",
+    }
+
+    # Try HEAD first (fast) – some servers block HEAD; then fallback to GET
+    try:
+        r = requests.head(url, headers=headers, allow_redirects=True, timeout=60)
+        if r.status_code < 400 and r.url:
+            return r.url
+    except Exception:
+        pass
+
+    r = requests.get(url, headers=headers, allow_redirects=True, stream=True, timeout=60)
+    r.raise_for_status()
+    return r.url or url
+
+
 def download_file(url: str, out_path: str) -> int:
-    # Returns bytes length
-    with requests.get(url, stream=True, timeout=300) as r:
+    """
+    Download with headers to avoid Buzzsprout/Cloudflare 403.
+    Returns bytes length.
+    """
+    headers = {
+        "User-Agent": "AgendaPodcastArchiver/1.0 (+https://github.com/%s)" % REPO,
+        "Referer": BUZZSPROUT_RSS,
+        "Accept": "*/*",
+    }
+
+    with requests.get(url, headers=headers, stream=True, timeout=300, allow_redirects=True) as r:
         r.raise_for_status()
         total = 0
         with open(out_path, "wb") as f:
@@ -141,6 +174,7 @@ def download_file(url: str, out_path: str) -> int:
                     f.write(chunk)
                     total += len(chunk)
         return total
+      
 
 def build_rss(episodes: list) -> str:
     # episodes must be sorted newest-first for most clients
