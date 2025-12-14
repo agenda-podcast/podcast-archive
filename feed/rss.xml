@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0">
   <channel>
-    <title>Podcast Archive</title>
+    <title>Agenda</title>
     <link>https://example.org/podcast</link>
     <description>A simple podcast archive feed. </description>
     <language>en-us</language>
