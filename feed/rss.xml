@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+  xmlns:atom="http://www.w3.org/2005/Atom"
+  xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <atom:link href="https://agenda-podcast.github.io/podcast-archive/feed/rss.xml" rel="self" type="application/rss+xml"/>
+    <title>Agenda</title>
+    <link>https://agenda-podcast.github.io/podcast-archive/</link>
+    <language>en-us</language>
+    <copyright>© 2025 Agenda</copyright>
+    <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
+    <lastBuildDate>Sun, 14 Dec 2025 07:26:58 +0000</lastBuildDate>
+    <itunes:author>Agenda</itunes:author>
+    <itunes:type>episodic</itunes:type>
+    <itunes:explicit>false</itunes:explicit>
+    <itunes:image href="https://agenda-podcast.github.io/podcast-archive/poster.jpg"/>
+    <itunes:category text="News"><itunes:category text="Politics"/></itunes:category>
+    <item>
+      <title>Update: Immigration Freeze Policy Creates Administrative Gridlock</title>
+      <itunes:title>Update: Immigration Freeze Policy Creates Administrative Gridlock</itunes:title>
+      <guid isPermaLink="false">Buzzsprout-18322949</guid>
+      <pubDate>Tue, 09 Dec 2025 06:00:00 +0000</pubDate>
+      <description><![CDATA[Trump administration immigration restrictions enacted following a shooting incident involving an Afghan national, which includes a halt on processing all pending immigration applications from 19 "high-risk" countries. This policy, implemented via a USCIS memo, mandates a comprehensive re-review and potential re-interview of applicants from these nations who entered the U.S. after January 20, 2021, and also covers approved benefits and asylum claims. Legal experts note that this move is a broa...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20251209-Update_Immigration_Freeze_Policy_Creates_Administrative_Gridlock.mp3" length="26319565" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+  </channel>
+</rss>
