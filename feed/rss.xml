@@ -36,22 +36,7 @@
     <itunes:category text="News Commentary" />
   </itunes:category>
   <item>
-    <itunes:title>Update: Immigration Freeze Policy Creates Administrative Gridlock</itunes:title>
-    <title>Update: Immigration Freeze Policy Creates Administrative Gridlock</title>
-    <itunes:summary>Trump administration immigration restrictions enacted following a shooting incident involving an Afghan national, which includes a halt on processing all pending immigration applications from 19 "high-risk" countries. This policy, implemented via a USCIS memo, mandates a comprehensive re-review and potential re-interview of applicants from these nations who entered the U.S. after January 20, 2021, and also covers approved benefits and asylum claims. Legal experts note that this move is a broa...</itunes:summary>
-    <description>&lt;p&gt;&lt;b&gt;Trump administration immigration restrictions&lt;/b&gt; enacted following a shooting incident involving an Afghan national, which includes a &lt;b&gt;halt on processing all pending immigration applications&lt;/b&gt; from 19 &amp;quot;high-risk&amp;quot; countries. This policy, implemented via a USCIS memo, mandates a &lt;b&gt;comprehensive re-review and potential re-interview&lt;/b&gt; of applicants from these nations who entered the U.S. after January 20, 2021, and also covers approved benefits and asylum claims. Legal experts note that this move is a &lt;b&gt;broad exercise of executive authority&lt;/b&gt; and anticipate &lt;b&gt;multi-year processing delays&lt;/b&gt; across the entire immigration system, with some critics condemning the actions as &lt;b&gt;xenophobic &amp;quot;scapegoating&amp;quot;&lt;/b&gt; that is not genuinely about national security. The sources also detail the &lt;b&gt;expanded vetting operations&lt;/b&gt; (like social media screening) and advise employers and individuals to prepare for &lt;b&gt;legal challenges and travel restrictions&lt;/b&gt;.&lt;/p&gt;</description>
-    <content:encoded>&lt;p&gt;&lt;b&gt;Trump administration immigration restrictions&lt;/b&gt; enacted following a shooting incident involving an Afghan national, which includes a &lt;b&gt;halt on processing all pending immigration applications&lt;/b&gt; from 19 &amp;quot;high-risk&amp;quot; countries. This policy, implemented via a USCIS memo, mandates a &lt;b&gt;comprehensive re-review and potential re-interview&lt;/b&gt; of applicants from these nations who entered the U.S. after January 20, 2021, and also covers approved benefits and asylum claims. Legal experts note that this move is a &lt;b&gt;broad exercise of executive authority&lt;/b&gt; and anticipate &lt;b&gt;multi-year processing delays&lt;/b&gt; across the entire immigration system, with some critics condemning the actions as &lt;b&gt;xenophobic &amp;quot;scapegoating&amp;quot;&lt;/b&gt; that is not genuinely about national security. The sources also detail the &lt;b&gt;expanded vetting operations&lt;/b&gt; (like social media screening) and advise employers and individuals to prepare for &lt;b&gt;legal challenges and travel restrictions&lt;/b&gt;.&lt;/p&gt;</content:encoded>
-    <itunes:image href="https://agenda-podcast.github.io/podcast-archive/feed/rss.xml" />
-    <itunes:author>Agenda</itunes:author>
-    <enclosure url="./audio/18322949-update-immigration-freeze-policy-creates-administrative-gridlock.mp3" length="26319565" type="audio/mpeg" />
-    <guid isPermaLink="false">https://agenda-podcast.github.io/podcast-archive/feed/rss.xml</guid>
-    <pubDate>Tue, 09 Dec 2025 01:00:00 -0500</pubDate>
-    <itunes:duration>2190</itunes:duration>
-    <itunes:keywords>Trump administration, immigration ban, USCIS, asylum hold, 19 countries, green card freeze, travel restrictions, national security, visa halt, vetting, citizenship ceremonies, adjudication pause, migrant crackdown, legal immigration, policy memo</itunes:keywords>
-    <itunes:season>1</itunes:season>
-    <itunes:episode>7</itunes:episode>
-    <itunes:episodeType>full</itunes:episodeType>
-    <itunes:explicit>false</itunes:explicit>
+
   </item>
 </channel>
 </rss>
