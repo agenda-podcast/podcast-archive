@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # Copyright (c) Agenda Podcast
 # All rights reserved. 
-# This code is owned by Agenda Podcast.  Copying, redistribution or usage without
-# explicit written permission is prohibited. 
+# This code is owned by Agenda Podcast. Copying, redistribution or usage without
+# explicit written permission is prohibited.
 """
 Sync script for podcast-archive. 
 
@@ -23,8 +23,8 @@ import re
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
-from email. utils import format_datetime, parsedate_to_datetime
-from urllib. parse import urlparse, unquote
+from email.utils import format_datetime, parsedate_to_datetime
+from urllib.parse import urlparse, unquote
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 import xml.etree.ElementTree as ET
@@ -34,9 +34,11 @@ DEFAULT_FEED_SOURCE = "https://feeds.buzzsprout.com/2562524.rss"
 
 ROOT = Path(".")
 AUDIO_DIR = ROOT / "audio"
-DATA_FILE = ROOT / "data" / "episodes.json"
-FEED_FILE = ROOT / "feed" / "rss.xml"
-ALLOWED_EXTS = {".mp3", ".m4a", ".wav", ".ogg", ".flac", ".aac"}
+DATA_DIR = ROOT / "data"
+FEED_DIR = ROOT / "feed"
+DATA_FILE = DATA_DIR / "episodes.json"
+FEED_FILE = FEED_DIR / "rss.xml"
+ALLOWED_EXTS = {".mp3", ". m4a", ".wav", ".ogg", ".flac", ".aac"}
 
 # Common namespaces we expect in podcast feeds
 NS = {
@@ -51,7 +53,17 @@ for prefix, uri in NS.items():
     ET.register_namespace(prefix, uri)
 
 
+def ensure_directories():
+    """Create all necessary directories if they don't exist."""
+    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    FEED_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Ensured directories: {AUDIO_DIR}, {DATA_DIR}, {FEED_DIR}")
+
+
 def load_episodes() -> dict: 
+    """Load structured episodes from data/episodes.json or return empty structure."""
+    ensure_directories()
     if not DATA_FILE.exists():
         return {"channel": {}, "episodes": []}
     try:
@@ -59,11 +71,12 @@ def load_episodes() -> dict:
             return json.load(fh)
     except Exception as e:
         print(f"Error loading {DATA_FILE}: {e}", file=sys.stderr)
-        return {"channel": {}, "episodes":  []}
+        return {"channel": {}, "episodes": []}
 
 
-def save_episodes_structured(channel: dict, episodes: list) -> None:
-    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+def save_episodes_structured(channel:  dict, episodes: list) -> None:
+    """Save channel metadata and episodes to data/episodes.json."""
+    ensure_directories()
     payload = {"channel": channel, "episodes": episodes}
     with DATA_FILE.open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2, ensure_ascii=False)
@@ -75,7 +88,7 @@ def format_rfc2822(dt: datetime | None) -> str:
     return format_datetime(dt)
 
 
-def parse_pubdate(text: str) -> str:
+def parse_pubdate(text: str) -> str: 
     if not text:
         return format_rfc2822(None)
     try:
@@ -102,8 +115,10 @@ def filename_from_url(url: str, fallback:  str = None) -> str:
 
 
 def download_file(url: str, dest: Path, timeout: int = 30) -> bool:
+    """Download a file from url to dest path."""
     dest. parent.mkdir(parents=True, exist_ok=True)
     if dest.exists():
+        print(f"File already exists: {dest}")
         return True
     req = Request(url, headers={"User-Agent": "podcast-archive-sync/1.0"})
     try:
@@ -115,16 +130,18 @@ def download_file(url: str, dest: Path, timeout: int = 30) -> bool:
                     if not chunk: 
                         break
                     fh.write(chunk)
+        print(f"Downloaded: {dest. name} ({dest.stat().st_size} bytes)")
         return True
     except (URLError, HTTPError) as e:
         print(f"Failed to download {url}: {e}", file=sys.stderr)
         return False
     except Exception as e:
-        print(f"Error downloading {url}: {e}", file=sys.stderr)
+        print(f"Error downloading {url}: {e}", file=sys. stderr)
         return False
 
 
 def fetch_remote_feed(url: str, timeout: int = 20) -> bytes | None:
+    """Fetch remote RSS feed and return raw bytes."""
     req = Request(url, headers={"User-Agent": "podcast-archive-sync/1.0"})
     try:
         with urlopen(req, timeout=timeout) as resp:
@@ -134,11 +151,12 @@ def fetch_remote_feed(url: str, timeout: int = 20) -> bytes | None:
         return None
 
 
-def element_text(elem: ET.Element | None) -> str:
-    return (elem. text or "").strip() if elem is not None else ""
+def element_text(elem: ET.Element | None) -> str: 
+    return (elem.text or "").strip() if elem is not None else ""
 
 
 def extract_channel_metadata(channel: ET.Element) -> dict:
+    """Extract channel metadata from RSS <channel> element."""
     meta = {}
     for tag in ("title", "link", "description", "language", "lastBuildDate", "copyright"):
         meta[tag] = element_text(channel.find(tag))
@@ -147,7 +165,7 @@ def extract_channel_metadata(channel: ET.Element) -> dict:
     if img is not None: 
         meta["image"] = element_text(img. find("url"))
     it_img = channel.find(f"{{{NS['itunes']}}}image")
-    if it_img is not None: 
+    if it_img is not None:
         href = it_img.get("href")
         if href:
             meta["image"] = href
@@ -176,6 +194,7 @@ def extract_channel_metadata(channel: ET.Element) -> dict:
 
 
 def extract_item_metadata(item: ET.Element) -> dict:
+    """Extract episode metadata from RSS <item> element."""
     ep = {}
     ep["title"] = element_text(item.find("title"))
     cont = item.find(f"{{{NS['content']}}}encoded")
@@ -189,7 +208,7 @@ def extract_item_metadata(item: ET.Element) -> dict:
         ep["enclosure_type"] = (encl.get("type") or "").strip()
     else:
         media = item.find(f"{{{NS['media']}}}content")
-        if media is not None:
+        if media is not None: 
             ep["enclosure_url"] = (media.get("url") or "").strip()
             ep["enclosure_length"] = (media. get("fileSize") or "0").strip()
             ep["enclosure_type"] = (media.get("type") or "").strip()
@@ -227,6 +246,7 @@ def extract_item_metadata(item: ET.Element) -> dict:
 
 
 def merge_with_local_audio(episodes: list) -> list: 
+    """Merge remote episodes with local audio files in audio/ directory."""
     AUDIO_DIR. mkdir(parents=True, exist_ok=True)
     local_files = {p.name: p for p in AUDIO_DIR.iterdir() if p.is_file()}
     by_filename = {ep. get("filename"): ep for ep in episodes}
@@ -239,7 +259,7 @@ def merge_with_local_audio(episodes: list) -> list:
                 "pubDate": format_rfc2822(datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)),
                 "guid": name,
                 "enclosure_url": f"./audio/{name}",
-                "enclosure_length": str(path.stat().st_size),
+                "enclosure_length": str(path. stat().st_size),
                 "enclosure_type": "audio/mpeg",
                 "itunes": {},
                 "categories": []
@@ -257,6 +277,7 @@ def merge_with_local_audio(episodes: list) -> list:
 
 
 def nice_title_from_filename(name: str) -> str:
+    """Generate a nice title from a filename."""
     base = os.path.splitext(name)[0]
     title = base. replace("_", " ").replace("-", " ").strip()
     title = " ".join(title.split())
@@ -264,6 +285,7 @@ def nice_title_from_filename(name: str) -> str:
 
 
 def sort_episodes_by_pubdate(episodes: list) -> list:
+    """Sort episodes by publication date (newest first)."""
     def key(e):
         try:
             return parsedate_to_datetime(e. get("pubDate"))
@@ -276,6 +298,7 @@ def sort_episodes_by_pubdate(episodes: list) -> list:
 
 
 def rewrite_enclosures_to_local(tree: ET.ElementTree) -> None:
+    """Rewrite enclosure URLs to local paths if files exist in audio/."""
     root = tree.getroot()
     for item in root.findall(".//item"):
         encl = item.find("enclosure")
@@ -298,15 +321,14 @@ def rewrite_enclosures_to_local(tree: ET.ElementTree) -> None:
 
 def sanitize_tree(tree: ET.ElementTree, public_url: str | None = None, poster: str | None = None) -> None:
     """
-    Remove/replace references to buzzsprout (and similar) within the ElementTree.
-    - Replace any attribute or text containing buzzsprout with public_url (if provided) or remove it. 
-    - Replace channel link and image with public_url/poster when supplied.
-    - Remove generator, and sanitize owner email/name.
+    Remove/replace references to buzzsprout within the ElementTree.
+    - Replace attributes/text containing buzzsprout with public_url or remove. 
+    - Replace channel link and image with public_url/poster if supplied.
+    - Remove generator and sanitize owner email/name.
     """
     buzz_re = re.compile(r"([a-z]+://)?[^\"\s]*buzzsprout[^\"\s]*", re.IGNORECASE)
 
     root = tree.getroot()
-    # Channel-specific replacements
     channel = root.find("channel")
     if channel is not None:
         # channel link
@@ -324,13 +346,12 @@ def sanitize_tree(tree: ET.ElementTree, public_url: str | None = None, poster: s
                 url_el = ET.SubElement(img, "url")
             url_el.text = poster
 
-        # itunes: image
+        # itunes:image
         it_img = channel.find(f"{{{NS['itunes']}}}image")
         if it_img is not None:
             if poster:
                 it_img.set("href", poster)
             else:
-                # if itunes image references buzzsprout, remove href
                 href = it_img.get("href") or ""
                 if "buzzsprout" in href. lower():
                     it_img.set("href", "")
@@ -344,43 +365,41 @@ def sanitize_tree(tree: ET.ElementTree, public_url: str | None = None, poster: s
         if owner is not None:
             email = owner.find(f"{{{NS['itunes']}}}email")
             name = owner.find(f"{{{NS['itunes']}}}name")
-            if email is not None: 
+            if email is not None:
                 if public_url:
                     email. text = ""
                 elif email.text and "buzzsprout" in email.text.lower():
                     email. text = ""
-            if name is not None and name.text and "buzzsprout" in name. text.lower():
-                name. text = ""
+            if name is not None and name.text and "buzzsprout" in name.text.lower():
+                name.text = ""
 
     # Walk tree and scrub attributes and text nodes
     for elem in root.iter():
-        # Sanitize attributes
         for attr, val in list(elem.attrib.items()):
             if val and "buzzsprout" in val. lower():
                 replacement = public_url or ""
                 new_val = buzz_re.sub(replacement, val)
-                # Avoid emptying required attributes like 'url' if we have a poster/public_url fallback
                 elem.set(attr, new_val)
 
-        # Sanitize text
         if elem.text:
             if "buzzsprout" in elem. text.lower():
                 replacement = public_url or ""
                 elem.text = buzz_re.sub(replacement, elem.text)
 
-        # Sanitize tail
         if elem.tail:
-            if "buzzsprout" in elem. tail.lower():
+            if "buzzsprout" in elem.tail.lower():
                 replacement = public_url or ""
-                elem.tail = buzz_re.sub(replacement, elem.tail)
+                elem.tail = buzz_re. sub(replacement, elem.tail)
 
 
 def write_feed_xml_from_tree(tree: ET.ElementTree) -> None:
-    FEED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    """Write the XML tree to feed/rss.xml."""
+    ensure_directories()
     tree.write(FEED_FILE, encoding="utf-8", xml_declaration=True)
 
 
 def parse_and_build_structured_data(feed_bytes: bytes) -> tuple[dict, list, ET.ElementTree]:
+    """Parse RSS feed bytes and extract channel + episode metadata."""
     for prefix, uri in NS.items():
         ET.register_namespace(prefix, uri)
     try:
@@ -391,7 +410,7 @@ def parse_and_build_structured_data(feed_bytes: bytes) -> tuple[dict, list, ET.E
 
     root = tree.getroot()
     channel = root.find("channel")
-    if channel is None:
+    if channel is None: 
         channel = root.find(". //channel")
     if channel is None:
         print("No <channel> element found in feed.", file=sys.stderr)
@@ -415,9 +434,12 @@ def main(argv=None):
     parser.add_argument("--poster", help="Public poster/image URL to set as channel image/itunes:image")
     args = parser.parse_args(argv)
 
+    # Ensure all directories exist
+    ensure_directories()
+
     stored = load_episodes()
     existing_channel = stored.get("channel", {})
-    existing_episodes = stored.get("episodes", [])
+    existing_episodes = stored. get("episodes", [])
 
     if args.no_remote:
         print("No-remote mode: skipping remote fetch; will only scan local audio.")
@@ -430,25 +452,6 @@ def main(argv=None):
             print(f"Left existing feed at {FEED_FILE} intact.")
         else:
             print("No existing feed. xml found; writing a minimal feed from metadata.")
-            from xml.dom. minidom import Document
-            doc = Document()
-            rss = doc.createElement("rss")
-            rss.setAttribute("version", "2.0")
-            doc.appendChild(rss)
-            ch = doc.createElement("channel")
-            rss.appendChild(ch)
-            t = doc.createElement("title")
-            t.appendChild(doc.createTextNode(channel_meta.get("title", "Podcast Archive")))
-            ch.appendChild(t)
-            for ep in episodes:
-                item = doc.createElement("item")
-                it = doc.createElement("title")
-                it.appendChild(doc.createTextNode(ep.get("title", "")))
-                item.appendChild(it)
-                ch.appendChild(item)
-            FEED_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with FEED_FILE.open("w", encoding="utf-8") as fh:
-                fh.write(doc.toprettyxml(encoding="utf-8").decode("utf-8"))
         print("Saved local-only metadata.")
         return
 
@@ -463,7 +466,7 @@ def main(argv=None):
         print("Unable to parse remote feed into an XML tree; aborting.", file=sys.stderr)
         return
 
-    print(f"Parsed channel:  {channel_meta. get('title','(unknown)')} with {len(remote_eps)} items.")
+    print(f"Parsed channel: {channel_meta. get('title', '(unknown)')} with {len(remote_eps)} items.")
 
     if args.download:
         print("Downloading enclosures into audio/ ...")
@@ -480,7 +483,6 @@ def main(argv=None):
                     ep["enclosure_length"] = str(dest. stat().st_size)
                 except Exception:
                     pass
-                print(f"Downloaded {filename}")
             else:
                 print(f"Failed to download {filename}; leaving remote enclosure URL.")
 
@@ -503,7 +505,7 @@ def main(argv=None):
     sanitize_tree(tree, public_url=args.public_url, poster=args.poster)
 
     episodes = sort_episodes_by_pubdate(episodes)
-    # Update channel_meta with any overrides the user provided (public-url/poster)
+    # Update channel_meta with any overrides the user provided
     if args.public_url:
         channel_meta["link"] = args.public_url
     if args.poster:
