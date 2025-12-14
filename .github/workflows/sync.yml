@@ -60,14 +60,14 @@ jobs:
           fi
 
       - name: Set release tag
-        id: tag
+        id: set_tag
         run: |
           TAG="auto-archive-$(date -u +%Y%m%d%H%M%S)"
           echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
-          echo "Release tag: ${TAG}"
+          echo "Release tag set to ${TAG}"
 
       - name: Count MP3 files to upload
-        id: count
+        id: count_mp3
         run: |
           if [ -d audio ]; then
             COUNT=$(find audio -type f -name '*.mp3' -print | wc -l || echo 0)
@@ -82,7 +82,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: "auto-archive ${{ env.RELEASE_TAG }}"
+          name: ${{ format('auto-archive {0}', env.RELEASE_TAG) }}
           files: "audio/**/*.mp3"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -111,7 +111,6 @@ FEED='feed/rss.xml'
 if not os.path.exists(FEED):
     print("ERROR: feed/rss.xml missing")
     sys.exit(1)
-# Check XML is well-formed
 try:
     tree = ET.parse(FEED)
     root = tree.getroot()
@@ -125,7 +124,6 @@ if chan is None:
 title_elem = chan.find('title')
 feed_title = (title_elem.text or '').strip() if title_elem is not None else ''
 expected = os.environ.get('EXPECTED_CHANNEL_TITLE') or ''
-# If data/episodes.json exists, prefer the channel.title from it
 if os.path.exists(DATA):
     try:
         with open(DATA,'r',encoding='utf-8') as fh:
@@ -135,7 +133,6 @@ if os.path.exists(DATA):
                 expected = ch_title
     except Exception as e:
         print("WARNING: cannot read data/episodes.json:", e)
-# Validate not mentioning buzzsprout
 txt = open(FEED,'r',encoding='utf-8').read()
 if re.search(r'buzzsprout', txt, re.I):
     print("ERROR: feed/rss.xml still contains 'buzzsprout' references")
