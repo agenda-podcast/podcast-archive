@@ -1,0 +1,13 @@
+{
+  "episodes": {
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18322949-update-immigration-freeze-policy-creates-administrative-gridlock.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18322949-update-immigration-freeze-policy-creates-administrative-gridlock.mp3",
+      "guid": "agenda-18322949",
+      "title": "Update: Immigration Freeze Policy Creates Administrative Gridlock",
+      "pubDate_rfc822": "Tue, 09 Dec 2025 06:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20251209-Update_Immigration_Freeze_Policy_Creates_Administrative_Gridlock.mp3",
+      "length_bytes": 26319565,
+      "description_html": "Trump administration immigration restrictions enacted following a shooting incident involving an Afghan national, which includes a halt on processing all pending immigration applications from 19 \"high-risk\" countries. This policy, implemented via a USCIS memo, mandates a comprehensive re-review and potential re-interview of applicants from these nations who entered the U.S. after January 20, 2021, and also covers approved benefits and asylum claims. Legal experts note that this move is a broa..."
+    }
+  }
+}
