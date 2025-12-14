@@ -94,12 +94,12 @@ def generate_guid(entry) -> str:
     Generates a GUID that NEVER contains the word 'buzzsprout',
     but remains stable for the same episode.
 
-    Preferred: extract numeric episode id (e.g. Buzzsprout-18322949 -> agenda-18322949).
+    Preferred: extract numeric episode id (e.g. Buzz-18322949 -> agenda-18322949).
     Otherwise: sha256(source_key).
     """
     raw = str(entry.get("id") or entry.get("guid") or entry.get("link") or "")
 
-    # Extract a long numeric token if present (Buzzsprout episode id)
+    # Extract a long numeric token if present (RSS episode id)
     m = re.search(r"(\d{5,})", raw)
     if m:
         return f"agenda-{m.group(1)}"
@@ -169,7 +169,7 @@ def upload_asset(repo: str, token: str, release: dict, file_path: str) -> None:
     r.raise_for_status()
 
 # -----------------------------
-# Buzzsprout download helpers (403 hardening)
+# RSS download helpers (403 hardening)
 # -----------------------------
 def resolve_download_url(url: str) -> str:
     """
@@ -178,7 +178,7 @@ def resolve_download_url(url: str) -> str:
     """
     headers = {
         "User-Agent": f"AgendaPodcastArchiver/2.1 (+https://github.com/{REPO})",
-        "Referer": BUZZSPROUT_RSS,
+        "Referer": RSS,
         "Accept": "*/*",
     }
 
@@ -197,7 +197,7 @@ def resolve_download_url(url: str) -> str:
 def download_file(url: str, out_path: str) -> int:
     headers = {
         "User-Agent": f"AgendaPodcastArchiver/2.1 (+https://github.com/{REPO})",
-        "Referer": BUZZSPROUT_RSS,
+        "Referer": RSS,
         "Accept": "*/*",
     }
     with requests.get(url, headers=headers, stream=True, timeout=300, allow_redirects=True) as r:
@@ -319,8 +319,8 @@ def save_state(state: dict) -> None:
 # Main
 # -----------------------------
 def main():
-    if not BUZZSPROUT_RSS:
-        raise RuntimeError("BUZZSPROUT_RSS is empty. Set it as a GitHub Actions secret.")
+    if not RSS:
+        raise RuntimeError("RSS is empty. Set it as a GitHub Actions secret.")
     if not REPO:
         raise RuntimeError("REPO is empty (should be set by workflow: github.repository).")
     if not GITHUB_TOKEN:
@@ -439,9 +439,9 @@ def main():
 
     rss_xml = build_rss(episodes)
 
-    # Hard guard: never allow 'buzzsprout' in final RSS output
-    if "buzzsprout" in rss_xml.lower():
-        raise RuntimeError("ERROR: 'buzzsprout' detected in final RSS output. Aborting.")
+    # Hard guard: never allow 'buzz' in final RSS output
+    if "buzz" in rss_xml.lower():
+        raise RuntimeError("ERROR: 'buzz' detected in final RSS output. Aborting.")
 
     with open(RSS_OUT, "w", encoding="utf-8") as f:
         f.write(rss_xml)
