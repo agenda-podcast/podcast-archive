@@ -1,0 +1,22 @@
+# Copyright (c) Agenda Podcast
+# All rights reserved.
+# This file is owned by Agenda Podcast. Copying or reuse without permission is prohibited.
+
+__pycache__/
+*.py[cod]
+*.pyo
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+
+.env
+.venv/
+venv/
+
+# Do not commit downloaded audio files into the repository.
+audio/
+
+# Keep metadata and feed in the repo (do not ignore feed/rss.xml or data/episodes.json)
