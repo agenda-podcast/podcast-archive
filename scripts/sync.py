@@ -37,7 +37,19 @@ os.makedirs("feed", exist_ok=True)
 os.makedirs(TMP_DIR, exist_ok=True)
 
 # -----------------------------
-# Date parsing (FIXED: was missing)
+# Utility: safe filename (FIXED: was missing)
+# -----------------------------
+def safe_filename(s: str) -> str:
+    """
+    Convert arbitrary text to a filesystem-safe filename base.
+    Keeps only a-z A-Z 0-9 . _ - and replaces others with underscore.
+    """
+    s = (s or "").strip()
+    s = re.sub(r"[^a-zA-Z0-9._-]+", "_", s).strip("_")
+    return s[:180] if s else "episode"
+
+# -----------------------------
+# Date parsing
 # -----------------------------
 def parse_pubdate(entry) -> datetime:
     """
@@ -63,6 +75,7 @@ def parse_pubdate(entry) -> datetime:
 def source_key(entry) -> str:
     """
     Stable key to identify an episode from the SOURCE feed across runs.
+    Prevents duplicates in our state.
 
     Priority:
     1) Enclosure URL (best) - stable for the same episode
@@ -94,7 +107,7 @@ def generate_guid(entry) -> str:
     Generates a GUID that NEVER contains the word 'buzzsprout',
     but remains stable for the same episode.
 
-    Preferred: extract numeric episode id (e.g. Buzz-18322949 -> agenda-18322949).
+    Preferred: extract numeric episode id (e.g. Buzzsp-18322949 -> agenda-18322949).
     Otherwise: sha256(source_key).
     """
     raw = str(entry.get("id") or entry.get("guid") or entry.get("link") or "")
@@ -115,7 +128,7 @@ def gh_headers(token: str, extra: dict | None = None) -> dict:
     h = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "AgendaPodcastArchiver/2.1",
+        "User-Agent": "AgendaPodcastArchiver/2.2",
     }
     if extra:
         h.update(extra)
@@ -149,7 +162,7 @@ def delete_asset(token: str, asset_api_url: str) -> None:
     if r.status_code not in (204, 404):
         r.raise_for_status()
 
-def upload_asset(repo: str, token: str, release: dict, file_path: str) -> None:
+def upload_asset(token: str, release: dict, file_path: str) -> None:
     filename = os.path.basename(file_path)
 
     # Idempotency: remove asset with same name
@@ -174,10 +187,10 @@ def upload_asset(repo: str, token: str, release: dict, file_path: str) -> None:
 def resolve_download_url(url: str) -> str:
     """
     Follow redirects with browser-like headers.
-    Helps when Buzzsprout/Cloudflare protects direct downloads.
+    Helps when host protects direct downloads.
     """
     headers = {
-        "User-Agent": f"AgendaPodcastArchiver/2.1 (+https://github.com/{REPO})",
+        "User-Agent": f"AgendaPodcastArchiver/2.2 (+https://github.com/{REPO})",
         "Referer": RSS,
         "Accept": "*/*",
     }
@@ -196,7 +209,7 @@ def resolve_download_url(url: str) -> str:
 
 def download_file(url: str, out_path: str) -> int:
     headers = {
-        "User-Agent": f"AgendaPodcastArchiver/2.1 (+https://github.com/{REPO})",
+        "User-Agent": f"AgendaPodcastArchiver/2.2 (+https://github.com/{REPO})",
         "Referer": RSS,
         "Accept": "*/*",
     }
@@ -389,7 +402,8 @@ def main():
             continue
 
         # Download and upload
-        filename = re.sub(r"\.mp3$", "", safe_filename(f"{pub_dt.strftime('%Y%m%d')}-{title}")) + ".mp3"
+        filename = safe_filename(f"{pub_dt.strftime('%Y%m%d')}-{title}")
+        filename = re.sub(r"\.mp3$", "", filename, flags=re.IGNORECASE) + ".mp3"
         tmp_path = os.path.join(TMP_DIR, filename)
 
         try:
@@ -401,7 +415,7 @@ def main():
             # Do not publish an episode without a valid enclosure
             continue
 
-        upload_asset(REPO, GITHUB_TOKEN, release, tmp_path)
+        upload_asset(GITHUB_TOKEN, release, tmp_path)
 
         target_url = f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/{filename}"
 
@@ -439,9 +453,9 @@ def main():
 
     rss_xml = build_rss(episodes)
 
-    # Hard guard: never allow 'buzz' in final RSS output
-    if "buzz" in rss_xml.lower():
-        raise RuntimeError("ERROR: 'buzz' detected in final RSS output. Aborting.")
+    # Hard guard: never allow Buzzsp references in final RSS output
+    if "buzzsp" in rss_xml.lower():
+        raise RuntimeError("ERROR: 'buzzsp' detected in final RSS output. Aborting.")
 
     with open(RSS_OUT, "w", encoding="utf-8") as f:
         f.write(rss_xml)
