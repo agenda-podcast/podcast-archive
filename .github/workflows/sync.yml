@@ -24,10 +24,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Fail fast if BUZZSPROUT_RSS missing
+      - name: Fail fast if RSS missing
         run: |
-          if [ -z "${{ secrets.BUZZSPROUT_RSS }}" ]; then
-            echo "ERROR: BUZZSPROUT_RSS secret is missing. Add it in Settings -> Secrets -> Actions."
+          if [ -z "${{ secrets.RSS }}" ]; then
+            echo "ERROR: RSS secret is missing. Add it in Settings -> Secrets -> Actions."
             exit 1
           fi
 
@@ -41,7 +41,7 @@ jobs:
 
       - name: Run sync
         env:
-          BUZZSPROUT_RSS: ${{ secrets.BUZZSPROUT_RSS }}
+          RSS: ${{ secrets.RSS }}
           PODCAST_TITLE: ${{ secrets.PODCAST_TITLE }}
           PODCAST_LINK: ${{ secrets.PODCAST_LINK }}
           PODCAST_DESCRIPTION: ${{ secrets.PODCAST_DESCRIPTION }}
