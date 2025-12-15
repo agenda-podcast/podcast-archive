@@ -1,4 +1,4 @@
-name: Daily Overviews (10 topics)
+name: Daily Overviews
 
 on:
   schedule:
@@ -13,25 +13,66 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  collect:
+    name: Collect sources (all topics)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests feedparser python-dateutil
+
+      # Optional: if you want to restrict collection to a subset, set TOPIC_IDS in repo/environment vars
+      # Example: TOPIC_IDS="topic-01,topic-02"
+      - name: Collect sources into fresh/backlog
+        run: |
+          python scripts/collect_sources.py
+
+      - name: Commit data changes (fresh/backlog)
+        run: |
+          git config user.name "agenda-bot"
+          git config user.email "bot@github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add data
+            git commit -m "chore: collect sources" || true
+            git push
+          else
+            echo "No data changes to commit"
+          fi
+
   run:
+    name: Run topic pipeline
+    needs: collect
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         topic:
           - topic-01
-          #- topic-02
-          #- topic-03
-          #- topic-04
-          #- topic-05
-          #- topic-06
-          #- topic-07
-          #- topic-08
-          #- topic-09
-          #- topic-10
+          # - topic-02
+          # - topic-03
+          # - topic-04
+          # - topic-05
+          # - topic-06
+          # - topic-07
+          # - topic-08
+          # - topic-09
+          # - topic-10
 
     steps:
-      - name: Checkout
+      - name: Checkout (latest after collect commit)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -52,23 +93,49 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests feedparser python-dateutil
 
-      # IMPORTANT: Google GenAI official SDK (Gemini)
-      - name: Install Gemini SDK
+      - name: Skip if not enough fresh sources (empty fresh.json)
+        id: gate
         run: |
-          pip install google-genai
-
-      - name: Collect sources into fresh/backlog
+          FRESH="data/${{ matrix.topic }}/fresh.json"
+          if [ ! -f "$FRESH" ]; then
+            echo "Fresh file missing: $FRESH"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          python - << 'PY'
+          import json, os, sys
+          p = os.environ["FRESH"]
+          try:
+              data = json.load(open(p, "r", encoding="utf-8"))
+              ok = isinstance(data, list) and len(data) > 0
+          except Exception:
+              ok = False
+          print("fresh_ok=", ok)
+          print("fresh_count=", (len(data) if isinstance(data, list) else 0))
+          sys.exit(0)
+          PY
+          COUNT=$(python - << 'PY'
+          import json
+          d=json.load(open("data/${{ matrix.topic }}/fresh.json","r",encoding="utf-8"))
+          print(len(d) if isinstance(d,list) else 0)
+          PY
+          )
+          if [ "$COUNT" -gt 0 ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
         env:
-          TOPIC_ID: ${{ env.TOPIC_ID }}
-        run: |
-          python scripts/collect_sources.py
+          FRESH: data/${{ matrix.topic }}/fresh.json
 
       - name: Run topic pipeline
+        if: steps.gate.outputs.should_run == 'true'
         env:
           TOPIC_ID: ${{ matrix.topic }}
           REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
           GEMINI_TTS_MODEL: gemini-2.5-flash-preview-tts
           VOICE_A: Kore
           VOICE_B: Puck
@@ -85,13 +152,14 @@ jobs:
         run: |
           python scripts/run_topic.py
 
-      - name: Commit feeds + data changes
+      - name: Commit feed/data/outputs changes
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           git config user.name "agenda-bot"
           git config user.email "bot@github.com"
           if [ -n "$(git status --porcelain)" ]; then
-            git add feeds data
-            git commit -m "chore: update feeds/data (${{ matrix.topic }})" || true
+            git add data feed outputs
+            git commit -m "chore: update feed/data/outputs (${{ matrix.topic }})" || true
             git push
           else
             echo "No changes to commit"
