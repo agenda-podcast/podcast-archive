@@ -1,8 +1,8 @@
-name: Daily Overviews
+name: Daily Overviews (10 topics)
 
 on:
   schedule:
-    - cron: "10 10 * * *"   # daily 10:10 UTC
+    - cron: "10 6 * * *"   # daily 06:10 UTC
   workflow_dispatch:
 
 permissions:
@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: daily-overviews
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   run:
@@ -31,35 +31,57 @@ jobs:
           - topic-10
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: true
 
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install system deps (ffmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install python deps
         run: |
+          python -m pip install --upgrade pip
           pip install requests feedparser python-dateutil
+
+      # IMPORTANT: Google GenAI official SDK (Gemini)
+      - name: Install Gemini SDK
+        run: |
+          pip install google-genai
 
       - name: Run topic pipeline
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TOPIC_ID: ${{ matrix.topic }}
           REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TOPIC_ID: ${{ matrix.topic }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+          # Apple requires owner email in RSS
+          PODCAST_OWNER_NAME: "Agenda"
+          PODCAST_OWNER_EMAIL: "deep.dive.podcast@unloca.com"
+
+          # Release tag per topic => stable download URLs
+          RELEASE_TAG: ${{ matrix.topic }}
+
         run: |
           python scripts/run_topic.py
 
-      - name: Commit feeds/state
+      - name: Commit feeds + data changes
         run: |
           git config user.name "agenda-bot"
           git config user.email "bot@github.com"
-          git add feeds/ data/
-          git commit -m "chore: daily update (${{ matrix.topic }})" || echo "No changes"
-          git push
+          if [ -n "$(git status --porcelain)" ]; then
+            git add feeds data
+            git commit -m "chore: update feeds/data (${{ matrix.topic }})" || true
+            git push
+          else
+            echo "No changes to commit"
+          fi
