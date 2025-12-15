@@ -3,6 +3,7 @@ import os
 import re
 import time
 import hashlib
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -13,9 +14,6 @@ import requests
 import feedparser
 
 
-# -----------------------------
-# Trust tiers (edit as needed)
-# -----------------------------
 TRUST_TIER_1 = {
     "reuters.com", "www.reuters.com",
     "bbc.co.uk", "www.bbc.co.uk", "bbc.com", "www.bbc.com",
@@ -72,8 +70,6 @@ def parse_dt_any(s: str) -> Optional[datetime]:
     s = (s or "").strip()
     if not s:
         return None
-
-    # RFC822-ish
     try:
         from email.utils import parsedate_to_datetime
         dt = parsedate_to_datetime(s)
@@ -83,8 +79,6 @@ def parse_dt_any(s: str) -> Optional[datetime]:
             return dt.astimezone(timezone.utc)
     except Exception:
         pass
-
-    # ISO-ish fallback
     try:
         from dateutil import parser as dtparser
         dt = dtparser.parse(s)
@@ -105,12 +99,10 @@ def canonicalize_url(url: str) -> str:
     url = (url or "").strip()
     if not url.startswith("http"):
         return url
-
     p = urlparse(url)
     scheme = p.scheme.lower()
     netloc = p.netloc.lower()
     fragment = ""
-
     qs = []
     for k, v in parse_qsl(p.query, keep_blank_values=True):
         kl = k.lower()
@@ -120,7 +112,6 @@ def canonicalize_url(url: str) -> str:
             continue
         qs.append((k, v))
     query = urlencode(qs, doseq=True)
-
     return urlunparse((scheme, netloc, p.path, p.params, query, fragment))
 
 
@@ -167,9 +158,6 @@ def to_dict(it: SourceItem) -> Dict[str, Any]:
     }
 
 
-# -----------------------------
-# Collectors
-# -----------------------------
 def google_news_rss(query: str, hl: str, gl: str, ceid: str) -> List[Dict[str, Any]]:
     q = requests.utils.quote(query, safe="")
     url = f"https://news.google.com/rss/search?q={q}&hl={hl}&gl={gl}&ceid={ceid}"
@@ -199,13 +187,12 @@ def gdelt_doc_search(query: str, max_records: int = 50, timeout: int = 30) -> Li
         data = r.json()
     except Exception:
         return []
-
     arts = data.get("articles") or []
     out: List[Dict[str, Any]] = []
     for a in arts:
         title = clean_ws(str(a.get("title", "") or ""))
         link = str(a.get("url", "") or "")
-        seendate = str(a.get("seendate", "") or "")  # YYYYMMDDHHMMSS
+        seendate = str(a.get("seendate", "") or "")
         out.append({"title": title, "url": link, "published": seendate})
     return out
 
@@ -224,9 +211,6 @@ def parse_gdelt_seendate(seendate: str) -> str:
     return ""
 
 
-# -----------------------------
-# State I/O
-# -----------------------------
 def read_json_list(path: Path) -> List[Dict[str, Any]]:
     if not path.exists():
         return []
@@ -250,36 +234,28 @@ def merge_dedupe(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         title = clean_ws(str(it.get("title", "") or ""))
         if not url or not title:
             continue
-
         sid = str(it.get("id") or stable_id(title, url))
         if sid in seen:
             continue
         seen.add(sid)
-
         dom = str(it.get("domain") or domain_of(url))
         it["url"] = url
         it["title"] = title
         it["id"] = sid
         it["domain"] = dom
         it["tier"] = int(it.get("tier") or trust_tier(dom))
-
         out.append(it)
     return out
 
 
-# -----------------------------
-# Topic selection (NO TOPIC_ID REQUIRED)
-# -----------------------------
 def discover_topic_ids() -> List[str]:
     tid = (os.environ.get("TOPIC_ID") or "").strip()
     if tid:
         return [tid]
-
     tids = (os.environ.get("TOPIC_IDS") or "").strip()
     if tids:
         parts = re.split(r"[,\s]+", tids)
         return [p.strip() for p in parts if p.strip()]
-
     topics_dir = Path("topics")
     if not topics_dir.exists():
         return []
@@ -291,12 +267,12 @@ def load_topic(topic_id: str) -> Dict[str, Any]:
     p = Path("topics") / f"{topic_id}.json"
     if not p.exists():
         raise RuntimeError(f"Missing topic config: {p}")
-    return json.loads(p.read_text(encoding="utf-8"))
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise RuntimeError(f"Invalid JSON in {p}: {e}")
 
 
-# -----------------------------
-# Per-topic collect
-# -----------------------------
 def collect_for_topic(topic_id: str) -> Dict[str, Any]:
     topic = load_topic(topic_id)
 
@@ -332,7 +308,6 @@ def collect_for_topic(topic_id: str) -> Dict[str, Any]:
 
     collected: List[Dict[str, Any]] = []
 
-    # Google News RSS
     for q in queries:
         for lang_cfg in languages:
             hl = str(lang_cfg.get("hl", "en-US"))
@@ -340,74 +315,41 @@ def collect_for_topic(topic_id: str) -> Dict[str, Any]:
             ceid = str(lang_cfg.get("ceid", "US:en"))
             lang = str(lang_cfg.get("lang", "en"))
 
-            try:
-                rows = google_news_rss(q, hl=hl, gl=gl, ceid=ceid)
-            except Exception:
-                rows = []
-
+            rows = google_news_rss(q, hl=hl, gl=gl, ceid=ceid)
             for r in rows[:max_results_per_query]:
                 url = canonicalize_url(str(r.get("url", "") or ""))
                 title = clean_ws(str(r.get("title", "") or ""))
                 if not url or not title:
                     continue
-
                 dom = domain_of(url)
                 pub_raw = str(r.get("published", "") or "")
                 dt = parse_dt_any(pub_raw)
                 pub = dt.isoformat().replace("+00:00", "Z") if dt else ""
-
-                collected.append(
-                    to_dict(SourceItem(
-                        title=title,
-                        url=url,
-                        domain=dom,
-                        published=pub,
-                        lang=lang,
-                        tier=trust_tier(dom),
-                        provider="google_news_rss",
-                        query=q,
-                    ))
-                )
-
+                collected.append(to_dict(SourceItem(
+                    title=title, url=url, domain=dom, published=pub, lang=lang,
+                    tier=trust_tier(dom), provider="google_news_rss", query=q
+                )))
             time.sleep(0.15)
 
-    # GDELT
     for q in queries:
-        try:
-            rows = gdelt_doc_search(q, max_records=max_results_per_query)
-        except Exception:
-            rows = []
-
+        rows = gdelt_doc_search(q, max_records=max_results_per_query)
         for r in rows[:max_results_per_query]:
             url = canonicalize_url(str(r.get("url", "") or ""))
             title = clean_ws(str(r.get("title", "") or ""))
             if not url or not title:
                 continue
-
             dom = domain_of(url)
             pub = parse_gdelt_seendate(str(r.get("published", "") or ""))
-
-            collected.append(
-                to_dict(SourceItem(
-                    title=title,
-                    url=url,
-                    domain=dom,
-                    published=pub,
-                    lang="multi",
-                    tier=trust_tier(dom),
-                    provider="gdelt",
-                    query=q,
-                ))
-            )
-
+            collected.append(to_dict(SourceItem(
+                title=title, url=url, domain=dom, published=pub, lang="multi",
+                tier=trust_tier(dom), provider="gdelt", query=q
+            )))
         time.sleep(0.15)
 
     merged_all = merge_dedupe(existing_fresh + existing_backlog + collected)
-
     fresh_items = [it for it in merged_all if is_fresh(it, fresh_after)]
     backlog_items = [it for it in merged_all if it not in fresh_items]
 
-    # Sort fresh: tier asc, published desc
     fresh_items = sorted(
         fresh_items,
         key=lambda x: (int(x.get("tier", 9)), -int(pub_dt(x).timestamp())),
@@ -427,7 +369,6 @@ def collect_for_topic(topic_id: str) -> Dict[str, Any]:
         status = "OK"
         fresh_written = len(fresh_items)
     else:
-        # Accumulate only; keep fresh empty so downstream topic run can skip
         write_json(fresh_path, [])
         write_json(backlog_path, merge_dedupe(existing_backlog + collected)[:backlog_max])
         status = "SKIP"
@@ -448,37 +389,56 @@ def collect_for_topic(topic_id: str) -> Dict[str, Any]:
 
     print(
         f"[{topic_id}] status={status} collected={len(collected)} "
-        f"fresh_written={fresh_written} backlog={snapshot['backlog_now']} "
-        f"(min_fresh={min_fresh_sources}, window={freshness_hours}h)"
+        f"fresh_written={fresh_written} backlog={snapshot['backlog_now']}"
     )
     return snapshot
 
 
 def main() -> None:
+    Path("data").mkdir(parents=True, exist_ok=True)
+    summary_path = Path("data") / "collect_run_summary.json"
+
     topic_ids = discover_topic_ids()
-    if not topic_ids:
-        raise RuntimeError("No topics found. Add topics/topic-*.json or set TOPIC_ID/TOPIC_IDS.")
+    print("Discovered topic_ids:", topic_ids)
 
     results: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
     failed = 0
+
+    if not topic_ids:
+        errors.append({
+            "topic_id": None,
+            "error": "No topics found. Ensure topics/topic-*.json exist and are committed.",
+            "traceback": "",
+        })
+        failed = 1
+        write_json(summary_path, {
+            "results": results,
+            "errors": errors,
+            "failed": failed,
+            "timestamp_utc": now_utc().isoformat().replace("+00:00", "Z"),
+        })
+        print("ERROR: no topics found (topics/ missing or empty).")
+        return
 
     for tid in topic_ids:
         try:
             results.append(collect_for_topic(tid))
         except Exception as e:
             failed += 1
+            tb = traceback.format_exc()
+            errors.append({"topic_id": tid, "error": str(e), "traceback": tb})
             print(f"[{tid}] ERROR: {e}")
+            print(tb)
 
-    Path("data").mkdir(parents=True, exist_ok=True)
-    write_json(
-        Path("data") / "collect_run_summary.json",
-        {"results": results, "failed": failed, "timestamp_utc": now_utc().isoformat().replace("+00:00", "Z")},
-    )
+    write_json(summary_path, {
+        "results": results,
+        "errors": errors,
+        "failed": failed,
+        "timestamp_utc": now_utc().isoformat().replace("+00:00", "Z"),
+    })
 
-    if failed:
-        print(f"Collect completed with failures: {failed}")
-    else:
-        print("Collect completed successfully for all topics.")
+    print(f"Collect done. ok={len(results)} failed={failed}")
 
 
 if __name__ == "__main__":
