@@ -17,6 +17,10 @@
     <itunes:category text="News"><itunes:category text="Politics"/></itunes:category>
     <item>
       <title>Episode 4: Litigation Risks, IP Conflicts, and Global Security Threats</title>
+      <itunes:owner>
+        <itunes:name>Agenda</itunes:name>
+        <itunes:email>deep.dive.podcast@unloca.com</itunes:email>
+      </itunes:owner>
       <itunes:title>Episode 4: Litigation Risks, IP Conflicts, and Global Security Threats</itunes:title>
       <guid isPermaLink="false">agenda-18349874</guid>
       <pubDate>Sun, 14 Dec 2025 05:00:00 +0000</pubDate>
