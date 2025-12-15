@@ -32,5 +32,12 @@
     "timer_boxcolor": "black@0.40",
     "boxborderw": 18,
     "timer_boxborderw": 14
+
+    "kenburns_enabled": true,
+    "kenburns_zoom_end": 1.10,
+    "kenburns_seconds": 18,
+    "kenburns_direction": "diag",
+    "bg_blur_sigma": 18,
+    "bg_dark_overlay": 0.38
   }
 }
