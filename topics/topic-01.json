@@ -7,7 +7,9 @@
   "gemini_model": "gemini-2.5-flash",
   "language": "EN",
 
-  "premium": false,
+  "premium_tts": false,
+  "piper_voice_a": "en_US-ryan-medium",
+  "piper_voice_b": "en_US-amy-medium"
 
   "queries": [
     "USCIS processing freeze",
