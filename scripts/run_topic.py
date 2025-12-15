@@ -5,7 +5,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-
+from image_fetch import select_and_download_backgrounds
 from script_generate import generate_30min_script_and_chapters
 from tts_generate import tts_chunks_to_mp3
 from video_render import render_waveform_video
@@ -360,7 +360,43 @@ def main():
         raise RuntimeError(f"Missing cover: {cover}")
 
     mp4_path = out_dir / f"{base_name}.mp4"
+    # ---- Download trusted background images (temporary) ----
+    tmp_img_dir = OUT_DIR / "_tmp_bg_images"
+    bg_images = []
+    picked = []
+    try:
+    # items_for_script — ваш список источников, лучше свежие + топ по trust tier
+    bg_images, picked = select_and_download_backgrounds(
+        items=items_for_script,
+        tmp_dir=tmp_img_dir,
+        max_images=int(topic.get("max_bg_images", 8)),
+    )
+    print(f"[{TOPIC_ID}] backgrounds downloaded: {len(bg_images)}")
+        except Exception as e:
+    print(f"[{TOPIC_ID}] background download skipped: {e}")
+    bg_images = []
 
+# Render video with slideshow backgrounds if available
+render_waveform_video(
+    cover_png=cover,
+    mp3_path=mp3_path,
+    mp4_path=mp4_path,
+    chapters=chapters,
+    topic_cfg=topic,
+    bg_images=bg_images if bg_images else None,
+)
+
+# Cleanup temp images after video creation
+try:
+    for p in bg_images:
+        try:
+            p.unlink()
+        except Exception:
+            pass
+    if tmp_img_dir.exists():
+        tmp_img_dir.rmdir()
+except Exception:
+    pass
     render_waveform_video(
         cover_png=cover,
         mp3_path=mp3_path,
