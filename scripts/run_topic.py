@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
-import hashlib
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,8 +15,6 @@ from typing import Any, Dict, List, Tuple
 import requests
 
 from tts_generate import tts_chunks_to_mp3, script_to_tts_chunks
-
-# Your generator must exist in scripts/script_generate.py
 from script_generate import generate_30min_script_and_chapters
 
 TOPICS_DIR = Path("topics")
@@ -226,38 +224,25 @@ def pick_sources_for_script(topic: Dict[str, Any], fresh: List[Dict[str, Any]], 
 # Chapters FFmetadata
 # -------------------------
 def write_ffmetadata(chapters: List[Dict[str, Any]], out_path: Path) -> None:
-    """
-    Writes FFmpeg metadata for chapters.
-    Each chapter dict should include: title, start_sec, end_sec.
-    """
-    lines: List[str] = []
-    lines.append(";FFMETADATA1")
+    lines: List[str] = [";FFMETADATA1"]
 
     for ch in chapters:
         if not isinstance(ch, dict):
             continue
-
         try:
-            title_val = ch.get("title", "Segment")
-            title = str(title_val).strip()
-
-            start_val = ch.get("start_sec", 0)
-            end_val = ch.get("end_sec", None)
-
-            start = int(float(start_val))
-            if end_val is None:
-                end = start + 1
-            else:
-                end = int(float(end_val))
-
+            title = str(ch.get("title", "Segment")).strip() or "Segment"
+            start = int(float(ch.get("start_sec", 0)))
+            end = int(float(ch.get("end_sec", start + 1)))
             if end <= start:
                 end = start + 1
 
-            lines.append("[CHAPTER]")
-            lines.append("TIMEBASE=1/1")
-            lines.append(f"START={start}")
-            lines.append(f"END={end}")
-            lines.append(f"title={title}")
+            lines += [
+                "[CHAPTER]",
+                "TIMEBASE=1/1",
+                f"START={start}",
+                f"END={end}",
+                f"title={title}",
+            ]
         except Exception:
             continue
 
@@ -286,36 +271,23 @@ def main() -> None:
 
     topic = load_topic(topic_id)
 
-    # -------------------------
-    # PREMIUM FLAG (IMPORTANT)
-    # Accept both keys:
-    #   - "premium": false
-    #   - "premium_tts": false
-    # Default is FALSE (safe) so you don't accidentally burn Gemini quota.
-    # -------------------------
-    premium_flag = topic.get("premium", None)
-    if premium_flag is None:
-        premium_flag = topic.get("premium_tts", None)
-    premium_tts = bool(premium_flag) if premium_flag is not None else False
+    premium_tts = bool(topic.get("premium_tts", True))
 
-    # Provider resolution:
-    # - If premium_tts true AND key exists => gemini
-    # - Else => piper
-    provider = "gemini" if (premium_tts and bool(gemini_api_key)) else "piper"
+    # Script generation model (text model, NOT TTS model)
+    script_model = (os.getenv("GEMINI_SCRIPT_MODEL", "") or "").strip() or str(topic.get("gemini_model", "gemini-2.5-flash")).strip()
 
-    gemini_model_env = (os.getenv("GEMINI_TTS_MODEL", "") or "").strip()
-    gemini_model_topic = (topic.get("gemini_tts_model", "") or "").strip()
-    gemini_model = (gemini_model_env or gemini_model_topic or "").strip()
+    # TTS model for Gemini (optional)
+    gemini_tts_model_env = (os.getenv("GEMINI_TTS_MODEL", "") or "").strip()
+    gemini_tts_model_topic = (topic.get("gemini_tts_model", "") or "").strip()
+    gemini_tts_model = (gemini_tts_model_env or gemini_tts_model_topic) or None
 
-    # Voices (fallbacks are handled in tts_generate defaults, but pass clean strings anyway)
-    voice_a = (os.getenv("VOICE_A", "") or "").strip()
-    voice_b = (os.getenv("VOICE_B", "") or "").strip()
-    piper_voice_a = (os.getenv("PIPER_VOICE_A", "") or "").strip()
-    piper_voice_b = (os.getenv("PIPER_VOICE_B", "") or "").strip()
-    piper_model_dir = (os.getenv("PIPER_MODEL_DIR", "assets/piper") or "assets/piper").strip()
+    voice_a = (os.getenv("VOICE_A", "") or "").strip() or None
+    voice_b = (os.getenv("VOICE_B", "") or "").strip() or None
+    piper_voice_a = (os.getenv("PIPER_VOICE_A", "") or "").strip() or str(topic.get("piper_voice_a", "") or "").strip() or None
+    piper_voice_b = (os.getenv("PIPER_VOICE_B", "") or "").strip() or str(topic.get("piper_voice_b", "") or "").strip() or None
+    piper_model_dir = (os.getenv("PIPER_MODEL_DIR", "") or "").strip() or "assets/piper"
 
     fresh, backlog = load_sources_for_topic(topic_id)
-
     min_fresh = int(topic.get("min_fresh_sources", 20))
     print(f"[{topic_id}] fresh={len(fresh)}, backlog_total={len(backlog)}", flush=True)
 
@@ -338,14 +310,15 @@ def main() -> None:
         "topic_id": topic_id,
         "timestamp_utc": utc_now_iso(),
         "premium_tts": premium_tts,
-        "provider_requested": provider,
-        "tts_engine": provider,  # may become "piper" if gemini falls back (we detect marker below)
-        "gemini_model": gemini_model_env or gemini_model_topic or None,
+        "provider_requested": "gemini" if premium_tts else "piper",
+        "tts_engine": "gemini" if premium_tts else "piper",
+        "gemini_model": gemini_tts_model,
         "voices": {
-            "gemini": {"A": voice_a or None, "B": voice_b or None},
-            "piper": {"A": piper_voice_a or None, "B": piper_voice_b or None},
+            "gemini": {"A": voice_a, "B": voice_b},
+            "piper": {"A": piper_voice_a, "B": piper_voice_b},
         },
         "piper_model_dir": piper_model_dir,
+        "script_model": script_model,
         "fresh_count": len(fresh),
         "backlog_count": len(backlog),
         "skipped": False,
@@ -372,37 +345,22 @@ def main() -> None:
     paths = topic_paths(topic_id)
     save_json(paths["picked"], picked)
 
-    # Generate script + chapters
-    gen = None
-    try:
-        gen = generate_30min_script_and_chapters(topic=topic, sources=picked)
-    except TypeError:
-        # Backward-compatible call signature
-        gen = generate_30min_script_and_chapters(topic_id, topic, picked)
+    # Generate script + chapters (Gemini text)
+    gen = generate_30min_script_and_chapters(topic=topic, sources=picked, api_key=gemini_api_key, model=script_model)
 
-    script_text: str = ""
-    chapters: List[Dict[str, Any]] = []
+    script_text = str(gen.get("script", "") or "").strip()
+    chapters = gen.get("chapters", [])
+    if not isinstance(chapters, list):
+        chapters = []
 
-    if isinstance(gen, tuple) and len(gen) >= 2:
-        script_text = str(gen[0] or "")
-        if isinstance(gen[1], list):
-            chapters = gen[1]
-    elif isinstance(gen, dict):
-        script_text = str(gen.get("script") or gen.get("script_text") or "")
-        ch = gen.get("chapters")
-        if isinstance(ch, list):
-            chapters = ch
-    else:
-        script_text = str(gen or "")
-
-    if not script_text.strip():
+    if not script_text:
         raise RuntimeError("Script generator returned empty script.")
 
     script_path.write_text(script_text, encoding="utf-8")
     save_json(chapters_path, chapters)
     write_ffmetadata(chapters, ffmeta_path)
 
-    # Create TTS chunks
+    # Create TTS chunks (IMPORTANT: parser no longer drops untagged text)
     tts_chunks = script_to_tts_chunks(script_text)
     if not tts_chunks:
         raise RuntimeError("No dialogue turns parsed from script.")
@@ -414,12 +372,12 @@ def main() -> None:
             tts_chunks,
             mp3_path,
             api_key=gemini_api_key,
-            provider=provider,                 # <-- critical: forces Piper when premium=false
-            gemini_model=gemini_model or os.getenv("GEMINI_TTS_MODEL", ""),
-            voice_a=voice_a or "Kore",
-            voice_b=voice_b or "Puck",
-            piper_voice_a=piper_voice_a or "en_US-amy-medium",
-            piper_voice_b=piper_voice_b or "en_US-ryan-medium",
+            premium=premium_tts,
+            gemini_model=gemini_tts_model,
+            voice_a=voice_a,
+            voice_b=voice_b,
+            piper_voice_a=piper_voice_a,
+            piper_voice_b=piper_voice_b,
             piper_model_dir=piper_model_dir,
         )
     except Exception as e:
@@ -429,52 +387,30 @@ def main() -> None:
 
     summary["tts_seconds"] = round(time.time() - t0, 2)
 
-    # Detect Gemini quota fallback marker (if tts_generate switched to Piper mid-run)
-    quota_marker = Path(os.getenv("TTS_QUOTA_MARKER", "outputs/_tts_quota_exceeded.txt"))
-    if quota_marker.exists():
-        try:
-            summary["tts_engine"] = "piper_fallback"
-            summary["quota_marker"] = quota_marker.read_text(encoding="utf-8").strip()[:800]
-        except Exception:
-            summary["tts_engine"] = "piper_fallback"
-
     # Video render (best effort)
     disable_video = (os.getenv("DISABLE_VIDEO", "0").strip().lower() in ("1", "true", "yes", "y"))
     video_ok = False
 
     if not disable_video:
         try:
-            import video_render  # type: ignore
-
-            render_fn = None
-            if hasattr(video_render, "render_background_video"):
-                render_fn = getattr(video_render, "render_background_video")
-            elif hasattr(video_render, "render_waveform_video"):
-                render_fn = getattr(video_render, "render_waveform_video")
-
-            if render_fn is None:
-                raise RuntimeError("video_render has no render_background_video/render_waveform_video")
+            from video_render import render_background_video  # full stable API
 
             overlay = topic.get("video_overlay", {}) if isinstance(topic.get("video_overlay", {}), dict) else {}
             intro_text = str(topic.get("intro_text", "") or "").strip()
             outro_text = str(topic.get("outro_text", "") or "").strip()
 
-            try:
-                render_fn(
-                    topic_id=topic_id,
-                    topic=topic,
-                    mp3_path=str(mp3_path),
-                    out_mp4=str(mp4_path),
-                    chapters=chapters,
-                    ffmeta_path=str(ffmeta_path),
-                    overlay=overlay,
-                    intro_text=intro_text,
-                    outro_text=outro_text,
-                    sources=picked,
-                )
-            except TypeError:
-                # Very old signature fallback
-                render_fn(str(mp3_path), str(mp4_path))
+            render_background_video(
+                topic_id=topic_id,
+                topic=topic,
+                mp3_path=str(mp3_path),
+                out_mp4=str(mp4_path),
+                chapters=chapters,
+                ffmeta_path=str(ffmeta_path),
+                overlay=overlay,
+                intro_text=intro_text,
+                outro_text=outro_text,
+                sources=picked,
+            )
 
             if mp4_path.exists() and mp4_path.stat().st_size > 1000:
                 video_ok = True
@@ -508,8 +444,8 @@ def main() -> None:
     )
 
     print(
-        f"[{topic_id}] OK. assets={list(assets_uploaded.keys())} "
-        f"provider_requested={provider} tts_engine={summary.get('tts_engine')} video_ok={video_ok}",
+        f"[{topic_id}] OK. assets={list(assets_uploaded.keys())} provider_requested={summary['provider_requested']} "
+        f"tts_engine={summary['tts_engine']} video_ok={video_ok}",
         flush=True,
     )
 
