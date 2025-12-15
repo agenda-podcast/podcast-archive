@@ -1,6 +1,6 @@
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 DEFAULTS = {
@@ -23,6 +23,10 @@ DEFAULTS = {
     "timer_boxcolor": "black@0.40",
     "boxborderw": 18,
     "timer_boxborderw": 14,
+
+    # Background styling
+    "bg_blur_sigma": 18,         # light blur
+    "bg_dark_overlay": 0.38,     # black alpha over background
 }
 
 
@@ -58,7 +62,6 @@ def _clean_chapters(chapters: List[Dict[str, Any]], total_sec: int) -> List[Dict
         cleaned.append({"start_sec": s, "title": t})
 
     cleaned.sort(key=lambda x: x["start_sec"])
-
     if not cleaned or cleaned[0]["start_sec"] != 0:
         cleaned.insert(0, {"start_sec": 0, "title": "Overview"})
 
@@ -252,19 +255,43 @@ def _build_intro_outro_filters(total_sec: int, cfg: Dict[str, Any]) -> str:
     return ",".join(filters)
 
 
+def _make_concat_image_list(bg_images: List[Path], durations: List[int], list_path: Path) -> None:
+    """
+    FFmpeg concat demuxer list:
+      file '/abs/path/image.jpg'
+      duration 12
+    Last file must be repeated without duration to avoid bug.
+    """
+    assert len(bg_images) == len(durations)
+    lines = []
+    for img, dur in zip(bg_images, durations):
+        lines.append(f"file '{img.absolute()}'")
+        lines.append(f"duration {max(1, int(dur))}")
+
+    # repeat last file
+    lines.append(f"file '{bg_images[-1].absolute()}'")
+    list_path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def render_waveform_video(
     cover_png: Path,
     mp3_path: Path,
     mp4_path: Path,
     chapters: List[Dict[str, Any]],
-    topic_cfg: Dict[str, Any] | None = None
+    topic_cfg: Dict[str, Any] | None = None,
+    bg_images: Optional[List[Path]] = None,
 ) -> None:
+    """
+    If bg_images provided: create slideshow background aligned to chapter windows.
+    Else: use cover as static background.
+    Applies blur + dark overlay to background to improve text readability.
+    """
     mp4_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if not cover_png.exists():
-        raise RuntimeError(f"Cover image not found: {cover_png}")
     if not mp3_path.exists():
         raise RuntimeError(f"Audio file not found: {mp3_path}")
+    if not cover_png.exists():
+        raise RuntimeError(f"Cover image not found: {cover_png}")
 
     total_sec = _ffprobe_duration_sec(mp3_path)
     ch_clean = _clean_chapters(chapters, total_sec)
@@ -276,24 +303,75 @@ def render_waveform_video(
     chapter_draw = _build_filters_for_chapters(ch_clean, total_sec, cfg)
     intro_outro_draw = _build_intro_outro_filters(total_sec, cfg)
 
-    filter_complex = (
-        "[0:v]scale=1920:1080,format=yuv420p[bg];"
-        "[1:a]showwaves=s=1920x280:mode=line:rate=25,format=rgba[w];"
-        "[bg][w]overlay=0:750:format=auto[v0]"
+    blur_sigma = int(cfg.get("bg_blur_sigma", 18))
+    dark_alpha = float(cfg.get("bg_dark_overlay", 0.38))
+    dark_alpha = max(0.0, min(0.85, dark_alpha))
+
+    # ---- Build background input ----
+    inputs = []
+    filter_parts = []
+
+    # Input 0 will be background video (either slideshow or static cover)
+    if bg_images and len(bg_images) >= 1:
+        # Build durations per chapter window (or evenly split if mismatch)
+        windows = _chapter_windows(ch_clean, total_sec)
+        if len(bg_images) >= len(windows):
+            use_images = bg_images[:len(windows)]
+        else:
+            # cycle images
+            use_images = [bg_images[i % len(bg_images)] for i in range(len(windows))]
+
+        durations = []
+        for w in windows:
+            start, end = int(w["start"]), int(w["end"])
+            durations.append(max(1, end - start))
+
+        concat_list = mp4_path.with_suffix(".bg_concat.txt")
+        _make_concat_image_list(use_images, durations, concat_list)
+
+        # background from concat demuxer
+        inputs += ["-f", "concat", "-safe", "0", "-i", str(concat_list)]
+        bg_input_index = 0
+        concat_list_path = concat_list
+    else:
+        # static cover loop
+        inputs += ["-loop", "1", "-i", str(cover_png)]
+        bg_input_index = 0
+        concat_list_path = None
+
+    # Input 1 = audio
+    inputs += ["-i", str(mp3_path)]
+    # Input 2 = metadata
+    inputs += ["-i", str(meta_path)]
+
+    # Background styling: scale -> blur -> dark overlay
+    # Use gblur for quality; drawbox for dark overlay
+    filter_parts.append(
+        f"[{bg_input_index}:v]scale=1920:1080,format=yuv420p,"
+        f"gblur=sigma={blur_sigma},"
+        f"drawbox=x=0:y=0:w=iw:h=ih:color=black@{dark_alpha}:t=fill"
+        f"[bg];"
     )
+
+    # Waveform from audio stream
+    filter_parts.append(
+        "[1:a]showwaves=s=1920x280:mode=line:rate=25,format=rgba[w];"
+    )
+
+    # Composite waveform over background
+    filter_parts.append("[bg][w]overlay=0:750:format=auto[v0]")
 
     overlays = ",".join([x for x in [intro_outro_draw, chapter_draw] if x])
     if overlays:
-        filter_complex += f";[v0]{overlays}[v]"
+        filter_complex = "".join(filter_parts) + f";[v0]{overlays}[v]"
         video_map = "[v]"
     else:
+        filter_complex = "".join(filter_parts)
         video_map = "[v0]"
 
-    subprocess.check_call([
+    cmd = [
         "ffmpeg", "-y",
-        "-loop", "1", "-i", str(cover_png),
-        "-i", str(mp3_path),
-        "-i", str(meta_path),
+        *inputs,
         "-filter_complex", filter_complex,
         "-map", video_map,
         "-map", "1:a",
@@ -306,258 +384,18 @@ def render_waveform_video(
         "-c:a", "aac",
         "-b:a", "192k",
         str(mp4_path)
-    ])
+    ]
 
-    try:
-        meta_path.unlink()
-    except Exception:
-        pass    lines = [";FFMETADATA1"]
+    subprocess.check_call(cmd)
 
-    if len(chapters) == 1:
-        title = chapters[0]["title"].replace("\n", " ").strip()
-        lines += [
-            "[CHAPTER]",
-            "TIMEBASE=1/1",
-            "START=0",
-            f"END={max(1, total_sec)}",
-            f"title={title}",
-        ]
-        meta_path.write_text("\n".join(lines), encoding="utf-8")
-        return
-
-    for i, ch in enumerate(chapters):
-        start = int(ch["start_sec"])
-        if i + 1 < len(chapters):
-            next_start = int(chapters[i + 1]["start_sec"])
-            end = max(start + 1, min(total_sec, next_start - 1))
-        else:
-            end = max(start + 1, total_sec)
-
-        title = ch["title"].replace("\n", " ").strip() or f"Chapter {i + 1}"
-        lines += [
-            "[CHAPTER]",
-            "TIMEBASE=1/1",
-            f"START={start}",
-            f"END={end}",
-            f"title={title}",
-        ]
-
-    meta_path.write_text("\n".join(lines), encoding="utf-8")
-
-
-def _escape_drawtext(s: str) -> str:
-    s = (s or "")
-    s = s.replace("\\", "\\\\")
-    s = s.replace(":", "\\:")
-    s = s.replace("'", "\\'")
-    s = s.replace("\n", " ")
-    return s
-
-
-def _chapter_windows(chapters: List[Dict[str, Any]], total_sec: int) -> List[Dict[str, Any]]:
-    windows = []
-    for i, ch in enumerate(chapters):
-        start = int(ch["start_sec"])
-        if i + 1 < len(chapters):
-            end = max(start, int(chapters[i + 1]["start_sec"]) - 1)
-        else:
-            end = total_sec
-        windows.append({"start": start, "end": end, "title": ch["title"]})
-    return windows
-
-
-def _cfg(topic_cfg: Dict[str, Any]) -> Dict[str, Any]:
-    v = topic_cfg.get("video_overlay") if isinstance(topic_cfg, dict) else None
-    v = v if isinstance(v, dict) else {}
-    merged = dict(DEFAULTS)
-    for k, val in v.items():
-        merged[k] = val
-    return merged
-
-
-def _build_filters_for_chapters(chapters: List[Dict[str, Any]], total_sec: int, cfg: Dict[str, Any]) -> str:
-    windows = _chapter_windows(chapters, total_sec)
-    filters = []
-
-    font = str(cfg["font_family"])
-    title_fs = int(cfg["title_fontsize"])
-    timer_fs = int(cfg["timer_fontsize"])
-
-    title_x = str(cfg["title_x"])
-    title_y = str(cfg["title_y"])
-    timer_x = str(cfg["timer_x"])
-    timer_y = str(cfg["timer_y"])
-
-    boxcolor = str(cfg["boxcolor"])
-    timer_boxcolor = str(cfg["timer_boxcolor"])
-    boxborderw = int(cfg["boxborderw"])
-    timer_boxborderw = int(cfg["timer_boxborderw"])
-
-    for w in windows:
-        start = int(w["start"])
-        end = int(w["end"])
-        title = _escape_drawtext(w["title"])
-        enable = f"between(t,{start},{end})"
-
-        # Title lower-third
-        filters.append(
-            "drawtext="
-            f"font='{font}':"
-            f"text='{title}':"
-            f"x={title_x}:"
-            f"y={title_y}:"
-            f"fontsize={title_fs}:"
-            "fontcolor=white:"
-            "box=1:"
-            f"boxcolor={boxcolor}:"
-            f"boxborderw={boxborderw}:"
-            f"enable='{enable}'"
-        )
-
-        # Segment timer (elapsed within the current chapter) MM:SS
-        timer_expr = (
-            "%{eif\\:(t-" + str(start) + ")/60\\:d2}"
-            ":%{eif\\:mod(t-" + str(start) + ",60)\\:d2}"
-        )
-
-        filters.append(
-            "drawtext="
-            f"font='{font}':"
-            f"text='{timer_expr}':"
-            f"x={timer_x}:"
-            f"y={timer_y}:"
-            f"fontsize={timer_fs}:"
-            "fontcolor=white:"
-            "box=1:"
-            f"boxcolor={timer_boxcolor}:"
-            f"boxborderw={timer_boxborderw}:"
-            f"enable='{enable}'"
-        )
-
-    return ",".join(filters)
-
-
-def _build_intro_outro_filters(total_sec: int, cfg: Dict[str, Any]) -> str:
-    filters = []
-
-    intro_text = _escape_drawtext(str(cfg["intro_text"]))
-    outro_text = _escape_drawtext(str(cfg["outro_text"]))
-
-    intro_seconds = int(cfg["intro_seconds"])
-    outro_seconds = int(cfg["outro_seconds"])
-
-    intro_end = max(1, min(intro_seconds, total_sec))
-    outro_start = max(0, total_sec - max(1, outro_seconds))
-
-    font = str(cfg["font_family"])
-    boxcolor = str(cfg["boxcolor"])
-    boxborderw = int(cfg["boxborderw"])
-
-    intro_x = str(cfg["intro_x"])
-    intro_y = str(cfg["intro_y"])
-    outro_x = str(cfg["outro_x"])
-    outro_y = str(cfg["outro_y"])
-
-    if intro_text:
-        filters.append(
-            "drawtext="
-            f"font='{font}':"
-            f"text='{intro_text}':"
-            f"x={intro_x}:"
-            f"y={intro_y}:"
-            "fontsize=40:"
-            "fontcolor=white:"
-            "box=1:"
-            f"boxcolor={boxcolor}:"
-            f"boxborderw={boxborderw}:"
-            f"enable='between(t,0,{intro_end})'"
-        )
-
-    if outro_text:
-        filters.append(
-            "drawtext="
-            f"font='{font}':"
-            f"text='{outro_text}':"
-            f"x={outro_x}:"
-            f"y={outro_y}:"
-            "fontsize=40:"
-            "fontcolor=white:"
-            "box=1:"
-            f"boxcolor={boxcolor}:"
-            f"boxborderw={boxborderw}:"
-            f"enable='between(t,{outro_start},{total_sec})'"
-        )
-
-    return ",".join(filters)
-
-
-def render_waveform_video(
-    cover_png: Path,
-    mp3_path: Path,
-    mp4_path: Path,
-    chapters: List[Dict[str, Any]],
-    topic_cfg: Dict[str, Any] | None = None
-) -> None:
-    """
-    Render MP4:
-      - cover as background
-      - waveform overlay
-      - intro/outro lower-third (per topic config)
-      - chapter title lower-third + segment timer (per topic config)
-      - embedded chapter metadata
-    """
-    mp4_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if not cover_png.exists():
-        raise RuntimeError(f"Cover image not found: {cover_png}")
-    if not mp3_path.exists():
-        raise RuntimeError(f"Audio file not found: {mp3_path}")
-
-    total_sec = _ffprobe_duration_sec(mp3_path)
-    ch_clean = _clean_chapters(chapters, total_sec)
-
-    meta_path = mp4_path.with_suffix(".ffmeta")
-    _write_ffmetadata(meta_path, ch_clean, total_sec)
-
-    cfg = _cfg(topic_cfg or {})
-
-    chapter_draw = _build_filters_for_chapters(ch_clean, total_sec, cfg)
-    intro_outro_draw = _build_intro_outro_filters(total_sec, cfg)
-
-    # Base: cover + waveform => [v0]
-    filter_complex = (
-        "[0:v]scale=1920:1080,format=yuv420p[bg];"
-        "[1:a]showwaves=s=1920x280:mode=line:rate=25,format=rgba[w];"
-        "[bg][w]overlay=0:750:format=auto[v0]"
-    )
-
-    overlays = ",".join([x for x in [intro_outro_draw, chapter_draw] if x])
-    if overlays:
-        filter_complex += f";[v0]{overlays}[v]"
-        video_map = "[v]"
-    else:
-        video_map = "[v0]"
-
-    subprocess.check_call([
-        "ffmpeg", "-y",
-        "-loop", "1", "-i", str(cover_png),
-        "-i", str(mp3_path),
-        "-i", str(meta_path),
-        "-filter_complex", filter_complex,
-        "-map", video_map,
-        "-map", "1:a",
-        "-map_metadata", "2",
-        "-shortest",
-        "-movflags", "+faststart",
-        "-c:v", "libx264",
-        "-crf", "20",
-        "-preset", "veryfast",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        str(mp4_path)
-    ])
-
+    # Cleanup local temp metadata + concat list
     try:
         meta_path.unlink()
     except Exception:
         pass
+
+    if concat_list_path:
+        try:
+            concat_list_path.unlink()
+        except Exception:
+            pass
