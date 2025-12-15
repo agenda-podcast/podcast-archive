@@ -3,176 +3,149 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
-import json
-import hashlib
+import urllib.request
 from pathlib import Path
-from typing import Optional, Tuple
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
+from typing import Dict, List, Tuple, Optional
 
 
-# Default voice pair (male/female)
-VOICES = [
-    "en_US-ryan-medium",  # male
-    "en_US-amy-medium",   # female
-]
+HF_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
-# HuggingFace piper voices repo structure:
-# https://huggingface.co/rhasspy/piper-voices
-BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+
+def _env(name: str, default: str = "") -> str:
+    return (os.getenv(name, "") or default).strip()
+
+
+def _log(msg: str) -> None:
+    print(msg, flush=True)
 
 
 def _parse_voice_id(voice: str) -> Tuple[str, str, str]:
     """
-    Supports common Piper IDs:
-      - en_US-ryan-medium  => locale, name, quality
-    Tolerates extra dashes in name by treating:
-      first token = locale, last token = quality, middle = name
+    voice format: <locale>-<name>-<quality>
+    Examples:
+      en_US-ryan-medium
+      en_US-amy-medium
+      en_GB-alan-low
+
+    Returns: (locale, name, quality)
     """
-    parts = [p for p in voice.split("-") if p.strip()]
+    parts = voice.strip().split("-")
     if len(parts) < 3:
         raise ValueError(f"Unexpected voice id format: {voice}")
-
     locale = parts[0]
     quality = parts[-1]
     name = "-".join(parts[1:-1])
-
-    if "_" not in locale:
+    if "_" not in locale or len(locale) < 4:
         raise ValueError(f"Unexpected locale in voice id: {voice}")
-    if not name:
-        raise ValueError(f"Missing name in voice id: {voice}")
-
     return locale, name, quality
 
 
-def _voice_url(voice: str, ext: str) -> str:
-    # voice: en_US-amy-medium -> en/en_US/amy/medium/en_US-amy-medium.onnx(.json)
+def _voice_urls(voice: str) -> Tuple[str, str]:
     locale, name, quality = _parse_voice_id(voice)
-    lang = locale.split("_")[0]
-    return f"{BASE}/{lang}/{locale}/{name}/{quality}/{voice}{ext}"
+    lang = locale.split("_", 1)[0].lower()
+    base = f"{HF_BASE}/{lang}/{locale}/{name}/{quality}/{voice}"
+    # Piper repo uses <voice>.onnx and <voice>.onnx.json
+    return (base + ".onnx", base + ".onnx.json")
 
 
-def _sha256_file(p: Path) -> str:
-    h = hashlib.sha256()
-    with p.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 256), b""):
-            h.update(chunk)
-    return h.hexdigest()
+def _is_html(data: bytes) -> bool:
+    head = data[:200].lower()
+    return b"<html" in head or b"<!doctype html" in head
 
 
-def _fetch_bytes(url: str, *, retries: int = 3) -> bytes:
-    last_err: Optional[Exception] = None
-    for attempt in range(1, retries + 1):
+def _download(url: str, out_path: Path, retries: int = 3, min_bytes: int = 10_000) -> None:
+    last_err: Optional[str] = None
+    for i in range(1, retries + 1):
         try:
-            req = Request(
+            req = urllib.request.Request(
                 url,
                 headers={
-                    "User-Agent": "agenda-ensure-voices/1.2 (+https://github.com/agenda-podcast/podcast-archive)",
+                    "User-Agent": "agenda-ensure-voices/1.0",
                     "Accept": "*/*",
                 },
-                method="GET",
             )
-            with urlopen(req, timeout=180) as resp:
-                status = getattr(resp, "status", 200)
-                if status >= 400:
-                    raise RuntimeError(f"HTTP {status} while fetching {url}")
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = r.read()
 
-                data = resp.read()
+            if len(data) < min_bytes:
+                # If HF returns an HTML error page it can be small; detect that too.
+                if _is_html(data):
+                    raise RuntimeError(f"Downloaded HTML instead of file ({len(data)} bytes).")
+                raise RuntimeError(f"Downloaded file too small ({len(data)} bytes).")
 
-                # Guard: HF/CDN sometimes returns an HTML block/redirect page
-                # (still HTTP 200). Detect and fail fast.
-                head = data[:200].lstrip().lower()
-                if head.startswith(b"<!doctype html") or head.startswith(b"<html"):
-                    snippet = data[:400].decode("utf-8", "ignore")
-                    raise RuntimeError(f"Got HTML instead of file for {url}: {snippet}")
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_bytes(data)
+            return
 
-                return data
-
-        except (HTTPError, URLError, TimeoutError, RuntimeError) as e:
-            last_err = e
-            time.sleep(attempt * 2)
+        except Exception as e:
+            last_err = str(e)
+            _log(f"  retry {i}/{retries} failed: {url} -> {last_err}")
+            time.sleep(i * 2)
 
     raise RuntimeError(f"Failed to download after {retries} retries: {url}. Last error: {last_err}")
 
 
-def _ensure_binary(url: str, out: Path, *, min_bytes: int, retries: int = 3) -> None:
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    if out.exists() and out.stat().st_size >= min_bytes:
-        return
-
-    data = _fetch_bytes(url, retries=retries)
-
-    if len(data) < min_bytes:
-        raise RuntimeError(f"Downloaded file too small ({len(data)} bytes): {url}")
-
-    tmp = out.with_suffix(out.suffix + ".tmp")
-    tmp.write_bytes(data)
-    tmp.replace(out)
-
-
-def _ensure_json(url: str, out: Path, *, retries: int = 3) -> None:
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    # If file already exists and parses as JSON, keep it.
-    if out.exists():
-        try:
-            obj = json.loads(out.read_text(encoding="utf-8"))
-            if isinstance(obj, dict):
-                return
-        except Exception:
-            pass  # re-download if invalid
-
-    data = _fetch_bytes(url, retries=retries)
-
-    # Validate JSON content (configs can be only a few KB)
+def _valid_json_file(p: Path) -> bool:
     try:
-        text = data.decode("utf-8")
-        obj = json.loads(text)
-        if not isinstance(obj, dict):
-            raise ValueError("config JSON is not an object")
-    except Exception as e:
-        snippet = data[:400].decode("utf-8", "ignore")
-        raise RuntimeError(f"Config JSON invalid for {url}: {e}. Snippet: {snippet}")
+        obj = json.loads(p.read_text(encoding="utf-8"))
+        return isinstance(obj, dict) and len(obj) > 0
+    except Exception:
+        return False
 
-    tmp = out.with_suffix(out.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(out)
+
+def ensure_voice(voice: str, model_dir: Path, force: bool = False) -> Dict[str, str]:
+    onnx_url, cfg_url = _voice_urls(voice)
+    onnx_path = model_dir / f"{voice}.onnx"
+    cfg_path = model_dir / f"{voice}.onnx.json"
+
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    # Model is large (MBs). Config is small (KBs).
+    need_onnx = force or (not onnx_path.exists()) or (onnx_path.stat().st_size < 500_000)
+    need_cfg = force or (not cfg_path.exists()) or (cfg_path.stat().st_size < 2_000) or (not _valid_json_file(cfg_path))
+
+    if need_onnx:
+        _log(f"  downloading model: {onnx_url}")
+        _download(onnx_url, onnx_path, retries=3, min_bytes=500_000)
+
+    if need_cfg:
+        _log(f"  downloading config: {cfg_url}")
+        # config can be small; validate JSON after download
+        _download(cfg_url, cfg_path, retries=3, min_bytes=2_000)
+        if not _valid_json_file(cfg_path):
+            # If HF served something unexpected
+            raise RuntimeError(f"Downloaded config is not valid JSON: {cfg_path} (size={cfg_path.stat().st_size})")
+
+    return {"model": str(onnx_path), "config": str(cfg_path)}
 
 
 def main() -> None:
-    model_dir = Path(os.getenv("PIPER_MODEL_DIR", "assets/piper")).resolve()
-    model_dir.mkdir(parents=True, exist_ok=True)
+    model_dir = Path(_env("PIPER_MODEL_DIR", "assets/piper"))
+    voices_raw = _env("PIPER_VOICES", "")
+    force = _env("FORCE_VOICES", "0").lower() in ("1", "true", "yes", "y")
 
-    # Allow override: PIPER_VOICES="en_US-ryan-medium,en_US-amy-medium"
-    override = (os.getenv("PIPER_VOICES", "") or "").strip()
-    voices = VOICES
-    if override:
-        voices = [v.strip() for v in override.split(",") if v.strip()]
+    # Defaults (good EN male/female pair)
+    if not voices_raw:
+        voices = ["en_US-ryan-medium", "en_US-amy-medium"]
+    else:
+        voices = [v.strip() for v in voices_raw.split(",") if v.strip()]
 
-    print(f"Ensuring Piper voices in: {model_dir}")
-    print("Voices:", ", ".join(voices))
+    _log(f"Ensuring Piper voices in: {model_dir.resolve()}")
+    _log(f"Voices: {', '.join(voices)}")
 
+    ok: List[str] = []
     for v in voices:
-        onnx = model_dir / f"{v}.onnx"
-        cfg = model_dir / f"{v}.onnx.json"
+        _log(f"- {v}:")
+        files = ensure_voice(v, model_dir, force=force)
+        _log(f"  model:  {Path(files['model']).name}")
+        _log(f"  config: {Path(files['config']).name}")
+        ok.append(v)
 
-        onnx_url = _voice_url(v, ".onnx")
-        cfg_url = _voice_url(v, ".onnx.json")
-
-        print(f"- {v}:")
-        print(f"  model:  {onnx.name}")
-        _ensure_binary(onnx_url, onnx, min_bytes=500_000, retries=3)
-
-        print(f"  config: {cfg.name}")
-        _ensure_json(cfg_url, cfg, retries=3)
-
-        print(f"  ok: size(model)={onnx.stat().st_size} sha256={_sha256_file(onnx)[:12]}...")
-
-    print(f"OK. Piper voices present in {model_dir}")
+    _log(f"Done. Voices ready: {', '.join(ok)}")
 
 
 if __name__ == "__main__":
@@ -180,4 +153,4 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
-        raise
+        sys.exit(1)
