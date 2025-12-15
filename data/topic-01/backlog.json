@@ -2770,5 +2770,49 @@
     "provider": "gdelt",
     "query": "administrative freeze immigration applications",
     "id": "3b4834ecb25bbede2056d2c20680be6c8dc1d528be866332d6de9b32fe24f161"
+  },
+  {
+    "title": "Trump ordered by judge to immediately restore frozen funding | Trump administration - The Guardian",
+    "url": "https://news.google.com/rss/articles/CBMif0FVX3lxTE9nZmVTYzBCV0F3SExadXVYRkF0ZzQ3U2VPM3BVSENWMWlBLWJrVXp0aDlEVk1tS3F0ekt5Y3ZvRjYtQU9xNHB5LTk0MlpJS0lPYlM0cUo4c21YdEtCTDNQMFhFV1lwdzVqdWxBN3RBUWdrWkdQYkl0aXMybnVZMUE?oc=5",
+    "domain": "news.google.com",
+    "published": "2025-02-10T08:00:00Z",
+    "lang": "en",
+    "tier": 9,
+    "provider": "google_news_rss",
+    "query": "immigration case freeze memo",
+    "id": "40b0388b9248a50a1f9501277eaff480694f93508a8c8cafddaa4692abdccee1"
+  },
+  {
+    "title": "Trump administration orders review of Biden-era refugees, memo shows - Reuters",
+    "url": "https://news.google.com/rss/articles/CBMirgFBVV95cUxQeGJnLWV5ZFNaN0JOUGZkU0ZGQ3pVY1Zqa2xIaHZtMEE3QzlXdTEwX29ackxWZUtGVmpHUmdjdktoY2FkQ2FUdkdVNUZoVXRzeENtU0xfNHViVFNCNFNwYTFHdDF4d2Y3eTRjcldXMkh3V1Ryb0RXNkE0TWFkczJoQXMyQkI3ME5OYWpOZldROU1KRmtTbFkwOXNiVE9wYVN5aHlraXZTUzhpYkpuU1E?oc=5",
+    "domain": "news.google.com",
+    "published": "2025-11-24T08:00:00Z",
+    "lang": "en",
+    "tier": 9,
+    "provider": "google_news_rss",
+    "query": "immigration case freeze memo",
+    "id": "e67b2f048a7abe309d080154547c43ceff6d306e24235810cdcf92bcbc35dc2a"
+  },
+  {
+    "title": "Trump administration to review status of all refugees admitted under Biden - NBC News",
+    "url": "https://news.google.com/rss/articles/CBMiowFBVV95cUxNWGpDT3VQLVB6TjNlTllfWGFPOER5bHYyRkZmdXNWSXVSUmtqNS1hb3hFRnA3Nk5wTmxLTUZFSFlRbWZjU0dudzE2ZTBoenZkMnZVT0JIRTJ1VVc1S2VMTGwtSHk4QjRYMmlxNXVSM3RVcTVtNFFXNGswdExmUWN1b2tlOG1hamZyR3E1dkdEcHlMOUM0VWNCSXB4RDM0N2NPNHBR0gFWQVVfeXFMT1J5ZWI3YnNKeVFiSzVpcjBxX2hEM3B1NmtWVUZlcmZqOFZHRE52clJYUVRfYmhnVWZIQW1oZnJuT3psX1JCdXlUa2xlVDlJR1FEMFM5N0E?oc=5",
+    "domain": "news.google.com",
+    "published": "2025-11-25T08:00:00Z",
+    "lang": "en",
+    "tier": 9,
+    "provider": "google_news_rss",
+    "query": "immigration case freeze memo",
+    "id": "ba46837e6630bd5eb976e2b3eb9e25ee8dafb04a9e3511ff35b51625ea84ffb5"
+  },
+  {
+    "title": "Trump Pauses All Asylum Applications and Halts Visas for Afghans - The New York Times",
+    "url": "https://news.google.com/rss/articles/CBMiggFBVV95cUxQZzdPOTJZRDZldXNDaXRHZTFIMjBfamtBTDFwcHpsSmdhRTJJOFkwN2FZcGFQbXkxdEVRSkF4STNxYjBHWDhEV05RRmFQeGpEQVgxdzEwempQa0xGWC16dDNtN2FMelAwVnUzdHF6VXZxeWVDWEp0UkF2b19SZ2dtTXJn?oc=5",
+    "domain": "news.google.com",
+    "published": "2025-11-28T08:00:00Z",
+    "lang": "en",
+    "tier": 9,
+    "provider": "google_news_rss",
+    "query": "administrative freeze immigration applications",
+    "id": "72637de8eb4adcd7b5907e41282f3d98223a63b32b89f676b779c0e9bc1110d0"
   }
 ]

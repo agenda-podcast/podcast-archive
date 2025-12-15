@@ -2,7 +2,7 @@
   "topic_id": "topic-01",
   "status": "SKIP",
   "min_fresh_sources": 20,
-  "freshness_hours": 24,
+  "freshness_hours": 72,
   "queries": [
     "USCIS processing freeze",
     "immigration case freeze memo",
@@ -10,6 +10,6 @@
   ],
   "collected_now": 429,
   "fresh_written": 0,
-  "backlog_now": 252,
-  "timestamp_utc": "2025-12-15T13:26:41.100321Z"
+  "backlog_now": 256,
+  "timestamp_utc": "2025-12-15T13:32:53.968811Z"
 }
