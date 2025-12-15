@@ -6,7 +6,7 @@
       "last_modified": "",
       "content_length": "63201294",
       "sha256": "5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f",
-      "updated_utc": "2025-12-15T16:36:52.398774Z"
+      "updated_utc": "2025-12-15T16:40:55.397974Z"
     },
     "en_US-lessac-medium.onnx.json": {
       "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json",
@@ -14,7 +14,7 @@
       "last_modified": "",
       "content_length": "4885",
       "sha256": "efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0",
-      "updated_utc": "2025-12-15T16:36:52.617084Z"
+      "updated_utc": "2025-12-15T16:40:55.583195Z"
     },
     "en_US-ryan-medium.onnx": {
       "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx",
@@ -22,7 +22,7 @@
       "last_modified": "",
       "content_length": "63201294",
       "sha256": "abf4c274862564ed647ba0d2c47f8ee7c9b717d27bdad9219100eb310db4047a",
-      "updated_utc": "2025-12-15T16:36:53.037798Z"
+      "updated_utc": "2025-12-15T16:40:55.809735Z"
     },
     "en_US-ryan-medium.onnx.json": {
       "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx.json",
@@ -30,8 +30,8 @@
       "last_modified": "",
       "content_length": "4883",
       "sha256": "44034c056cb15681b2ad494307c7f3f2e4499d1253c700c711fa0a4607ffe78d",
-      "updated_utc": "2025-12-15T16:36:53.265899Z"
+      "updated_utc": "2025-12-15T16:40:56.003837Z"
     }
   },
-  "updated_utc": "2025-12-15T16:36:53.265910Z"
+  "updated_utc": "2025-12-15T16:40:56.003845Z"
 }
