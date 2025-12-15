@@ -185,7 +185,7 @@ def main():
     raise RuntimeError(f"Missing cover: {cover}")
 
     mp4_path = out_dir / f"{base_name}.mp4"
-    render_waveform_video(cover, mp3_path, mp4_path, chapters)
+    render_waveform_video(cover, mp3_path, mp4_path, chapters, topic)
 
     # 6) Upload to GitHub Release (tag == topic-id)
     urls = ensure_release_and_upload(
