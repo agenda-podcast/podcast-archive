@@ -3,10 +3,36 @@
   "title": "Agenda — Artificial Intelligence",
   "description": "A rigorous analysis of AI as a general-purpose technology: model economics, compute concentration, data advantages, productivity impact, and the long-term restructuring of industries and competitive moats.",
   "query": "(AI OR robotics OR artificial intelligence OR gpt) AND (United States OR US)",
+
   "min_fresh_sources": 20,
   "min_backlog_sources": 20,
   "retention_days": 14,
   "fresh_hours": 24,
   "max_items_for_script": 60,
-  "max_feed_items": 50
+  "max_feed_items": 50,
+
+  "video_overlay": {
+    "intro_text": "AGENDA • Artificial Intelligence Overview",
+    "outro_text": "Full sources in description • Subscribe to our channel",
+    "intro_seconds": 10,
+    "outro_seconds": 12,
+
+    "title_fontsize": 42,
+    "timer_fontsize": 34,
+
+    "title_x": "(w-text_w)/2",
+    "title_y": "h-220",
+    "timer_x": "w-tw-60",
+    "timer_y": "h-305",
+
+    "intro_x": "60",
+    "intro_y": "h-220",
+    "outro_x": "60",
+    "outro_y": "h-220",
+
+    "boxcolor": "black@0.55",
+    "timer_boxcolor": "black@0.40",
+    "boxborderw": 18,
+    "timer_boxborderw": 14
+  }
 }
