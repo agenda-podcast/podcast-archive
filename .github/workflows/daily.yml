@@ -1,4 +1,4 @@
-name: Daily Overviews (Option A – single writer)
+name: Daily Overviews
 
 on:
   schedule:
