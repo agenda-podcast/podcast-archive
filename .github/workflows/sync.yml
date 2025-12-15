@@ -72,6 +72,24 @@ jobs:
           echo "=== data/episodes.json ==="
           test -f data/episodes.json && (wc -c data/episodes.json; head -n 120 data/episodes.json) || echo "MISSING data/episodes.json"
 
+      - name: Ensure itunes:owner in RSS (hardcoded)
+        run: |
+          RSS_FILE="feed/rss.xml"
+          if [ ! -f "$RSS_FILE" ]; then
+          echo "RSS file not found"
+          exit 1
+          fi
+          if grep -q "<itunes:owner>" "$RSS_FILE"; then
+          echo "itunes:owner already present"
+          exit 0
+          fi
+          echo "Injecting itunes:owner into RSS"
+          sed -i '/<itunes:author>/a\
+          <itunes:owner>\n\
+          <itunes:name>Agenda</itunes:name>\n\
+          <itunes:email>deep.dive.podcast@unloca.com</itunes:email>\n\
+          </itunes:owner>' "$RSS_FILE"
+      
       - name: Commit feed + metadata
         run: |
           git config user.name "podcast-bot"
