@@ -173,10 +173,16 @@ def main():
     mp3_path = out_dir / f"{base_name}.mp3"
     tts_to_mp3(script_text, mp3_path, GEMINI_API_KEY)
 
+    # Recompute duration from the actual MP3
+    real_duration = ffprobe_duration_sec(mp3_path)
+
+    # Normalize chapters to match actual duration
+    chapters = normalize_chapters(chapters, real_duration)
+
     # 5) Video: cover + waveform + chapters -> MP4
     cover = Path("assets") / TOPIC_ID / "cover.png"
     if not cover.exists():
-        raise RuntimeError(f"Missing cover: {cover}")
+    raise RuntimeError(f"Missing cover: {cover}")
 
     mp4_path = out_dir / f"{base_name}.mp4"
     render_waveform_video(cover, mp3_path, mp4_path, chapters)
