@@ -4,6 +4,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import wave
@@ -12,6 +13,7 @@ from typing import Dict, Iterable, List, Optional
 
 DEFAULT_GAP_SECONDS = 0.35
 DEFAULT_MAX_CHARS = 360
+PIPER_SAMPLE_RATE = 22050
 
 
 def find_piper_binary() -> str:
@@ -120,7 +122,7 @@ def _split_text(text: str, limit: int = DEFAULT_MAX_CHARS) -> List[str]:
     return parts
 
 
-def _ensure_silence_wav(path: Path, seconds: float = DEFAULT_GAP_SECONDS, sample_rate: int = 22050) -> Path:
+def _ensure_silence_wav(path: Path, seconds: float = DEFAULT_GAP_SECONDS, sample_rate: int = PIPER_SAMPLE_RATE) -> Path:
     """
     Create a small silence wav for padding between utterances (cached on disk).
     """
@@ -167,7 +169,7 @@ def _concat_wavs_to_mp3(wavs: List[Path], out_mp3: Path) -> None:
             "-ac",
             "1",
             "-ar",
-            "22050",
+            str(PIPER_SAMPLE_RATE),
             str(out_mp3),
         ]
         subprocess.check_call(cmd)
@@ -205,12 +207,14 @@ def tts_chunks_to_mp3(
     piper_model_dir: Optional[str] = None,
     gap_seconds: float = DEFAULT_GAP_SECONDS,
     max_chars: int = DEFAULT_MAX_CHARS,
-) -> str:
+) -> tuple[str, str]:
     """
     Convert a list of dialogue chunks to an MP3 file.
 
     chunks: iterable of {"speaker": "A"/"B", "text": "..."}
     premium: if True, attempt premium provider (Gemini); falls back to Piper on errors/misconfig.
+    Returns:
+      (mp3_path, provider_used)
     """
     cache_dir = Path("outputs/_tts_cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -221,7 +225,11 @@ def tts_chunks_to_mp3(
     g_voice_a = gemini_voice_a or os.environ.get("GEMINI_TTS_VOICE_A") or p_voice_a
     g_voice_b = gemini_voice_b or os.environ.get("GEMINI_TTS_VOICE_B") or p_voice_b
 
-    provider = "gemini" if premium and gemini_api_key else "piper"
+    provider_requested = "gemini" if premium and gemini_api_key else "piper"
+    provider = provider_requested if provider_requested == "piper" else "piper"
+    provider_used = provider
+    if provider_requested == "gemini" and provider_used == "piper":
+        print("Gemini TTS requested but not available; falling back to Piper.", file=sys.stderr)
 
     ms_gap = int(round(gap_seconds * 1000))
     silence_wav = _ensure_silence_wav(cache_dir / f"silence_{ms_gap}ms.wav", seconds=gap_seconds)
@@ -255,4 +263,4 @@ def tts_chunks_to_mp3(
         wav_paths = wav_paths[:-1]
 
     _concat_wavs_to_mp3(wav_paths, Path(mp3_path))
-    return mp3_path
+    return mp3_path, provider_used

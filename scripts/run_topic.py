@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 import traceback
@@ -23,6 +24,12 @@ def _utc_now_iso() -> str:
 
 def _today_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d")
+
+
+def _sanitize_tag(tag: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]", "-", tag)
+    cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-")
+    return cleaned or "release"
 
 
 def _load_topic(topic_id: str) -> Dict[str, Any]:
@@ -181,8 +188,7 @@ def main() -> None:
 
         chunks = _script_to_chunks(script_text)
         provider_requested = "gemini" if topic.get("premium_tts") else "piper"
-        provider_used = "piper"  # Gemini TTS not yet implemented; fallback to Piper
-        mp3_out = tts_chunks_to_mp3(
+        mp3_out, provider_used = tts_chunks_to_mp3(
             chunks=chunks,
             mp3_path=str(mp3_path),
             premium=bool(topic.get("premium_tts")),
@@ -217,7 +223,7 @@ def main() -> None:
 
         repo = os.getenv("REPO", "").strip()
         token = os.getenv("GITHUB_TOKEN", "").strip()
-        release_tag = os.getenv("RELEASE_TAG", "").strip() or topic_id
+        release_tag = _sanitize_tag(os.getenv("RELEASE_TAG", "").strip() or topic_id)
         upload_files = [script_path, chapters_path, sources_path, mp3_path]
         if video_ok and mp4_path.exists():
             upload_files.append(mp4_path)
