@@ -11,16 +11,16 @@
     <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
     <lastBuildDate>Mon, 15 Dec 2025 01:44:00 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
+    <itunes:owner>
+      <itunes:name>Agenda</itunes:name>
+      <itunes:email>deep.dive.podcast@unloca.com</itunes:email>
+    </itunes:owner>
     <itunes:type>episodic</itunes:type>
     <itunes:explicit>false</itunes:explicit>
     <itunes:image href="https://agenda-podcast.github.io/podcast-archive/poster.jpg"/>
     <itunes:category text="News"><itunes:category text="Politics"/></itunes:category>
     <item>
       <title>Episode 4: Litigation Risks, IP Conflicts, and Global Security Threats</title>
-      <itunes:owner>
-        <itunes:name>Agenda</itunes:name>
-        <itunes:email>deep.dive.podcast@unloca.com</itunes:email>
-      </itunes:owner>
       <itunes:title>Episode 4: Litigation Risks, IP Conflicts, and Global Security Threats</itunes:title>
       <guid isPermaLink="false">agenda-18349874</guid>
       <pubDate>Sun, 14 Dec 2025 05:00:00 +0000</pubDate>
