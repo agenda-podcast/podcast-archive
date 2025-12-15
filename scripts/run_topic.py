@@ -5,10 +5,11 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-from image_fetch import select_and_download_backgrounds
+
 from script_generate import generate_30min_script_and_chapters
 from tts_generate import tts_chunks_to_mp3
 from video_render import render_waveform_video
+from image_fetch import select_and_download_backgrounds
 
 
 TOPIC_ID = os.environ.get("TOPIC_ID", "topic-01").strip()
@@ -29,7 +30,7 @@ ASSETS_DIR = ROOT / "assets" / TOPIC_ID
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def utc_now_tag() -> str:
+def utc_date_tag() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d")
 
 
@@ -48,62 +49,6 @@ def ffprobe_duration_sec(audio_path: Path) -> int:
         return 1800
 
 
-def normalize_chapters(chapters: List[Dict[str, Any]], total_sec: int) -> List[Dict[str, Any]]:
-    if not chapters:
-        return [{"start_sec": 0, "title": "Overview"}]
-
-    cleaned = []
-    for ch in chapters:
-        if not isinstance(ch, dict):
-            continue
-        try:
-            s = int(ch.get("start_sec", 0))
-        except Exception:
-            s = 0
-        t = str(ch.get("title", "")).strip() or "Segment"
-        cleaned.append({"start_sec": max(0, s), "title": t})
-
-    cleaned.sort(key=lambda x: x["start_sec"])
-    if cleaned[0]["start_sec"] != 0:
-        cleaned.insert(0, {"start_sec": 0, "title": "Overview"})
-
-    # Remove non-increasing
-    dedup = []
-    last = -1
-    for ch in cleaned:
-        if ch["start_sec"] <= last:
-            continue
-        dedup.append(ch)
-        last = ch["start_sec"]
-    cleaned = dedup
-
-    # Scale timestamps to fit total_sec (chapter timing is heuristic)
-    if len(cleaned) > 1:
-        last_start = cleaned[-1]["start_sec"]
-        if last_start > 0:
-            target_last = max(1, int(total_sec * 0.90))
-            scale = target_last / float(last_start)
-            scaled = []
-            for ch in cleaned:
-                s = int(round(ch["start_sec"] * scale))
-                scaled.append({"start_sec": max(0, min(s, max(0, total_sec - 1))), "title": ch["title"]})
-            scaled.sort(key=lambda x: x["start_sec"])
-
-            final = []
-            last = -1
-            for ch in scaled:
-                if ch["start_sec"] <= last:
-                    continue
-                final.append(ch)
-                last = ch["start_sec"]
-
-            if not final or final[0]["start_sec"] != 0:
-                final.insert(0, {"start_sec": 0, "title": "Overview"})
-            cleaned = final
-
-    return cleaned
-
-
 def load_topic() -> Dict[str, Any]:
     topic_path = TOPICS_DIR / f"{TOPIC_ID}.json"
     if not topic_path.exists():
@@ -113,8 +58,7 @@ def load_topic() -> Dict[str, Any]:
 
 def load_sources() -> Tuple[List[Dict[str, Any]], int, int]:
     """
-    Adjust here if your filenames differ.
-    Looks for:
+    Expected files:
       data/<topic>/fresh.json
       data/<topic>/backlog.json
       data/<topic>/sources.json (fallback)
@@ -123,42 +67,46 @@ def load_sources() -> Tuple[List[Dict[str, Any]], int, int]:
     backlog_path = DATA_DIR / "backlog.json"
     sources_path = DATA_DIR / "sources.json"
 
-    fresh = []
-    backlog = []
+    fresh: List[Dict[str, Any]] = []
+    backlog: List[Dict[str, Any]] = []
 
     if fresh_path.exists():
-        fresh = json.loads(fresh_path.read_text(encoding="utf-8"))
-    if backlog_path.exists():
-        backlog = json.loads(backlog_path.read_text(encoding="utf-8"))
-    if (not fresh and not backlog) and sources_path.exists():
-        fresh = json.loads(sources_path.read_text(encoding="utf-8"))
+        x = json.loads(fresh_path.read_text(encoding="utf-8"))
+        if isinstance(x, list):
+            fresh = x
 
-    if not isinstance(fresh, list):
-        fresh = []
-    if not isinstance(backlog, list):
-        backlog = []
+    if backlog_path.exists():
+        x = json.loads(backlog_path.read_text(encoding="utf-8"))
+        if isinstance(x, list):
+            backlog = x
+
+    if (not fresh and not backlog) and sources_path.exists():
+        x = json.loads(sources_path.read_text(encoding="utf-8"))
+        if isinstance(x, list):
+            fresh = x
 
     return fresh, len(fresh), len(backlog)
 
 
 def split_script_by_chapter_markers(script: str) -> List[Dict[str, Any]]:
     """
-    Expects markers:
+    Splits on markers:
       === CHAPTER: Title ===
-    Returns list of {"chapter_title": str, "text": str}
+    Returns:
+      [{"chapter_title": "...", "text": "...SPEAKER_A/B..."}]
     """
-    script = script.replace("\r\n", "\n").replace("\r", "\n").strip()
+    script = (script or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if not script:
         return [{"chapter_title": "Episode", "text": "SPEAKER_A: This is an automated overview."}]
 
-    pattern = r"^=== CHAPTER:\s*(.*?)\s*===$"
+    marker = re.compile(r"^=== CHAPTER:\s*(.*?)\s*===$")
     lines = script.split("\n")
 
     chunks: List[Dict[str, Any]] = []
     cur_title = "Overview"
     cur_lines: List[str] = []
 
-    def flush():
+    def flush() -> None:
         nonlocal cur_lines, cur_title
         text = "\n".join(cur_lines).strip()
         if text:
@@ -166,10 +114,10 @@ def split_script_by_chapter_markers(script: str) -> List[Dict[str, Any]]:
         cur_lines = []
 
     for ln in lines:
-        m = re.match(pattern, ln.strip())
+        m = marker.match(ln.strip())
         if m:
             flush()
-            cur_title = m.group(1).strip() or "Segment"
+            cur_title = (m.group(1) or "").strip() or "Segment"
             continue
         cur_lines.append(ln)
 
@@ -180,9 +128,50 @@ def split_script_by_chapter_markers(script: str) -> List[Dict[str, Any]]:
     return chunks
 
 
+def normalize_chapters(chapters: List[Dict[str, Any]], total_sec: int) -> List[Dict[str, Any]]:
+    """
+    Ensures:
+      - sorted
+      - starts at 0
+      - monotonic increasing
+      - clamped to [0, total_sec-1]
+    """
+    if not chapters:
+        return [{"start_sec": 0, "title": "Overview"}]
+
+    cleaned: List[Dict[str, Any]] = []
+    for ch in chapters:
+        if not isinstance(ch, dict):
+            continue
+        try:
+            s = int(ch.get("start_sec", 0))
+        except Exception:
+            s = 0
+        title = str(ch.get("title", "")).strip() or "Segment"
+        s = max(0, min(s, max(0, total_sec - 1)))
+        cleaned.append({"start_sec": s, "title": title})
+
+    cleaned.sort(key=lambda x: x["start_sec"])
+    if not cleaned or cleaned[0]["start_sec"] != 0:
+        cleaned.insert(0, {"start_sec": 0, "title": "Overview"})
+
+    out: List[Dict[str, Any]] = []
+    last = -1
+    for ch in cleaned:
+        if ch["start_sec"] <= last:
+            continue
+        out.append(ch)
+        last = ch["start_sec"]
+
+    return out if out else [{"start_sec": 0, "title": "Overview"}]
+
+
 def main() -> None:
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY is empty.")
+    if not TOPIC_ID:
+        raise RuntimeError("TOPIC_ID is empty.")
+
     topic = load_topic()
 
     fresh_items, fresh_count, backlog_count = load_sources()
@@ -190,179 +179,37 @@ def main() -> None:
 
     min_fresh = int(topic.get("min_fresh_sources", 20))
     if fresh_count < min_fresh:
-        # Optional: do not fail pipeline; just skip creation.
         raise RuntimeError(f"Not enough fresh sources ({fresh_count} < {min_fresh}).")
 
-    # Limit items passed into script generation
     max_items = int(topic.get("max_items_for_script", 60))
     items_for_script = fresh_items[:max_items]
 
+    # 1) Generate script + chapters
     package = generate_30min_script_and_chapters(topic, items_for_script, GEMINI_API_KEY)
-    script_text = package["script"]
-    chapters = package["chapters"]
+    script_text = package.get("script", "") or ""
+    chapters = package.get("chapters", []) or []
 
-    date_tag = utc_now_tag()
+    date_tag = utc_date_tag()
     base_name = f"{TOPIC_ID}-{date_tag}"
 
-    # Write script artifact
-    (OUT_DIR / f"{base_name}.txt").write_text(script_text, encoding="utf-8")
+    script_path = OUT_DIR / f"{base_name}.txt"
+    script_path.write_text(script_text, encoding="utf-8")
 
-    # TTS by chapter markers -> MP3
+    # 2) TTS by chapters -> MP3
     mp3_path = OUT_DIR / f"{base_name}.mp3"
     tts_chunks = split_script_by_chapter_markers(script_text)
     tts_chunks_to_mp3(tts_chunks, mp3_path, GEMINI_API_KEY)
 
-    # Recompute duration and normalize chapter timestamps
     real_duration = ffprobe_duration_sec(mp3_path)
     chapters = normalize_chapters(chapters, real_duration)
 
-    # Video render
+    # 3) Download background images temporarily (trusted tier) -> render slideshow video
     cover = ASSETS_DIR / "cover.png"
     if not cover.exists():
         raise RuntimeError(f"Missing cover: {cover}")
 
-    mp4_path = OUT_DIR / f"{base_name}.mp4"
-    render_waveform_video(
-        cover_png=cover,
-        mp3_path=mp3_path,
-        mp4_path=mp4_path,
-        chapters=chapters,
-        topic_cfg=topic,
-    )
-
-    # Episode payload (you may already have RSS builder elsewhere)
-    episode = {
-        "topic_id": TOPIC_ID,
-        "title": f"{topic.get('title','Agenda')} — Daily Overview ({date_tag})",
-        "guid": f"{TOPIC_ID}-{date_tag}",
-        "pubDate": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000"),
-        "itunes_duration": real_duration,
-        "description_html": package.get("description_html", ""),
-        "chapters": chapters,
-        "artifacts": {
-            "mp3": str(mp3_path),
-            "mp4": str(mp4_path),
-            "script": str(OUT_DIR / f"{base_name}.txt"),
-        },
-    }
-
-    (OUT_DIR / f"{base_name}.episode.json").write_text(json.dumps(episode, indent=2), encoding="utf-8")
-
-    print(f"[{TOPIC_ID}] OK: mp3={mp3_path.name} ({real_duration}s), mp4={mp4_path.name}")
-
-
-if __name__ == "__main__":
-    main()    # If only one chapter, keep simple
-    if len(cleaned) == 1:
-        return cleaned
-
-    last_start = cleaned[-1]["start_sec"]
-    if last_start <= 0:
-        return [{"start_sec": 0, "title": "Overview"}]
-
-    # Compute scale so that last chapter starts at ~90% of total duration
-    target_last = max(1, int(total_sec * 0.90))
-    scale = target_last / float(last_start)
-
-    # Apply scaling
-    scaled = []
-    for ch in cleaned:
-        s = int(round(ch["start_sec"] * scale))
-        scaled.append({"start_sec": max(0, min(s, max(0, total_sec - 1))), "title": ch["title"]})
-
-    # Re-sort and ensure increasing
-    scaled.sort(key=lambda x: x["start_sec"])
-    final = []
-    last = -1
-    for ch in scaled:
-        if ch["start_sec"] <= last:
-            continue
-        final.append(ch)
-        last = ch["start_sec"]
-
-    if not final or final[0]["start_sec"] != 0:
-        final.insert(0, {"start_sec": 0, "title": "Overview"})
-
-    return final
-
-def utc_today():
-    return datetime.now(timezone.utc).date().isoformat()
-
-def main():
-    if not TOPIC_ID:
-        raise RuntimeError("TOPIC_ID missing")
-    if not REPO:
-        raise RuntimeError("REPO missing")
-    if not GITHUB_TOKEN:
-        raise RuntimeError("GITHUB_TOKEN missing")
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY missing")
-
-    topic_path = Path("topics") / f"{TOPIC_ID}.json"
-    if not topic_path.exists():
-        raise RuntimeError(f"Missing topic config: {topic_path}")
-
-    topic = json.loads(topic_path.read_text(encoding="utf-8"))
-
-    state = load_state(TOPIC_ID)
-
-    # 1) Collect sources (fresh 24h) and append to backlog (kept 14 days)
-    collected = collect_sources(topic, state)
-
-    fresh_count = collected["fresh_count"]
-    backlog_total = collected["backlog_total"]
-
-    print(f"[{TOPIC_ID}] fresh={fresh_count}, backlog_total={backlog_total}")
-
-    # Minimum gating: at least 20 fresh OR accumulate to 20 total backlog
-    MIN_FRESH = int(topic.get("min_fresh_sources", 20))
-    MIN_BACKLOG = int(topic.get("min_backlog_sources", 20))
-
-    should_publish = (fresh_count >= MIN_FRESH) or (backlog_total >= MIN_BACKLOG)
-
-    # Prevent double publish in same UTC day
-    if state.get("last_episode_date") == utc_today():
-        print(f"[{TOPIC_ID}] Already published today; skipping.")
-        should_publish = False
-
-    if not should_publish:
-        save_state(TOPIC_ID, state)
-        print(f"[{TOPIC_ID}] Not enough sources yet. Saved backlog for accumulation.")
-        return
-
-    # 2) Prepare inputs for script: pick top N from backlog (e.g., 30–60)
-    max_items = int(topic.get("max_items_for_script", 60))
-    items = state["backlog"][:max_items]
-
-    # 3) Generate 30-min script + chapters (timestamps) using Gemini
-    package = generate_30min_script_and_chapters(topic, items, GEMINI_API_KEY)
-    script_text = package["script"]
-    chapters = package["chapters"]  # list of {start_sec, title}
-
-    # 4) TTS -> MP3 (Gemini Speech generation)
-    out_dir = Path("out") / TOPIC_ID
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    date_tag = utc_today().replace("-", "")
-    base_name = f"{date_tag}-{TOPIC_ID}"
-    mp3_path = out_dir / f"{base_name}.mp3"
-    tts_to_mp3(script_text, mp3_path, GEMINI_API_KEY)
-
-    # Recompute duration from the actual MP3
-    real_duration = ffprobe_duration_sec(mp3_path)
-
-    # Normalize chapters to match actual duration
-    chapters = normalize_chapters(chapters, real_duration)
-
-    # 5) Video: cover + waveform + chapters -> MP4
-    cover = Path("assets") / TOPIC_ID / "cover.png"
-    if not cover.exists():
-        raise RuntimeError(f"Missing cover: {cover}")
-
-    mp4_path = out_dir / f"{base_name}.mp4"
-    # ---- Download trusted background images (temporary) ----
     tmp_img_dir = OUT_DIR / "_tmp_bg_images"
-    bg_images = []
+    bg_images: List[Path] = []
     picked = []
 
     try:
@@ -377,7 +224,7 @@ def main():
         bg_images = []
         picked = []
 
-    # Render video with slideshow backgrounds if available
+    mp4_path = OUT_DIR / f"{base_name}.mp4"
     render_waveform_video(
         cover_png=cover,
         mp3_path=mp3_path,
@@ -387,7 +234,7 @@ def main():
         bg_images=bg_images if bg_images else None,
     )
 
-    # Cleanup temp images after video creation
+    # 4) Cleanup temp images
     try:
         for p in bg_images:
             try:
@@ -407,38 +254,38 @@ def main():
     except Exception:
         pass
 
-    # 6) Upload to GitHub Release (tag == topic-id)
-    urls = ensure_release_and_upload(
-        repo=REPO,
-        token=GITHUB_TOKEN,
-        tag=RELEASE_TAG,
-        files=[mp3_path, mp4_path]
+    # 5) Save episode descriptor (for RSS/release step)
+    episode = {
+        "topic_id": TOPIC_ID,
+        "title": f"{topic.get('title', 'Agenda')} — Daily Overview ({date_tag})",
+        "guid": f"{TOPIC_ID}-{date_tag}",
+        "pubDate": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000"),
+        "itunes_duration": int(real_duration),
+        "description_html": package.get("description_html", ""),
+        "chapters": chapters,
+        "artifacts": {
+            "mp3": str(mp3_path),
+            "mp4": str(mp4_path),
+            "script": str(script_path),
+        },
+        "backgrounds_used": [
+            {
+                "tier": getattr(x, "tier", None),
+                "domain": getattr(x, "domain", None),
+                "source_url": getattr(x, "source_url", None),
+                "image_url": getattr(x, "image_url", None),
+            }
+            for x in picked
+        ],
+    }
+
+    (OUT_DIR / f"{base_name}.episode.json").write_text(
+        json.dumps(episode, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
-    mp3_url = urls[str(mp3_path.name)]
+    print(f"[{TOPIC_ID}] OK: mp3={mp3_path.name} ({real_duration}s), mp4={mp4_path.name}")
 
-    # 7) Update RSS feed for this topic
-    episode = {
-    "title": f"{topic['title']} — Daily Overview ({utc_today()})",
-    "guid": f"{TOPIC_ID}-{date_tag}",
-    "pubDate": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000"),
-    "enclosure_url": mp3_url,
-    "enclosure_type": "audio/mpeg",
-    "description_html": package["description_html"],
-    "itunes_duration": real_duration,
-    "chapters": chapters,
-}
-
-    update_topic_feed(TOPIC_ID, topic, state, episode)
-
-    # 8) Mark published day + (опционально) очистить backlog или “сдвигать окно”
-    state["last_episode_date"] = utc_today()
-    # Обычно: очищаем backlog, но оставляем “неиспользованные” хвосты
-    used_urls = set([x["url"] for x in items])
-    state["backlog"] = [x for x in state["backlog"] if x["url"] not in used_urls]
-
-    save_state(TOPIC_ID, state)
-    print(f"[{TOPIC_ID}] Published. MP3={mp3_url}")
 
 if __name__ == "__main__":
     main()
