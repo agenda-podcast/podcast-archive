@@ -4,6 +4,7 @@
   "description": "Here we focus on current events, legal analysis, historical context, or lived experiences, often featuring expert interviews on border security, DACA, asylum, integration, or the broken system's future, exploring how politics, law, and community impact immigrants and the nation.",
   "duration_sec": 1800,
   "segment_count": 10,
+  "premium_tts": false
   "gemini_model": "gemini-2.5-flash",
   "language": "EN",
   "queries": [
