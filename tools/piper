@@ -76,7 +76,8 @@ def main():
     # Read stdin to consume input text (piper reads from stdin)
     try:
         _ = sys.stdin.read()
-    except Exception:
+    except (IOError, OSError, KeyboardInterrupt):
+        # Expected errors when reading from stdin in various conditions
         pass
     
     # Parse arguments to find --output_file or --output-file

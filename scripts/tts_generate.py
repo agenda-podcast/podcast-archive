@@ -15,6 +15,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 # -------------------------
+# Constants
+# -------------------------
+MAX_ERROR_MESSAGE_LENGTH = 1200  # Maximum length for error messages from subprocesses
+
+
+# -------------------------
 # Piper binary detection
 # -------------------------
 def find_piper_binary() -> str:
@@ -222,7 +228,7 @@ def _make_silence_wav(ms: int, out_wav: Path) -> None:
     ]
     p = _run(cmd, timeout=300)
     if p.returncode != 0:
-        raise RuntimeError(p.stderr.decode("utf-8", "ignore")[:800])
+        raise RuntimeError(p.stderr.decode("utf-8", "ignore")[:MAX_ERROR_MESSAGE_LENGTH])
 
 
 def _ffconcat_quote(path: Path) -> str:
@@ -250,7 +256,7 @@ def _concat_wavs_to_mp3(wavs: List[Path], out_mp3: Path) -> None:
         ]
         p = _run(cmd, timeout=3600)
         if p.returncode != 0 or (not out_mp3.exists()) or out_mp3.stat().st_size < 1000:
-            raise RuntimeError(p.stderr.decode("utf-8", "ignore")[:1200])
+            raise RuntimeError(p.stderr.decode("utf-8", "ignore")[:MAX_ERROR_MESSAGE_LENGTH])
 
 
 def _piper_tts_wav_bytes(text: str, voice: str, model_dir: Path) -> bytes:
@@ -278,7 +284,7 @@ def _piper_tts_wav_bytes(text: str, voice: str, model_dir: Path) -> bytes:
         p = subprocess.run(cmd, input=(text.strip() + "\n").encode("utf-8"), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
         if p.returncode != 0:
-            stderr_text = p.stderr.decode('utf-8', 'ignore')[:1200]
+            stderr_text = p.stderr.decode('utf-8', 'ignore')[:MAX_ERROR_MESSAGE_LENGTH]
             raise RuntimeError(
                 f"Piper TTS failed with exit code {p.returncode}.\n"
                 f"Command: {' '.join(cmd)}\n"
