@@ -23,12 +23,12 @@ def _ffprobe_duration_sec(audio_path: Path) -> int:
 
 def _clean_chapters(chapters: List[Dict], total_sec: int) -> List[Dict]:
     """
-    Ensure chapters:
-      - list of dicts with start_sec(int) and title(str)
+    Normalize chapters:
+      - ensure dicts with start_sec(int), title(str)
       - sorted
-      - first starts at 0
-      - strictly increasing starts
-      - all starts within [0, total_sec-1]
+      - first chapter at 0
+      - strictly increasing start_sec
+      - clamp to [0, total_sec-1]
     """
     if not chapters:
         return [{"start_sec": 0, "title": "Overview"}]
@@ -50,7 +50,6 @@ def _clean_chapters(chapters: List[Dict], total_sec: int) -> List[Dict]:
     if not cleaned or cleaned[0]["start_sec"] != 0:
         cleaned.insert(0, {"start_sec": 0, "title": "Overview"})
 
-    # Ensure strictly increasing
     out = []
     last = -1
     for ch in cleaned:
@@ -59,19 +58,15 @@ def _clean_chapters(chapters: List[Dict], total_sec: int) -> List[Dict]:
         out.append(ch)
         last = ch["start_sec"]
 
-    if not out:
-        return [{"start_sec": 0, "title": "Overview"}]
-
-    return out
+    return out if out else [{"start_sec": 0, "title": "Overview"}]
 
 
 def _write_ffmetadata(meta_path: Path, chapters: List[Dict], total_sec: int) -> None:
     """
-    Write ffmetadata with accurate chapter START/END.
+    Write ffmetadata chapters with proper START/END.
     """
     lines = [";FFMETADATA1"]
 
-    # If only one chapter, cover whole duration
     if len(chapters) == 1:
         title = chapters[0]["title"].replace("\n", " ").strip()
         lines += [
@@ -92,10 +87,7 @@ def _write_ffmetadata(meta_path: Path, chapters: List[Dict], total_sec: int) -> 
         else:
             end = max(start + 1, total_sec)
 
-        title = str(ch["title"]).replace("\n", " ").strip()
-        if not title:
-            title = f"Chapter {i + 1}"
-
+        title = ch["title"].replace("\n", " ").strip() or f"Chapter {i + 1}"
         lines += [
             "[CHAPTER]",
             "TIMEBASE=1/1",
@@ -107,14 +99,48 @@ def _write_ffmetadata(meta_path: Path, chapters: List[Dict], total_sec: int) -> 
     meta_path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _build_drawtext_filter(chapters: List[Dict], total_sec: int) -> str:
+    """
+    Build drawtext filters to show current chapter title
+    during its active time window.
+    """
+    filters = []
+    font = "Sans"  # system default, no external font required
+
+    for i, ch in enumerate(chapters):
+        start = int(ch["start_sec"])
+        if i + 1 < len(chapters):
+            end = int(chapters[i + 1]["start_sec"]) - 1
+        else:
+            end = total_sec
+
+        title = ch["title"].replace(":", "\\:").replace("'", "\\'")
+        enable = f"between(t,{start},{end})"
+
+        filters.append(
+            "drawtext="
+            f"font='{font}':"
+            f"text='{title}':"
+            "x=(w-text_w)/2:"
+            "y=h-220:"
+            "fontsize=42:"
+            "fontcolor=white:"
+            "box=1:"
+            "boxcolor=black@0.55:"
+            "boxborderw=18:"
+            f"enable='{enable}'"
+        )
+
+    return ",".join(filters)
+
+
 def render_waveform_video(cover_png: Path, mp3_path: Path, mp4_path: Path, chapters: List[Dict]) -> None:
     """
     Render MP4:
       - static cover image (looped)
-      - waveform overlay generated from the audio
-      - embeds chapter metadata
-
-    Requires: ffmpeg, ffprobe installed on runner.
+      - waveform overlay from audio
+      - chapter title overlay synced with playback
+      - embedded chapter metadata
     """
     mp4_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -129,28 +155,24 @@ def render_waveform_video(cover_png: Path, mp3_path: Path, mp4_path: Path, chapt
     meta_path = mp4_path.with_suffix(".ffmeta")
     _write_ffmetadata(meta_path, ch_clean, total_sec)
 
-    # Build video:
-    # - scale cover to 1920x1080
-    # - waveform at bottom
-    # - map metadata from ffmetadata input
-    #
-    # Notes:
-    # - showwaves works well and is deterministic
-    # - we do not attempt speech-to-text subtitles; only chapters
+    drawtext_chain = _build_drawtext_filter(ch_clean, total_sec)
+
     filter_complex = (
         "[0:v]scale=1920:1080,format=yuv420p[bg];"
         "[1:a]showwaves=s=1920x280:mode=line:rate=25,format=rgba[w];"
-        "[bg][w]overlay=0:750:format=auto[v]"
+        "[bg][w]overlay=0:750,format=yuv420p"
     )
 
-    # Use 3 inputs: cover, audio, metadata
+    if drawtext_chain:
+        filter_complex = f"{filter_complex},{drawtext_chain}"
+
     subprocess.check_call([
         "ffmpeg", "-y",
         "-loop", "1", "-i", str(cover_png),
         "-i", str(mp3_path),
         "-i", str(meta_path),
         "-filter_complex", filter_complex,
-        "-map", "[v]",
+        "-map", "0:v",
         "-map", "1:a",
         "-map_metadata", "2",
         "-shortest",
