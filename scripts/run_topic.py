@@ -181,6 +181,7 @@ def main() -> None:
 
         chunks = _script_to_chunks(script_text)
         provider_requested = "gemini" if topic.get("premium_tts") else "piper"
+        tts_engine_used = "piper"
         mp3_out = tts_chunks_to_mp3(
             chunks=chunks,
             mp3_path=str(mp3_path),
@@ -267,8 +268,8 @@ def main() -> None:
         "topic_id": topic_id,
         "timestamp_utc": _utc_now_iso(),
         "premium_tts": bool(topic.get("premium_tts")),
-        "provider_requested": "gemini" if topic.get("premium_tts") else "piper",
-        "tts_engine": "piper" if not topic.get("premium_tts") or not os.getenv("GEMINI_API_KEY") else "gemini",
+        "provider_requested": provider_requested,
+        "tts_engine": locals().get("tts_engine_used", "piper"),
         "gemini_model": os.getenv("GEMINI_SCRIPT_MODEL", "").strip() or topic.get("gemini_model"),
         "voices": {
             "gemini": {"A": os.getenv("GEMINI_TTS_VOICE_A"), "B": os.getenv("GEMINI_TTS_VOICE_B")},
