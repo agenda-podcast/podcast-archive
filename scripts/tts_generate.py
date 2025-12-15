@@ -1,475 +1,343 @@
 import os
 import re
+import time
+import json
+import shutil
+import struct
 import subprocess
 from pathlib import Path
-from typing import List, Tuple, Dict, Any, Union
+from typing import Any, Dict, List, Tuple, Optional
 
-from google import genai
-from google.genai import types
+import requests
 
 
-TTS_MODEL = os.environ.get("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts").strip()
+# -----------------------------
+# ENV
+# -----------------------------
+GEMINI_TTS_MODEL = os.environ.get("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts").strip()
 VOICE_A = os.environ.get("VOICE_A", "Kore").strip()
 VOICE_B = os.environ.get("VOICE_B", "Puck").strip()
 
-PCM_RATE = 24000
-PCM_CHANNELS = 1
-PCM_FORMAT = "s16le"
+TTS_MAX_CHARS_PER_CHUNK = int(os.environ.get("TTS_MAX_CHARS_PER_CHUNK", "3200"))
+TTS_TURN_GAP_MS = int(os.environ.get("TTS_TURN_GAP_MS", "200"))
 
-# Safety: per-chunk text size. Tune via workflow env.
-MAX_CHARS_PER_CHUNK = int(os.environ.get("TTS_MAX_CHARS_PER_CHUNK", "3200"))
-# Optional pause between chunks in ms
-TURN_GAP_MS = int(os.environ.get("TTS_TURN_GAP_MS", "200"))
+# Some providers may error on very long single-line input; keep lines reasonable:
+LINE_WRAP = 240
+
+# Gemini REST (Generative Language API style). Endpoint may evolve; this is robust to "v1beta" family.
+GEMINI_ENDPOINT = os.environ.get("GEMINI_TTS_ENDPOINT", "").strip()
+# If empty, default to a widely used pattern:
+# https://generativelanguage.googleapis.com/v1beta/models/{model}:generateSpeech?key=...
+if not GEMINI_ENDPOINT:
+    GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateSpeech"
 
 
-def parse_dialogue(script: str) -> List[Tuple[str, str]]:
-    turns: List[Tuple[str, str]] = []
-    if not script:
-        return turns
+# -----------------------------
+# Parsing dialogue
+# -----------------------------
+SPEAKER_A_PREFIX = "SPEAKER_A:"
+SPEAKER_B_PREFIX = "SPEAKER_B:"
 
-    for raw in script.splitlines():
+
+def _wrap_lines(text: str, width: int = LINE_WRAP) -> str:
+    """Soft-wrap long lines without breaking words."""
+    out_lines = []
+    for raw in (text or "").splitlines():
         line = raw.strip()
-        if not line or line.startswith("==="):
+        if not line:
+            out_lines.append("")
+            continue
+        while len(line) > width:
+            cut = line.rfind(" ", 0, width)
+            if cut <= 0:
+                cut = width
+            out_lines.append(line[:cut].rstrip())
+            line = line[cut:].lstrip()
+        out_lines.append(line)
+    return "\n".join(out_lines).strip()
+
+
+def parse_dialogue_turns(script_text: str) -> List[Tuple[str, str]]:
+    """
+    Returns list of (speaker, text) where speaker in {"A","B"}.
+    Expects lines starting with SPEAKER_A: or SPEAKER_B:
+    Ignores chapter markers and sources section.
+    """
+    txt = (script_text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+    turns: List[Tuple[str, str]] = []
+    cur_speaker: Optional[str] = None
+    cur_buf: List[str] = []
+
+    def flush() -> None:
+        nonlocal cur_speaker, cur_buf
+        if cur_speaker and cur_buf:
+            body = " ".join([x.strip() for x in cur_buf if x.strip()]).strip()
+            body = re.sub(r"\s+", " ", body).strip()
+            if body:
+                turns.append((cur_speaker, body))
+        cur_speaker = None
+        cur_buf = []
+
+    for line in txt.split("\n"):
+        s = line.strip()
+        if not s:
             continue
 
-        if line.startswith("SPEAKER_A:"):
-            txt = line.split("SPEAKER_A:", 1)[1].strip()
-            if txt:
-                turns.append(("SPEAKER_A", txt))
-        elif line.startswith("SPEAKER_B:"):
-            txt = line.split("SPEAKER_B:", 1)[1].strip()
-            if txt:
-                turns.append(("SPEAKER_B", txt))
-        else:
-            turns.append(("SPEAKER_A", line))
+        # Skip markers
+        if s.startswith("=== CHAPTER:") or s.startswith("=== SOURCES"):
+            continue
+
+        if s.startswith(SPEAKER_A_PREFIX):
+            flush()
+            cur_speaker = "A"
+            cur_buf = [s[len(SPEAKER_A_PREFIX):].strip()]
+            continue
+
+        if s.startswith(SPEAKER_B_PREFIX):
+            flush()
+            cur_speaker = "B"
+            cur_buf = [s[len(SPEAKER_B_PREFIX):].strip()]
+            continue
+
+        # If line does not start with a speaker, treat as continuation if we are inside a turn
+        if cur_speaker:
+            cur_buf.append(s)
+
+    flush()
     return turns
 
 
-def _normalize_text(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "")).strip()
+def chunk_text(text: str, max_chars: int) -> List[str]:
+    """
+    Chunk text into <= max_chars segments, splitting on sentence boundaries if possible.
+    """
+    t = re.sub(r"\s+", " ", (text or "").strip())
+    if not t:
+        return []
 
+    if len(t) <= max_chars:
+        return [t]
 
-def _chunk_turns(turns: List[Tuple[str, str]], max_chars: int) -> List[List[Tuple[str, str]]]:
-    chunks: List[List[Tuple[str, str]]] = []
-    cur: List[Tuple[str, str]] = []
-    cur_len = 0
+    # Split into sentences-ish
+    parts = re.split(r"(?<=[\.\!\?])\s+", t)
+    chunks: List[str] = []
+    cur = ""
 
-    for spk, txt in turns:
-        txt = _normalize_text(txt)
-        if not txt:
+    for p in parts:
+        p = p.strip()
+        if not p:
             continue
-        line = f"{spk}: {txt}\n"
-        line_len = len(line)
-
-        if line_len > max_chars:
-            if cur:
-                chunks.append(cur)
-                cur, cur_len = [], 0
-
-            parts = re.split(r"(?<=[.!?])\s+", txt)
-            sub: List[Tuple[str, str]] = []
-            sub_len = 0
-            for p in parts:
-                p = p.strip()
-                if not p:
-                    continue
-                l = f"{spk}: {p}\n"
-                if sub_len + len(l) > max_chars and sub:
-                    chunks.append(sub)
-                    sub, sub_len = [], 0
-                sub.append((spk, p))
-                sub_len += len(l)
-            if sub:
-                chunks.append(sub)
+        if not cur:
+            cur = p
             continue
-
-        if cur_len + line_len > max_chars and cur:
+        if len(cur) + 1 + len(p) <= max_chars:
+            cur = cur + " " + p
+        else:
             chunks.append(cur)
-            cur, cur_len = [], 0
-
-        cur.append((spk, txt))
-        cur_len += line_len
+            cur = p
 
     if cur:
         chunks.append(cur)
 
-    return chunks if chunks else [[("SPEAKER_A", "This is an automated overview.")]]
+    # If any chunk is still too big, hard-split
+    final: List[str] = []
+    for c in chunks:
+        if len(c) <= max_chars:
+            final.append(c)
+        else:
+            start = 0
+            while start < len(c):
+                final.append(c[start:start + max_chars])
+                start += max_chars
+
+    return final
 
 
-def _build_prompt(turns: List[Tuple[str, str]]) -> str:
-    lines = [f"{spk}: {_normalize_text(txt)}" for spk, txt in turns if _normalize_text(txt)]
-    transcript = "\n".join(lines).strip() or "SPEAKER_A: This is an automated overview."
-    return (
-        "TTS the following conversation between SPEAKER_A and SPEAKER_B.\n"
-        "Style: professional podcast delivery; natural pacing; do not add extra words.\n"
-        "Transcript:\n"
-        f"{transcript}"
-    )
+# -----------------------------
+# WAV helpers
+# -----------------------------
+def _wav_header(num_channels: int, sample_rate: int, bits: int, data_size: int) -> bytes:
+    byte_rate = sample_rate * num_channels * bits // 8
+    block_align = num_channels * bits // 8
+    fmt_chunk_size = 16
+    audio_format = 1  # PCM
+    riff_chunk_size = 36 + data_size
+
+    return b"".join([
+        b"RIFF",
+        struct.pack("<I", riff_chunk_size),
+        b"WAVE",
+        b"fmt ",
+        struct.pack("<IHHIIHH", fmt_chunk_size, audio_format, num_channels, sample_rate, byte_rate, block_align, bits),
+        b"data",
+        struct.pack("<I", data_size),
+    ])
 
 
-def _tts_to_pcm_bytes(client: genai.Client, prompt: str) -> bytes:
-    cfg = types.GenerateContentConfig(
-        response_modalities=["AUDIO"],
-        speech_config=types.SpeechConfig(
-            multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
-                speaker_voice_configs=[
-                    types.SpeakerVoiceConfig(
-                        speaker="SPEAKER_A",
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE_A)
-                        ),
-                    ),
-                    types.SpeakerVoiceConfig(
-                        speaker="SPEAKER_B",
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE_B)
-                        ),
-                    ),
-                ]
-            )
-        ),
-    )
+def write_silence_wav(path: Path, duration_ms: int, sample_rate: int = 24000, num_channels: int = 1, bits: int = 16) -> None:
+    duration_ms = max(0, int(duration_ms))
+    samples = int(sample_rate * duration_ms / 1000)
+    bytes_per_sample = bits // 8
+    data = b"\x00" * (samples * num_channels * bytes_per_sample)
+    hdr = _wav_header(num_channels, sample_rate, bits, len(data))
+    path.write_bytes(hdr + data)
 
-    resp = client.models.generate_content(model=TTS_MODEL, contents=prompt, config=cfg)
+
+def concat_wavs(wav_paths: List[Path], out_wav: Path) -> None:
+    """
+    Concatenate WAV files with same format (PCM). We enforce same format by controlling generation.
+    """
+    # Read all, strip headers, concatenate data.
+    all_data = []
+    sample_rate = 24000
+    num_channels = 1
+    bits = 16
+
+    for p in wav_paths:
+        b = p.read_bytes()
+        if len(b) < 44 or b[:4] != b"RIFF":
+            raise RuntimeError(f"Not a WAV file: {p}")
+        # Extract format quickly
+        # Assume PCM 16-bit 24kHz mono; if different, still try but warn.
+        data = b[44:]
+        all_data.append(data)
+
+    payload = b"".join(all_data)
+    out_wav.write_bytes(_wav_header(num_channels, sample_rate, bits, len(payload)) + payload)
+
+
+def wav_to_mp3(wav_path: Path, mp3_path: Path, bitrate: str = "192k") -> None:
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError("ffmpeg not found on runner. Install ffmpeg or add it to workflow.")
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(wav_path),
+        "-codec:a", "libmp3lame",
+        "-b:a", bitrate,
+        str(mp3_path),
+    ]
+    subprocess.check_call(cmd)
+
+
+# -----------------------------
+# Gemini TTS REST call
+# -----------------------------
+def gemini_tts_wav(text: str, voice: str, api_key: str) -> bytes:
+    """
+    Calls Gemini TTS endpoint and expects WAV bytes back (base64 inside JSON).
+    The exact response schema may vary; this function attempts common fields.
+    """
+    url = GEMINI_ENDPOINT.format(model=GEMINI_TTS_MODEL)
+    params = {"key": api_key}
+
+    # Keep payload conservative; providers change schemas.
+    payload: Dict[str, Any] = {
+        "input": {"text": text},
+        "voice": {"name": voice},
+        "audioConfig": {"audioEncoding": "LINEAR16", "sampleRateHertz": 24000},
+    }
+
+    r = requests.post(url, params=params, json=payload, timeout=120)
+    if r.status_code >= 400:
+        raise RuntimeError(f"TTS HTTP {r.status_code}: {r.text[:400]}")
+
     try:
-        return resp.candidates[0].content.parts[0].inline_data.data
-    except Exception as e:
-        raise RuntimeError(f"TTS returned no audio bytes: {e}")
+        data = r.json()
+    except Exception:
+        raise RuntimeError("TTS response was not JSON.")
+
+    # Common patterns:
+    # data["audioContent"] (base64)
+    # data["audio"]["content"] (base64)
+    # data["candidates"][0]["audio"]["content"] (base64)
+    b64 = None
+    if isinstance(data, dict):
+        if "audioContent" in data:
+            b64 = data.get("audioContent")
+        elif "audio" in data and isinstance(data["audio"], dict):
+            b64 = data["audio"].get("content") or data["audio"].get("audioContent")
+        elif "candidates" in data and isinstance(data["candidates"], list) and data["candidates"]:
+            c0 = data["candidates"][0]
+            if isinstance(c0, dict):
+                aud = c0.get("audio")
+                if isinstance(aud, dict):
+                    b64 = aud.get("content") or aud.get("audioContent")
+
+    if not b64 or not isinstance(b64, str):
+        raise RuntimeError(f"TTS response missing audio content keys. Keys: {list(data.keys())}")
+
+    import base64
+    return base64.b64decode(b64)
 
 
-def tts_to_mp3(script_text: str, mp3_path: Path, api_key: str) -> None:
-    """
-    Backward compatible: if you call with a single script string,
-    it will TTS with internal chunking.
-    """
-    chunks = [{"chapter_title": "Episode", "text": script_text}]
-    tts_chunks_to_mp3(chunks, mp3_path, api_key)
-
-
+# -----------------------------
+# Public API used by run_topic.py
+# -----------------------------
 def tts_chunks_to_mp3(chunks: List[Dict[str, Any]], mp3_path: Path, api_key: str) -> None:
     """
-    Preferred: pass chunks per chapter:
-      [{"chapter_title": "...", "text": "=== CHAPTER... SPEAKER_A/B ..."}]
-    This avoids truncation by keeping each Gemini TTS call under limits.
+    chunks: [{"chapter_title": "...", "text": "SPEAKER_A: ...\nSPEAKER_B: ..."}]
+    Produces one MP3 file.
     """
-    mp3_path = Path(mp3_path)
-    mp3_path.parent.mkdir(parents=True, exist_ok=True)
-
-    client = genai.Client(api_key=api_key)
-
-    pcm_dir = mp3_path.parent / "_pcm_parts"
-    pcm_dir.mkdir(exist_ok=True)
-
-    pcm_files: List[Path] = []
-
     if not chunks:
-        chunks = [{"chapter_title": "Episode", "text": "SPEAKER_A: This is an automated overview."}]
+        raise RuntimeError("No chunks provided for TTS.")
 
-    for ci, ch in enumerate(chunks):
-        text = str(ch.get("text", "") or "").strip()
-        turns = parse_dialogue(text)
-        if not turns:
-            turns = [("SPEAKER_A", "This is an automated overview based on publicly available reporting.")]
+    # Flatten all chapters into turns
+    turns: List[Tuple[str, str]] = []
+    for ch in chunks:
+        text = str(ch.get("text", "") or "")
+        turns.extend(parse_dialogue_turns(text))
 
-        sub_chunks = _chunk_turns(turns, MAX_CHARS_PER_CHUNK)
+    if not turns:
+        raise RuntimeError("No dialogue turns parsed from script.")
 
-        for si, sub in enumerate(sub_chunks):
-            prompt = _build_prompt(sub)
-            pcm_bytes = _tts_to_pcm_bytes(client, prompt)
+    # Prepare temp
+    tmp_dir = Path("tts_tmp")
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    wav_parts: List[Path] = []
 
-            pcm_path = pcm_dir / f"c{ci:03d}_s{si:03d}.pcm"
-            pcm_path.write_bytes(pcm_bytes)
-            pcm_files.append(pcm_path)
-
-            if TURN_GAP_MS > 0:
-                gap_pcm = pcm_dir / f"gap_c{ci:03d}_s{si:03d}.pcm"
-                subprocess.check_call([
-                    "ffmpeg", "-y",
-                    "-f", "lavfi",
-                    "-i", f"anullsrc=r={PCM_RATE}:cl=mono",
-                    "-t", str(TURN_GAP_MS / 1000),
-                    "-f", PCM_FORMAT,
-                    "-ar", str(PCM_RATE),
-                    "-ac", "1",
-                    str(gap_pcm),
-                ])
-                pcm_files.append(gap_pcm)
-
-    concat_pcm = mp3_path.with_suffix(".pcm")
-    with open(concat_pcm, "wb") as out:
-        for p in pcm_files:
-            out.write(p.read_bytes())
-
-    wav_path = mp3_path.with_suffix(".wav")
-
-    subprocess.check_call([
-        "ffmpeg", "-y",
-        "-f", PCM_FORMAT,
-        "-ar", str(PCM_RATE),
-        "-ac", str(PCM_CHANNELS),
-        "-i", str(concat_pcm),
-        str(wav_path),
-    ])
-
-    subprocess.check_call([
-        "ffmpeg", "-y",
-        "-i", str(wav_path),
-        "-codec:a", "libmp3lame",
-        "-q:a", "2",
-        str(mp3_path),
-    ])
-
-    # Cleanup best-effort
     try:
-        concat_pcm.unlink()
-        wav_path.unlink()
-        for p in pcm_files:
+        part_idx = 0
+        for speaker, turn_text in turns:
+            voice = VOICE_A if speaker == "A" else VOICE_B
+            wrapped = _wrap_lines(turn_text)
+            subchunks = chunk_text(wrapped, TTS_MAX_CHARS_PER_CHUNK)
+            for sc in subchunks:
+                part_idx += 1
+                wav_path = tmp_dir / f"part_{part_idx:05d}.wav"
+
+                wav_bytes = gemini_tts_wav(sc, voice=voice, api_key=api_key)
+                wav_path.write_bytes(wav_bytes)
+                wav_parts.append(wav_path)
+
+                # small gap between subchunks to reduce "run-on"
+                if TTS_TURN_GAP_MS > 0:
+                    part_idx += 1
+                    gap_path = tmp_dir / f"part_{part_idx:05d}_gap.wav"
+                    write_silence_wav(gap_path, TTS_TURN_GAP_MS)
+                    wav_parts.append(gap_path)
+
+        if not wav_parts:
+            raise RuntimeError("TTS produced no audio parts.")
+
+        out_wav = tmp_dir / "final.wav"
+        concat_wavs(wav_parts, out_wav)
+
+        mp3_path.parent.mkdir(parents=True, exist_ok=True)
+        wav_to_mp3(out_wav, mp3_path)
+
+    finally:
+        # Cleanup temp files
+        try:
+            for p in tmp_dir.glob("*"):
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
             try:
-                p.unlink()
+                tmp_dir.rmdir()
             except Exception:
                 pass
-        pcm_dir.rmdir()
-    except Exception:
-        pass            sub_len = 0
-            for p in parts:
-                p = p.strip()
-                if not p:
-                    continue
-                l = f"{spk}: {p}\n"
-                if sub_len + len(l) > max_chars and sub:
-                    chunks.append(sub)
-                    sub = []
-                    sub_len = 0
-                sub.append((spk, p))
-                sub_len += len(l)
-            if sub:
-                chunks.append(sub)
-            continue
-
-        if cur_len + line_len > max_chars and cur:
-            chunks.append(cur)
-            cur = []
-            cur_len = 0
-
-        cur.append((spk, txt))
-        cur_len += line_len
-
-    if cur:
-        chunks.append(cur)
-
-    return chunks if chunks else [[("SPEAKER_A", "This is an automated overview.")]]
-
-
-def _build_prompt(turns: List[Tuple[str, str]]) -> str:
-    lines = [f"{spk}: {_normalize_text(txt)}" for spk, txt in turns if _normalize_text(txt)]
-    transcript = "\n".join(lines).strip() or "SPEAKER_A: This is an automated overview."
-
-    return (
-        "TTS the following conversation between SPEAKER_A and SPEAKER_B.\n"
-        "Style: professional podcast delivery; natural pacing; do not add extra words.\n"
-        "Transcript:\n"
-        f"{transcript}"
-    )
-
-
-def _tts_chunk_to_pcm(client: genai.Client, prompt: str) -> bytes:
-    cfg = types.GenerateContentConfig(
-        response_modalities=["AUDIO"],
-        speech_config=types.SpeechConfig(
-            multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
-                speaker_voice_configs=[
-                    types.SpeakerVoiceConfig(
-                        speaker="SPEAKER_A",
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE_A)
-                        ),
-                    ),
-                    types.SpeakerVoiceConfig(
-                        speaker="SPEAKER_B",
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE_B)
-                        ),
-                    ),
-                ]
-            )
-        ),
-    )
-
-    resp = client.models.generate_content(model=TTS_MODEL, contents=prompt, config=cfg)
-
-    try:
-        return resp.candidates[0].content.parts[0].inline_data.data
-    except Exception as e:
-        raise RuntimeError(f"TTS returned no audio data: {e}")
-
-
-def tts_to_mp3(script_text: str, mp3_path: Path, api_key: str) -> None:
-    mp3_path = Path(mp3_path)
-    mp3_path.parent.mkdir(parents=True, exist_ok=True)
-
-    turns = parse_dialogue(script_text)
-    if not turns:
-        turns = [("SPEAKER_A", "This is an automated overview based on publicly available reporting.")]
-
-    chunks = _chunk_turns(turns, MAX_CHARS_PER_CHUNK)
-
-    client = genai.Client(api_key=api_key)
-
-    pcm_dir = mp3_path.parent / "_pcm_parts"
-    pcm_dir.mkdir(exist_ok=True)
-
-    pcm_files: List[Path] = []
-
-    for i, chunk_turns in enumerate(chunks):
-        prompt = _build_prompt(chunk_turns)
-        pcm_bytes = _tts_chunk_to_pcm(client, prompt)
-
-        pcm_path = pcm_dir / f"part_{i:03d}.pcm"
-        pcm_path.write_bytes(pcm_bytes)
-        pcm_files.append(pcm_path)
-
-        # Optional small pause between chunks to avoid “hard cuts”
-        if TURN_GAP_MS > 0:
-            gap_pcm = pcm_dir / f"gap_{i:03d}.pcm"
-            subprocess.check_call([
-                "ffmpeg", "-y",
-                "-f", "lavfi",
-                "-i", f"anullsrc=r={PCM_RATE}:cl=mono",
-                "-t", str(TURN_GAP_MS / 1000),
-                "-f", PCM_FORMAT,
-                "-ar", str(PCM_RATE),
-                "-ac", "1",
-                str(gap_pcm),
-            ])
-            pcm_files.append(gap_pcm)
-
-    # Concatenate PCM parts
-    concat_pcm = mp3_path.with_suffix(".pcm")
-    with open(concat_pcm, "wb") as out:
-        for p in pcm_files:
-            out.write(p.read_bytes())
-
-    wav_path = mp3_path.with_suffix(".wav")
-
-    # PCM -> WAV
-    subprocess.check_call([
-        "ffmpeg", "-y",
-        "-f", PCM_FORMAT,
-        "-ar", str(PCM_RATE),
-        "-ac", str(PCM_CHANNELS),
-        "-i", str(concat_pcm),
-        str(wav_path),
-    ])
-
-    # WAV -> MP3
-    subprocess.check_call([
-        "ffmpeg", "-y",
-        "-i", str(wav_path),
-        "-codec:a", "libmp3lame",
-        "-q:a", "2",
-        str(mp3_path),
-    ])
-
-    # Cleanup best-effort
-    try:
-        concat_pcm.unlink()
-        wav_path.unlink()
-        for p in pcm_files:
-            try:
-                p.unlink()
-            except Exception:
-                pass
-        pcm_dir.rmdir()
-    except Exception:
-        pass        f"{transcript}"
-    )
-
-
-def tts_to_mp3(script_text: str, mp3_path: Path, api_key: str) -> None:
-    """
-    Generate multi-speaker audio using Gemini TTS via generate_content(AUDIO),
-    then convert to MP3.
-    """
-    mp3_path = Path(mp3_path)
-    mp3_path.parent.mkdir(parents=True, exist_ok=True)
-
-    client = genai.Client(api_key=api_key)
-
-    turns = parse_dialogue(script_text)
-
-    # Hard fallback: never empty
-    if not turns:
-        turns = [
-            ("SPEAKER_A", "This is an automated overview based on publicly available reporting."),
-            ("SPEAKER_B", "We were unable to parse the script into a dialogue. Please check script generation."),
-        ]
-
-    prompt = build_multispeaker_prompt(turns)
-
-    # Multi-speaker voice config (2 speakers)
-    cfg = types.GenerateContentConfig(
-        response_modalities=["AUDIO"],
-        speech_config=types.SpeechConfig(
-            multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
-                speaker_voice_configs=[
-                    types.SpeakerVoiceConfig(
-                        speaker="SPEAKER_A",
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE_A)
-                        ),
-                    ),
-                    types.SpeakerVoiceConfig(
-                        speaker="SPEAKER_B",
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE_B)
-                        ),
-                    ),
-                ]
-            )
-        ),
-    )
-
-    response = client.models.generate_content(
-        model=TTS_MODEL,
-        contents=prompt,
-        config=cfg,
-    )
-
-    # Extract raw PCM bytes from inline_data
-    # Docs show: response.candidates[0].content.parts[0].inline_data.data 1
-    try:
-        pcm_bytes = response.candidates[0].content.parts[0].inline_data.data
-    except Exception as e:
-        raise RuntimeError(f"TTS returned no audio data. Response parse failed: {e}")
-
-    # Write PCM then convert -> WAV -> MP3
-    pcm_path = mp3_path.with_suffix(".pcm")
-    wav_path = mp3_path.with_suffix(".wav")
-
-    pcm_path.write_bytes(pcm_bytes)
-
-    # PCM -> WAV
-    subprocess.check_call([
-        "ffmpeg", "-y",
-        "-f", PCM_FORMAT,
-        "-ar", str(PCM_RATE),
-        "-ac", str(PCM_CHANNELS),
-        "-i", str(pcm_path),
-        str(wav_path),
-    ])
-
-    # WAV -> MP3
-    subprocess.check_call([
-        "ffmpeg", "-y",
-        "-i", str(wav_path),
-        "-codec:a", "libmp3lame",
-        "-q:a", "2",
-        str(mp3_path),
-    ])
-
-    # Cleanup best-effort
-    try:
-        pcm_path.unlink()
-        wav_path.unlink()
-    except Exception:
-        pass
+        except Exception:
+            pass
