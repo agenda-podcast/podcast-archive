@@ -1,0 +1,33 @@
+{
+  "topic_id": "topic-01",
+  "timestamp_utc": "2025-12-15T23:41:05.704204Z",
+  "premium_tts": false,
+  "provider_requested": "piper",
+  "tts_engine": null,
+  "gemini_model": "gemini-2.0-flash",
+  "voices": {
+    "gemini": {
+      "A": null,
+      "B": null
+    },
+    "piper": {
+      "A": "en_US-ryan-medium",
+      "B": "en_US-amy-medium"
+    }
+  },
+  "piper_model_dir": "assets/piper",
+  "fresh_count": 112,
+  "backlog_count": 163,
+  "skipped": true,
+  "skip_reason": "'PosixPath' object has no attribute 'write'",
+  "assets": {},
+  "errors": [
+    {
+      "stage": "pipeline",
+      "error": "'PosixPath' object has no attribute 'write'",
+      "traceback": "Traceback (most recent call last):\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/tts_generate.py\", line 179, in _ensure_silence_wav\n    wf.writeframes(b\"\\x00\\x00\" * n_frames)\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 558, in writeframes\n    self.writeframesraw(data)\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 547, in writeframesraw\n    self._ensure_header_written(len(data))\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 588, in _ensure_header_written\n    self._write_header(datasize)\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 592, in _write_header\n    self._file.write(b'RIFF')\n    ^^^^^^^^^^^^^^^^\nAttributeError: 'PosixPath' object has no attribute 'write'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/run_topic.py\", line 207, in main\n    mp3_out, provider_used = tts_chunks_to_mp3(\n                             ^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/tts_generate.py\", line 276, in tts_chunks_to_mp3\n    silence_wav = _ensure_silence_wav(cache_dir / f\"silence_{ms_gap}ms_{sr}hz.wav\", seconds=gap_seconds, sample_rate=sr)\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/tts_generate.py\", line 175, in _ensure_silence_wav\n    with wave.open(path, \"w\") as wf:\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 453, in __exit__\n    self.close()\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 565, in close\n    self._ensure_header_written(0)\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 588, in _ensure_header_written\n    self._write_header(datasize)\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 592, in _write_header\n    self._file.write(b'RIFF')\n    ^^^^^^^^^^^^^^^^\nAttributeError: 'PosixPath' object has no attribute 'write'\n"
+    }
+  ],
+  "video_enabled": true,
+  "video_ok": false
+}

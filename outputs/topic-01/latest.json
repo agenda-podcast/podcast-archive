@@ -1,0 +1,9 @@
+{
+  "topic_id": "topic-01",
+  "date": "20251215",
+  "script": "outputs/topic-01/topic-01-20251215.script.txt",
+  "chapters": "outputs/topic-01/topic-01-20251215.chapters.json",
+  "sources": "outputs/topic-01/topic-01-20251215.sources.json",
+  "mp3": "outputs/topic-01/topic-01-20251215.mp3",
+  "mp4": ""
+}
