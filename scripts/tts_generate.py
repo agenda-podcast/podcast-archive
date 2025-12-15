@@ -3,162 +3,81 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
-import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
-import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-# ============================================================
-# Public API (imported by run_topic.py)
-#   - script_to_tts_chunks(script_text) -> list[dict]
-#   - tts_chunks_to_mp3(chunks, mp3_path, provider=..., premium=..., ...)
-# ============================================================
 
-# -------------------------
-# Defaults & env knobs
-# -------------------------
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-preview-tts"
-
-# Gemini prebuilt voices
-DEFAULT_GEMINI_VOICE_A = "Kore"  # female-ish
-DEFAULT_GEMINI_VOICE_B = "Puck"  # male-ish
-
-# Piper voice IDs (we download from HF if missing/bad)
-DEFAULT_PIPER_VOICE_A = "en_US-amy-medium"    # female
-DEFAULT_PIPER_VOICE_B = "en_US-ryan-medium"   # male
-
-DEFAULT_LANGUAGE_CODE = "en-US"
-
-# Audio normalization
-TARGET_SR = int(os.getenv("TTS_TARGET_SR", "24000"))
-TARGET_CH = int(os.getenv("TTS_TARGET_CH", "1"))
-
-# Chunking / dialogue behavior
-TTS_MAX_CHARS_PER_CHUNK = int(os.getenv("TTS_MAX_CHARS_PER_CHUNK", "3200"))
-MIN_CHUNK_CHARS = int(os.getenv("MIN_CHUNK_CHARS", "300"))
-MERGE_SAME_VOICE_TURNS = os.getenv("MERGE_SAME_VOICE_TURNS", "1").strip().lower() in ("1", "true", "yes", "y")
-TTS_TURN_GAP_MS = int(os.getenv("TTS_TURN_GAP_MS", "120"))
-
-# Best-effort behavior when Gemini quota/rate limit hits
-FAIL_SOFT_ON_QUOTA = os.getenv("FAIL_SOFT_ON_QUOTA", "1").strip().lower() in ("1", "true", "yes", "y")
-TTS_QUOTA_MARKER = os.getenv("TTS_QUOTA_MARKER", "outputs/_tts_quota_exceeded.txt")
-
-# Optional silence trimming (FFmpeg silenceremove)
-TRIM_SILENCE = os.getenv("TTS_TRIM_SILENCE", "1").strip().lower() in ("1", "true", "yes", "y")
-SILENCE_DB = os.getenv("TTS_SILENCE_DB", "-45dB")
-
-# Cache (per-run workspace cache; speeds retries)
-CACHE_DIR = Path(os.getenv("TTS_CACHE_DIR", "outputs/_tts_cache")).resolve()
-
-# Piper models directory
-PIPER_MODEL_DIR = Path(os.getenv("PIPER_MODEL_DIR", "assets/piper")).resolve()
-
-# Piper voices repo base (versioned). You can override to "main" if needed.
-PIPER_HF_BASE = os.getenv(
-    "PIPER_HF_BASE",
-    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0",
-).rstrip("/")
-
-# Networking
-HTTP_TIMEOUT = int(os.getenv("TTS_HTTP_TIMEOUT", "120"))
-
-# Gemini endpoint
-GEMINI_API_BASE = os.getenv("GEMINI_API_BASE", "https://generativelanguage.googleapis.com").rstrip("/")
-
-# Piper validation thresholds (key reliability guard)
-MIN_PIPER_MODEL_BYTES = int(os.getenv("MIN_PIPER_MODEL_BYTES", str(2 * 1024 * 1024)))  # 2MB
-MIN_PIPER_CFG_BYTES = int(os.getenv("MIN_PIPER_CFG_BYTES", "200"))  # tiny JSON threshold
+# ---------------------------
+# Dialogue parsing
+# ---------------------------
+_SPEAKER_RE = re.compile(r"^\s*(?P<who>[ABab]|host|speaker\s*[12]|male|female)\s*:\s*(?P<text>.+?)\s*$")
+_MD_SPEAKER_RE = re.compile(r"^\s*\*\*(?P<who>[^*]+)\*\*\s*:\s*(?P<text>.+?)\s*$")
 
 
-# -------------------------
-# Data structures
-# -------------------------
 @dataclass
 class TTSTurn:
     speaker: str  # "A" or "B"
     text: str
 
 
-# ============================================================
-# Dialogue parsing
-# ============================================================
-_SPEAKER_RE = re.compile(
-    r"^\s*(?P<who>"
-    r"A|B|HOST|HOST\s*1|HOST\s*2|NARRATOR|SPEAKER\s*1|SPEAKER\s*2|"
-    r"MALE|FEMALE|M|F"
-    r")\s*[:\-]\s*(?P<text>.+?)\s*$",
-    re.IGNORECASE,
-)
-
-_MD_SPEAKER_RE = re.compile(
-    r"^\s*\*\*(?P<who>[^*]{1,30})\*\*\s*[:\-]\s*(?P<text>.+?)\s*$"
-)
-
-
-def _norm_speaker(token: str) -> Optional[str]:
-    t = token.strip().lower()
-    if t in ("a", "host", "host 1", "narrator", "speaker 1", "male", "m"):
+def _norm_speaker(who: str) -> str:
+    w = (who or "").strip().lower()
+    if w in ("a", "host", "speaker1", "speaker 1", "male"):
         return "A"
-    if t in ("b", "host 2", "speaker 2", "female", "f"):
+    if w in ("b", "speaker2", "speaker 2", "female"):
         return "B"
-    return None
+    # default
+    return "A"
 
 
 def script_to_tts_chunks(script_text: str) -> List[Dict[str, str]]:
     """
-    Robust dialogue parser.
-    Returns list of dicts: {"speaker": "A"|"B", "text": "..."}.
-
-    Supported formats:
-      - A: ...
-      - B: ...
-      - HOST: ...
-      - FEMALE: ...
-      - **Host:** ...
-      - If no explicit speakers: alternates per paragraph.
+    Robust parser:
+    - Accepts lines like "A: ..." / "B: ..."
+    - If text is untagged, it is NOT dropped; it attaches to last speaker (or A).
     """
     text = (script_text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if not text:
         return []
 
     turns: List[TTSTurn] = []
+    lines = [ln.rstrip() for ln in text.split("\n")]
 
-    lines = [ln.strip() for ln in text.split("\n")]
     buf: List[str] = []
     cur_speaker: Optional[str] = None
-    any_tagged = False
+    last_speaker: Optional[str] = None
 
-    def flush_buf() -> None:
-        nonlocal buf, cur_speaker, turns
+    def flush() -> None:
+        nonlocal buf, cur_speaker, last_speaker, turns
         if cur_speaker and buf:
             joined = " ".join([b.strip() for b in buf if b.strip()]).strip()
             if joined:
                 turns.append(TTSTurn(cur_speaker, joined))
+                last_speaker = cur_speaker
         buf = []
 
     for ln in lines:
-        if not ln:
+        s = ln.strip()
+        if not s:
             if cur_speaker:
-                flush_buf()
+                flush()
                 cur_speaker = None
             continue
 
-        m = _SPEAKER_RE.match(ln)
-        mm = _MD_SPEAKER_RE.match(ln) if not m else None
+        m = _SPEAKER_RE.match(s)
+        mm = _MD_SPEAKER_RE.match(s) if not m else None
 
         who = None
         body = None
-
         if m:
             who = _norm_speaker(m.group("who"))
             body = m.group("text")
@@ -167,648 +86,271 @@ def script_to_tts_chunks(script_text: str) -> List[Dict[str, str]]:
             body = mm.group("text")
 
         if who and body:
-            any_tagged = True
             if cur_speaker:
-                flush_buf()
+                flush()
             cur_speaker = who
             buf = [body]
         else:
-            if cur_speaker:
-                buf.append(ln)
-            else:
-                buf.append(ln)
+            # CRITICAL FIX: do not drop untagged text
+            if cur_speaker is None:
+                cur_speaker = last_speaker or "A"
+            buf.append(s)
 
     if cur_speaker:
-        flush_buf()
+        flush()
 
-    if any_tagged and turns:
-        return [{"speaker": t.speaker, "text": t.text.strip()} for t in turns if t.text.strip()]
-
-    # Fallback: alternate per paragraph
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n+", text) if p.strip()]
-    speaker = "A"
-    for p in paragraphs:
-        turns.append(TTSTurn(speaker, p))
-        speaker = "B" if speaker == "A" else "A"
+    if not turns:
+        # fallback: alternate by paragraph
+        paras = [p.strip() for p in re.split(r"\n\s*\n+", text) if p.strip()]
+        speaker = "A"
+        for p in paras:
+            turns.append(TTSTurn(speaker, p))
+            speaker = "B" if speaker == "A" else "A"
 
     return [{"speaker": t.speaker, "text": t.text.strip()} for t in turns if t.text.strip()]
 
 
-def _split_text_soft(text: str, max_chars: int) -> List[str]:
-    sents = re.split(r"(?<=[\.\!\?])\s+", text.strip())
-    chunks: List[str] = []
-    cur = ""
-    for s in sents:
-        if not s:
-            continue
-        if not cur:
-            cur = s
-            continue
-        if len(cur) + 1 + len(s) <= max_chars:
-            cur = cur + " " + s
-        else:
-            chunks.append(cur)
-            cur = s
-    if cur:
-        chunks.append(cur)
-
-    final: List[str] = []
-    for c in chunks:
-        if len(c) <= max_chars:
-            final.append(c)
-        else:
-            for i in range(0, len(c), max_chars):
-                final.append(c[i : i + max_chars])
-    return final
+# ---------------------------
+# Audio helpers
+# ---------------------------
+def _sha256(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
-def _merge_and_chunk_turns(turns: List[TTSTurn]) -> List[TTSTurn]:
-    merged: List[TTSTurn] = []
-    if MERGE_SAME_VOICE_TURNS:
-        for t in turns:
-            if merged and merged[-1].speaker == t.speaker:
-                merged[-1] = TTSTurn(t.speaker, (merged[-1].text + "\n" + t.text).strip())
-            else:
-                merged.append(t)
-    else:
-        merged = turns[:]
-
-    out: List[TTSTurn] = []
-    for t in merged:
-        txt = t.text.strip()
-        if len(txt) <= TTS_MAX_CHARS_PER_CHUNK:
-            out.append(t)
-            continue
-        parts = _split_text_soft(txt, TTS_MAX_CHARS_PER_CHUNK)
-        for part in parts:
-            if part.strip():
-                out.append(TTSTurn(t.speaker, part.strip()))
-
-    final: List[TTSTurn] = []
-    for t in out:
-        if len(t.text) < MIN_CHUNK_CHARS and final and final[-1].speaker == t.speaker:
-            final[-1] = TTSTurn(t.speaker, (final[-1].text + "\n" + t.text).strip())
-        else:
-            final.append(t)
-    return final
+def _run(cmd: List[str]) -> None:
+    subprocess.check_call(cmd)
 
 
-# ============================================================
-# Gemini TTS (HTTP)
-# ============================================================
-def _is_quota_error(text: str) -> bool:
-    t = (text or "").lower()
-    return ("resource_exhausted" in t) or ("quota" in t and "exceeded" in t) or ("rate limit" in t)
+def _ffmpeg_trim_silence(in_wav: str, out_wav: str) -> None:
+    # light trimming (safe)
+    _run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            in_wav,
+            "-af",
+            "silenceremove=start_periods=1:start_duration=0.25:start_threshold=-50dB:"
+            "stop_periods=1:stop_duration=0.25:stop_threshold=-50dB",
+            out_wav,
+        ]
+    )
 
 
-def _mark_quota_exceeded(msg: str) -> None:
-    try:
-        p = Path(TTS_QUOTA_MARKER)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text((msg or "")[:2000], encoding="utf-8")
-    except Exception:
-        pass
+def _make_gap_wav(path: str, ms: int = 120) -> None:
+    sec = max(0.02, ms / 1000.0)
+    _run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t", f"{sec:.3f}", path])
 
 
-def _gemini_tts_wav_bytes(
-    *,
-    api_key: str,
-    model: str,
-    voice: str,
-    text: str,
-    language_code: str = DEFAULT_LANGUAGE_CODE,
-    retries: int = 4,
-    backoff_sec: float = 2.0,
-) -> bytes:
-    if not api_key:
-        raise RuntimeError("Gemini API key is empty")
+def _concat_wavs_to_mp3(wavs: List[str], out_mp3: str) -> None:
+    # concat demuxer for audio
+    with tempfile.TemporaryDirectory() as td:
+        lst = Path(td) / "list.txt"
+        lst.write_text("\n".join([f"file '{w.replace(\"'\", \"'\\\\''\")}'" for w in wavs]) + "\n", encoding="utf-8")
 
-    url = f"{GEMINI_API_BASE}/v1beta/models/{model}:generateContent?key={api_key}"
+        tmp_wav = str(Path(td) / "merged.wav")
+        _run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", tmp_wav])
 
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": text}]}],
-        "generationConfig": {
-            "responseModalities": ["AUDIO"],
-            "speechConfig": {
-                "languageCode": language_code,
-                "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}},
-            },
-        },
-    }
-
-    last_err: Optional[str] = None
-    for attempt in range(1, retries + 1):
-        try:
-            r = requests.post(url, json=payload, timeout=HTTP_TIMEOUT)
-            if r.status_code >= 400:
-                last_err = f"HTTP {r.status_code}: {r.text[:900]}"
-                if r.status_code in (429, 403) and _is_quota_error(r.text):
-                    _mark_quota_exceeded(last_err)
-                if r.status_code in (429, 500, 502, 503, 504):
-                    time.sleep(backoff_sec * attempt)
-                    continue
-                raise RuntimeError(last_err)
-
-            data = r.json()
-            wav_b64 = None
-            for cand in (data.get("candidates") or []):
-                content = cand.get("content") or {}
-                for part in (content.get("parts") or []):
-                    inline = part.get("inlineData") or part.get("inline_data") or None
-                    if inline and isinstance(inline, dict):
-                        wav_b64 = inline.get("data")
-                        if wav_b64:
-                            break
-                if wav_b64:
-                    break
-
-            if not wav_b64:
-                raise RuntimeError(f"Gemini TTS: no audio inlineData in response: {json.dumps(data)[:900]}")
-
-            return base64.b64decode(wav_b64)
-        except Exception as e:
-            last_err = str(e)
-            if attempt < retries:
-                time.sleep(backoff_sec * attempt)
-            else:
-                break
-
-    raise RuntimeError(f"TTS failed after retries: {last_err}")
+        # encode mp3 (VBR-ish)
+        _run(["ffmpeg", "-y", "-i", tmp_wav, "-codec:a", "libmp3lame", "-q:a", "3", out_mp3])
 
 
-# ============================================================
-# Piper voice resolution + download (robust)
-# ============================================================
-# Voice -> HF relative path (without extensions)
-_PIPER_VOICE_MAP: Dict[str, str] = {
-    "en_US-amy-medium": "en/en_US/amy/medium/en_US-amy-medium",
-    "en_US-ryan-medium": "en/en_US/ryan/medium/en_US-ryan-medium",
-    "en_US-lessac-medium": "en/en_US/lessac/medium/en_US-lessac-medium",
-    "en_GB-alba-medium": "en/en_GB/alba/medium/en_GB-alba-medium",
-}
+# ---------------------------
+# Piper TTS
+# ---------------------------
+DEFAULT_PIPER_A = "en_US-ryan-medium"  # male
+DEFAULT_PIPER_B = "en_US-amy-medium"   # female
 
 
-def _resolve_piper_model_paths(voice: str, model_dir: Path) -> Tuple[Path, Path]:
+def _resolve_piper_model(model_dir: str, voice: str) -> Path:
+    d = Path(model_dir)
+    if not d.exists():
+        raise RuntimeError(f"PIPER_MODEL_DIR does not exist: {model_dir}")
+
     v = (voice or "").strip()
     if not v:
         raise RuntimeError("Piper voice is empty")
 
-    vp = Path(v)
-    # Allow absolute or relative .onnx path
-    if vp.suffix.lower() == ".onnx":
-        model_path = vp if vp.is_absolute() else (model_dir / vp)
-        cfg_path = Path(str(model_path) + ".json")  # expects model.onnx.json
-        return model_path, cfg_path
+    # expected: <voice>.onnx and <voice>.onnx.json
+    model = d / f"{v}.onnx"
+    cfg = d / f"{v}.onnx.json"
 
-    # Default naming convention: voice_id.onnx / voice_id.onnx.json
-    model_path = model_dir / f"{v}.onnx"
-    cfg_path = model_dir / f"{v}.onnx.json"
-    return model_path, cfg_path
+    if not model.exists():
+        # try: maybe user passed full filename
+        if v.endswith(".onnx"):
+            model = d / v
+            cfg = d / f"{Path(v).name}.json"  # fallback
+    if not model.exists():
+        raise RuntimeError(f"Piper model missing: {model}")
 
+    # Config naming in piper is typically "<model>.json" => "<voice>.onnx.json"
+    if not cfg.exists():
+        # attempt alternate: "<voice>.json"
+        alt = d / f"{v}.json"
+        if alt.exists():
+            cfg = alt
+        else:
+            raise RuntimeError(f"Piper config missing (expected {d}/{v}.onnx.json or {d}/{v}.json)")
 
-def _download_to(path: Path, url: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with requests.get(url, stream=True, timeout=HTTP_TIMEOUT) as r:
-        r.raise_for_status()
-        tmp = path.with_suffix(path.suffix + ".part")
-        with tmp.open("wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 256):
-                if chunk:
-                    f.write(chunk)
-        tmp.replace(path)
-
-
-def _is_file_ok(p: Path, min_bytes: int) -> bool:
-    try:
-        return p.exists() and p.is_file() and p.stat().st_size >= min_bytes
-    except Exception:
-        return False
+    return model
 
 
-def _redownload_piper_voice(voice_id: str, model_dir: Path) -> Tuple[Path, Path]:
-    model_path, cfg_path = _resolve_piper_model_paths(voice_id, model_dir)
-    rel = _PIPER_VOICE_MAP.get(voice_id)
-    if not rel:
-        # If user passed a direct .onnx path, we cannot re-download it.
-        raise RuntimeError(
-            f"Cannot redownload unknown Piper voice '{voice_id}'. "
-            f"Add it to _PIPER_VOICE_MAP or pass a known voice id."
-        )
-
-    # Delete old (possibly corrupt) files
-    try:
-        if model_path.exists():
-            model_path.unlink()
-    except Exception:
-        pass
-    try:
-        if cfg_path.exists():
-            cfg_path.unlink()
-    except Exception:
-        pass
-
-    _download_to(model_path, f"{PIPER_HF_BASE}/{rel}.onnx")
-    _download_to(cfg_path, f"{PIPER_HF_BASE}/{rel}.onnx.json")
-    return model_path, cfg_path
-
-
-def _ensure_piper_voice(voice_id: str, model_dir: Path) -> Tuple[Path, Path]:
-    model_path, cfg_path = _resolve_piper_model_paths(voice_id, model_dir)
-
-    # If direct .onnx path was supplied, just validate config presence/size.
-    if model_path.suffix.lower() == ".onnx" and (model_path.is_absolute() or model_path.parent != model_dir):
-        if not _is_file_ok(model_path, MIN_PIPER_MODEL_BYTES):
-            raise RuntimeError(f"Piper model file looks invalid (too small/missing): {model_path}")
-        if not _is_file_ok(cfg_path, MIN_PIPER_CFG_BYTES):
-            raise RuntimeError(f"Piper config file missing/invalid: {cfg_path}")
-        return model_path, cfg_path
-
-    # Validate existing cached model/config
-    if _is_file_ok(model_path, MIN_PIPER_MODEL_BYTES) and _is_file_ok(cfg_path, MIN_PIPER_CFG_BYTES):
-        return model_path, cfg_path
-
-    # If exists but too small => treat as corrupt and redownload
-    rel = _PIPER_VOICE_MAP.get(voice_id)
-    if not rel:
-        raise RuntimeError(
-            f"Unknown Piper voice_id '{voice_id}'. Add it to _PIPER_VOICE_MAP in tts_generate.py or pass a direct .onnx path."
-        )
-
-    # Download missing or corrupt
-    if not _is_file_ok(model_path, MIN_PIPER_MODEL_BYTES):
-        _download_to(model_path, f"{PIPER_HF_BASE}/{rel}.onnx")
-    if not _is_file_ok(cfg_path, MIN_PIPER_CFG_BYTES):
-        _download_to(cfg_path, f"{PIPER_HF_BASE}/{rel}.onnx.json")
-
-    # Final validate; if still bad, force redownload once
-    if not _is_file_ok(model_path, MIN_PIPER_MODEL_BYTES) or not _is_file_ok(cfg_path, MIN_PIPER_CFG_BYTES):
-        model_path, cfg_path = _redownload_piper_voice(voice_id, model_dir)
-
-    if not _is_file_ok(model_path, MIN_PIPER_MODEL_BYTES):
-        raise RuntimeError(f"Piper model still invalid after download: {model_path} ({model_path.stat().st_size} bytes)")
-    if not _is_file_ok(cfg_path, MIN_PIPER_CFG_BYTES):
-        raise RuntimeError(f"Piper config still invalid after download: {cfg_path} ({cfg_path.stat().st_size} bytes)")
-
-    return model_path, cfg_path
-
-
-def _piper_tts_wav_bytes(*, text: str, voice: str, model_dir: Path) -> bytes:
-    """
-    Uses piper CLI. If it fails, caller may trigger redownload+retry.
-    """
-    model_path, cfg_path = _ensure_piper_voice(voice, model_dir)
-    if not model_path.exists():
-        raise RuntimeError(f"Piper model missing after ensure: {model_path}")
-    if not cfg_path.exists():
-        raise RuntimeError(f"Piper config missing after ensure: {cfg_path}")
+def _piper_tts_wav_bytes(text: str, voice: str, model_dir: str) -> bytes:
+    model = _resolve_piper_model(model_dir, voice)
 
     with tempfile.TemporaryDirectory() as td:
-        out_wav = Path(td) / "out.wav"
-        cmd = ["piper", "--model", str(model_path), "--output_file", str(out_wav)]
+        out_wav = str(Path(td) / "out.wav")
         p = subprocess.run(
-            cmd,
-            input=(text.strip() + "\n").encode("utf-8"),
+            ["piper", "--model", str(model), "--output_file", out_wav],
+            input=(text or "").encode("utf-8"),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        if p.returncode != 0:
-            out = (p.stdout or b"").decode("utf-8", "ignore")
-            err = (p.stderr or b"").decode("utf-8", "ignore")
-            msg = (err.strip() or out.strip() or "")[:2000]
-            raise RuntimeError(f"Piper failed ({p.returncode}): {msg}")
-
-        if not out_wav.exists() or out_wav.stat().st_size < 1000:
-            raise RuntimeError("Piper produced empty WAV output")
-        return out_wav.read_bytes()
+        if p.returncode != 0 or not Path(out_wav).exists():
+            err = (p.stderr or b"").decode("utf-8", "ignore")[:1400]
+            raise RuntimeError(f"Piper failed ({p.returncode}): {err}")
+        b = Path(out_wav).read_bytes()
+        if len(b) < 1000:
+            raise RuntimeError("Piper produced empty WAV.")
+        return b
 
 
-# ============================================================
-# WAV post-processing via FFmpeg
-# ============================================================
-def _ffmpeg_exists() -> bool:
-    return shutil.which("ffmpeg") is not None
+# ---------------------------
+# Gemini TTS (optional)
+# ---------------------------
+def _gemini_tts_wav_bytes(text: str, api_key: str, model: str, voice: str) -> bytes:
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is empty for premium TTS.")
+    if not model:
+        raise RuntimeError("Gemini TTS model is empty.")
+    if not voice:
+        raise RuntimeError("Gemini voice is empty.")
 
+    # v1beta speech endpoint is not guaranteed stable across SDK versions; use REST.
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateSpeech?key={api_key}"
+    payload = {
+        "input": {"text": text},
+        "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}},
+        "audioConfig": {"audioEncoding": "LINEAR16", "sampleRateHertz": 24000},
+    }
 
-def _normalize_wav_bytes(wav_bytes: bytes) -> bytes:
-    if not _ffmpeg_exists():
-        return wav_bytes
+    r = requests.post(url, json=payload, timeout=60)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Gemini TTS HTTP {r.status_code}: {r.text[:400]}")
+    data = r.json()
+    audio_b64 = data.get("audio") or data.get("audioContent") or ""
+    if not audio_b64:
+        raise RuntimeError("Gemini TTS returned empty audio.")
+    import base64
 
+    pcm = base64.b64decode(audio_b64)
+    # Wrap raw PCM into WAV via ffmpeg
     with tempfile.TemporaryDirectory() as td:
-        inp = Path(td) / "in.wav"
-        outp = Path(td) / "out.wav"
-        inp.write_bytes(wav_bytes)
-
-        afilters: List[str] = []
-        if TRIM_SILENCE:
-            afilters.append(
-                f"silenceremove=start_periods=1:start_duration=0.04:start_threshold={SILENCE_DB}:"
-                f"stop_periods=1:stop_duration=0.06:stop_threshold={SILENCE_DB}"
-            )
-
-        cmd = [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-i", str(inp),
-            "-ac", str(TARGET_CH),
-            "-ar", str(TARGET_SR),
-            "-c:a", "pcm_s16le",
-        ]
-        if afilters:
-            cmd += ["-af", ",".join(afilters)]
-        cmd += [str(outp)]
-
-        subprocess.check_call(cmd)
-        return outp.read_bytes()
+        raw = str(Path(td) / "a.pcm")
+        wav = str(Path(td) / "a.wav")
+        Path(raw).write_bytes(pcm)
+        _run(["ffmpeg", "-y", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", raw, wav])
+        return Path(wav).read_bytes()
 
 
-def _make_silence_wav(duration_ms: int) -> bytes:
-    if duration_ms <= 0 or not _ffmpeg_exists():
-        return b""
-    with tempfile.TemporaryDirectory() as td:
-        outp = Path(td) / "silence.wav"
-        dur = max(duration_ms / 1000.0, 0.01)
-        cmd = [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi",
-            "-i", f"anullsrc=channel_layout={'mono' if TARGET_CH == 1 else 'stereo'}:sample_rate={TARGET_SR}",
-            "-t", f"{dur:.3f}",
-            "-ac", str(TARGET_CH),
-            "-ar", str(TARGET_SR),
-            "-c:a", "pcm_s16le",
-            str(outp),
-        ]
-        subprocess.check_call(cmd)
-        return outp.read_bytes()
-
-
-# ============================================================
-# Cache helpers
-# ============================================================
-def _hash_key(parts: Iterable[str]) -> str:
-    h = hashlib.sha256()
-    for p in parts:
-        h.update(p.encode("utf-8"))
-        h.update(b"\0")
-    return h.hexdigest()
-
-
-def _cache_get(key: str) -> Optional[bytes]:
-    try:
-        p = CACHE_DIR / f"{key}.wav"
-        if p.exists() and p.stat().st_size > 1000:
-            return p.read_bytes()
-    except Exception:
-        return None
-    return None
-
-
-def _cache_put(key: str, wav_bytes: bytes) -> None:
-    try:
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        (CACHE_DIR / f"{key}.wav").write_bytes(wav_bytes)
-    except Exception:
-        pass
-
-
-# ============================================================
-# MP3 build
-# ============================================================
-def _concat_wavs_to_mp3(wav_paths: List[Path], out_mp3: Path) -> None:
-    if not _ffmpeg_exists():
-        raise RuntimeError("ffmpeg is required to build MP3 but was not found")
-
-    out_mp3.parent.mkdir(parents=True, exist_ok=True)
-
-    with tempfile.TemporaryDirectory() as td:
-        list_file = Path(td) / "concat.txt"
-        lines = [f"file '{wp.as_posix()}'" for wp in wav_paths]
-        list_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-        cmd = [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "concat", "-safe", "0",
-            "-i", str(list_file),
-            "-c:a", "libmp3lame", "-b:a", "192k",
-            str(out_mp3),
-        ]
-        subprocess.check_call(cmd)
-
-
-# ============================================================
-# Engine selection (supports provider=...)
-# ============================================================
-def _select_engine(
-    *,
-    provider: Optional[str],
-    premium: Optional[bool],
-    api_key: str,
-) -> str:
-    """
-    provider: "gemini" | "piper" | "auto" | None
-    premium: bool or None
-    Rule:
-      - provider wins if provided
-      - else premium True -> gemini, False -> piper
-      - auto: gemini if api_key else piper
-    """
-    if provider:
-        p = provider.strip().lower()
-        if p in ("gemini", "google", "genai"):
-            return "gemini" if api_key else "piper"
-        if p in ("piper", "local"):
-            return "piper"
-        if p in ("auto",):
-            return "gemini" if api_key else "piper"
-
-    if premium is None:
-        return "gemini" if api_key else "piper"
-    return "gemini" if premium and api_key else "piper"
-
-
-# ============================================================
-# Main: chunks -> mp3
-# ============================================================
+# ---------------------------
+# Public API
+# ---------------------------
 def tts_chunks_to_mp3(
-    chunks: Union[List[Dict[str, str]], List[TTSTurn]],
-    mp3_path: Union[str, Path],
+    chunks: List[Dict[str, str]],
+    mp3_path: Path,
     *,
-    provider: Optional[str] = None,           # NEW: supports "piper"/"gemini"/"auto"
-    premium: Optional[bool] = True,           # legacy
     api_key: str = "",
+    premium: bool = True,
     gemini_model: Optional[str] = None,
     voice_a: Optional[str] = None,
     voice_b: Optional[str] = None,
     piper_voice_a: Optional[str] = None,
     piper_voice_b: Optional[str] = None,
-    piper_model_dir: Optional[Union[str, Path]] = None,
-    **_ignored_kwargs: Any,
+    piper_model_dir: str = "assets/piper",
 ) -> None:
     """
-    Renders dialogue chunks into an MP3 using either:
-      - Gemini TTS (provider='gemini' or premium=True)
-      - Piper local TTS (provider='piper' or premium=False)
-
-    `chunks` elements: {"speaker":"A"|"B", "text":"..."}.
+    chunks: [{"speaker":"A"|"B", "text":"..."}]
+    premium=True => Gemini TTS (if configured)
+    premium=False => Piper TTS (requires assets/piper voices)
     """
+    mp3_path = Path(mp3_path)
+    mp3_path.parent.mkdir(parents=True, exist_ok=True)
+
     if not chunks:
-        raise RuntimeError("No chunks provided")
+        raise RuntimeError("No TTS chunks provided.")
 
-    out_mp3 = Path(mp3_path) if isinstance(mp3_path, str) else mp3_path
-    out_mp3.parent.mkdir(parents=True, exist_ok=True)
-
-    # Normalize input
-    turns: List[TTSTurn] = []
-    if isinstance(chunks[0], TTSTurn):  # type: ignore[index]
-        turns = list(chunks)  # type: ignore[assignment]
+    # Choose voices
+    if premium:
+        va = voice_a or "Kore"
+        vb = voice_b or "Puck"
+        provider = "gemini"
     else:
-        for c in chunks:  # type: ignore[assignment]
-            if not isinstance(c, dict):
-                continue
-            sp = str(c.get("speaker", "A")).strip().upper()
-            if sp not in ("A", "B"):
-                sp = "A"
-            tx = str(c.get("text", "")).strip()
-            if tx:
-                turns.append(TTSTurn(sp, tx))
+        va = piper_voice_a or DEFAULT_PIPER_A
+        vb = piper_voice_b or DEFAULT_PIPER_B
+        provider = "piper"
 
-    turns = _merge_and_chunk_turns(turns)
-    if not turns:
-        raise RuntimeError("No non-empty turns after preprocessing")
+    # Cache directory
+    cache_dir = mp3_path.parent / "_tts_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # Voices / models
-    gem_model = (gemini_model or os.getenv("GEMINI_TTS_MODEL", "") or DEFAULT_GEMINI_MODEL).strip()
-    gA = (voice_a or os.getenv("VOICE_A", "") or DEFAULT_GEMINI_VOICE_A).strip()
-    gB = (voice_b or os.getenv("VOICE_B", "") or DEFAULT_GEMINI_VOICE_B).strip()
+    # Gap wav (reuse)
+    gap_ms = int(os.getenv("TTS_TURN_GAP_MS", "120").strip() or "120")
+    gap_wav = str(cache_dir / f"_gap_{gap_ms}ms.wav")
+    if not Path(gap_wav).exists():
+        _make_gap_wav(gap_wav, ms=gap_ms)
 
-    pA = (piper_voice_a or os.getenv("PIPER_VOICE_A", "") or DEFAULT_PIPER_VOICE_A).strip()
-    pB = (piper_voice_b or os.getenv("PIPER_VOICE_B", "") or DEFAULT_PIPER_VOICE_B).strip()
-
-    model_dir = Path(piper_model_dir) if piper_model_dir else PIPER_MODEL_DIR
-
-    engine = _select_engine(provider=provider, premium=premium, api_key=api_key)
-
-    # Gap wav once
-    gap_wav = _make_silence_wav(TTS_TURN_GAP_MS) if TTS_TURN_GAP_MS > 0 else b""
-
+    wav_files: List[str] = []
     with tempfile.TemporaryDirectory() as td:
         td_path = Path(td)
-        wav_files: List[Path] = []
 
-        gap_path = None
-        if gap_wav:
-            gap_path = td_path / "gap.wav"
-            gap_path.write_bytes(gap_wav)
+        for i, ch in enumerate(chunks):
+            sp = (ch.get("speaker") or "A").strip().upper()
+            text = (ch.get("text") or "").strip()
+            if not text:
+                continue
 
-        for i, t in enumerate(turns, start=1):
-            voice = (gA if t.speaker == "A" else gB) if engine == "gemini" else (pA if t.speaker == "A" else pB)
+            voice = va if sp == "A" else vb
 
-            cache_key = _hash_key(
-                [
-                    "engine=" + engine,
-                    "model=" + (gem_model if engine == "gemini" else ""),
-                    "voice=" + voice,
-                    "sr=" + str(TARGET_SR),
-                    "ch=" + str(TARGET_CH),
-                    "trim=" + ("1" if TRIM_SILENCE else "0"),
-                    t.text.strip(),
-                ]
-            )
-            cached = _cache_get(cache_key)
-            if cached:
-                wav_bytes = cached
+            cache_key = _sha256(f"{provider}|{voice}|{text}")
+            cached_wav = cache_dir / f"{cache_key}.wav"
+
+            if cached_wav.exists() and cached_wav.stat().st_size > 1000:
+                wav_files.append(str(cached_wav))
+                wav_files.append(gap_wav)
+                continue
+
+            # Render turn
+            if provider == "piper":
+                wav_bytes = _piper_tts_wav_bytes(text=text, voice=voice, model_dir=piper_model_dir)
+                tmp_in = td_path / f"turn_{i:04d}.wav"
+                tmp_in.write_bytes(wav_bytes)
+
+                # Trim silence → cache
+                tmp_out = td_path / f"turn_{i:04d}.trim.wav"
+                _ffmpeg_trim_silence(str(tmp_in), str(tmp_out))
+                shutil.copyfile(tmp_out, cached_wav)
+                wav_files.append(str(cached_wav))
+                wav_files.append(gap_wav)
+
             else:
-                wav_bytes = _render_turn_to_wav(
-                    engine=engine,
-                    text=t.text,
-                    voice=voice,
-                    api_key=api_key,
-                    gemini_model=gem_model,
-                    piper_model_dir=model_dir,
-                )
-                wav_bytes = _normalize_wav_bytes(wav_bytes)
-                _cache_put(cache_key, wav_bytes)
+                # Gemini TTS
+                if not gemini_model:
+                    raise RuntimeError("Gemini TTS model not provided (GEMINI_TTS_MODEL).")
+                wav_bytes = _gemini_tts_wav_bytes(text=text, api_key=api_key, model=gemini_model, voice=voice)
+                tmp_in = td_path / f"turn_{i:04d}.wav"
+                tmp_in.write_bytes(wav_bytes)
+                tmp_out = td_path / f"turn_{i:04d}.trim.wav"
+                _ffmpeg_trim_silence(str(tmp_in), str(tmp_out))
+                shutil.copyfile(tmp_out, cached_wav)
+                wav_files.append(str(cached_wav))
+                wav_files.append(gap_wav)
 
-            wp = td_path / f"turn_{i:04d}.wav"
-            wp.write_bytes(wav_bytes)
-            wav_files.append(wp)
+        # Remove trailing gap if present
+        if wav_files and wav_files[-1] == gap_wav:
+            wav_files.pop()
 
-            if gap_path and i < len(turns):
-                wav_files.append(gap_path)
+        if not wav_files:
+            raise RuntimeError("No WAV segments produced by TTS.")
 
-        _concat_wavs_to_mp3(wav_files, out_mp3)
-
-
-def _render_turn_to_wav(
-    *,
-    engine: str,
-    text: str,
-    voice: str,
-    api_key: str,
-    gemini_model: str,
-    piper_model_dir: Path,
-) -> bytes:
-    if engine == "gemini":
-        try:
-            return _gemini_tts_wav_bytes(
-                api_key=api_key,
-                model=gemini_model,
-                voice=voice,
-                text=text,
-                language_code=DEFAULT_LANGUAGE_CODE,
-            )
-        except Exception as e:
-            msg = str(e)
-            if FAIL_SOFT_ON_QUOTA and _is_quota_error(msg):
-                _mark_quota_exceeded(msg)
-                fallback_voice = DEFAULT_PIPER_VOICE_A if voice == DEFAULT_GEMINI_VOICE_A else DEFAULT_PIPER_VOICE_B
-                return _piper_with_retry(text=text, voice=fallback_voice, model_dir=piper_model_dir)
-            raise
-
-    # Piper path
-    return _piper_with_retry(text=text, voice=voice, model_dir=piper_model_dir)
-
-
-def _piper_with_retry(*, text: str, voice: str, model_dir: Path) -> bytes:
-    """
-    Key fix: if Piper fails (often due to partial/corrupt .onnx from artifacts),
-    we redownload voice files and retry once.
-    """
-    try:
-        return _piper_tts_wav_bytes(text=text, voice=voice, model_dir=model_dir)
-    except Exception as e1:
-        # Force redownload and retry once (only for known voice ids)
-        try:
-            _redownload_piper_voice(voice, model_dir)
-        except Exception:
-            # if voice isn't in map (custom file), just re-raise original
-            raise e1
-        # Retry after redownload
-        return _piper_tts_wav_bytes(text=text, voice=voice, model_dir=model_dir)
-
-
-# Backward compatibility helper
-def tts_to_mp3(script_text: str, mp3_path: Union[str, Path], api_key: str = "") -> None:
-    chunks = script_to_tts_chunks(script_text)
-    tts_chunks_to_mp3(chunks, mp3_path, api_key=api_key, provider="gemini")
-
-
-# Optional local CLI test
-def _cli() -> None:
-    import argparse
-
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--in", dest="inp", required=True, help="Input text file (script)")
-    ap.add_argument("--out", dest="out", required=True, help="Output mp3")
-    ap.add_argument("--provider", dest="provider", default="auto", help="auto|gemini|piper")
-    ap.add_argument("--api_key", dest="api_key", default=os.getenv("GEMINI_API_KEY", ""))
-    args = ap.parse_args()
-
-    script_text = Path(args.inp).read_text(encoding="utf-8")
-    chunks = script_to_tts_chunks(script_text)
-    if not chunks:
-        raise SystemExit("No chunks parsed")
-
-    tts_chunks_to_mp3(chunks, args.out, api_key=args.api_key, provider=args.provider)
-
-
-if __name__ == "__main__":
-    _cli()
+        _concat_wavs_to_mp3(wav_files, str(mp3_path))
