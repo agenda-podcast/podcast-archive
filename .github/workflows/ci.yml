@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl tar unzip
+      
+      - name: Download and install Piper
+        run: |
+          set -euo pipefail
+          
+          echo "Fetching latest Piper release..."
+          RELEASE_URL="https://api.github.com/repos/rhasspy/piper/releases/latest"
+          RELEASE_JSON=$(curl -sSL "$RELEASE_URL")
+          
+          # Find the amd64 Linux release asset
+          ASSET_URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": *"[^"]*amd64\.tar\.gz"' | head -1 | sed 's/"browser_download_url": *"\([^"]*\)"/\1/')
+          
+          if [ -z "$ASSET_URL" ]; then
+            echo "ERROR: Could not find amd64 Linux release for Piper"
+            echo "Available assets:"
+            echo "$RELEASE_JSON" | grep '"browser_download_url"' || true
+            exit 1
+          fi
+          
+          echo "Downloading Piper from: $ASSET_URL"
+          mkdir -p tools
+          cd tools
+          curl -sSL "$ASSET_URL" -o piper.tar.gz
+          
+          echo "Extracting Piper..."
+          tar -xzf piper.tar.gz
+          
+          # Find the piper binary (it's usually in a subdirectory)
+          PIPER_BIN=$(find . -name "piper" -type f | head -1)
+          
+          if [ -z "$PIPER_BIN" ]; then
+            echo "ERROR: Could not find piper binary after extraction"
+            echo "Contents of tools directory:"
+            ls -laR
+            exit 1
+          fi
+          
+          # Move piper to tools/piper
+          mv "$PIPER_BIN" piper
+          chmod +x piper
+          
+          # Clean up
+          rm -rf piper.tar.gz piper/
+          
+          echo "Piper installed successfully"
+          ./piper --version || echo "Piper version check skipped (might not support --version)"
+          
+      - name: Set PIPER_BINARY environment variable
+        run: |
+          echo "PIPER_BINARY=$GITHUB_WORKSPACE/tools/piper" >> $GITHUB_ENV
+      
+      - name: Install Python requirements
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+      
+      - name: Run smoke test
+        run: |
+          cd scripts
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from tts_generate import find_piper_binary
+          
+          print('Testing find_piper_binary()...')
+          binary_path = find_piper_binary()
+          print(f'Found Piper binary at: {binary_path}')
+          
+          import os
+          if not os.path.exists(binary_path):
+              print(f'ERROR: Binary does not exist at {binary_path}')
+              sys.exit(1)
+          
+          if not os.access(binary_path, os.X_OK):
+              print(f'ERROR: Binary is not executable at {binary_path}')
+              sys.exit(1)
+          
+          print('Smoke test passed!')
+          "
+      
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-logs
+          path: |
+            tools/
+            *.log
+          if-no-files-found: ignore

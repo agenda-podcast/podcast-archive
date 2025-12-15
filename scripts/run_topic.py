@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import time
 import traceback
 from datetime import datetime, timezone
@@ -411,6 +412,14 @@ def main() -> None:
             piper_model_dir=piper_model_dir,
         )
         summary["tts_engine"] = "gemini" if premium_tts else "piper"
+    except RuntimeError as e:
+        error_msg = f"TTS generation failed: {e}"
+        print(f"\n{'='*60}", file=sys.stderr)
+        print(f"ERROR: {error_msg}", file=sys.stderr)
+        print(f"{'='*60}\n", file=sys.stderr)
+        summary["errors"].append({"stage": "tts", "error": str(e), "traceback": traceback.format_exc()})
+        save_json(summary_path, summary)
+        sys.exit(1)
     except Exception as e:
         summary["errors"].append({"stage": "tts", "error": str(e), "traceback": traceback.format_exc()})
         save_json(summary_path, summary)
