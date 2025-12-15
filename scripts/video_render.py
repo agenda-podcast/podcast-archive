@@ -1,83 +1,260 @@
+import os
+import re
 import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 
-DEFAULTS = {
-    "intro_text": "AGENDA • Deep Dive Overview",
-    "outro_text": "Full sources in description • Subscribe for daily briefings",
-    "intro_seconds": 10,
-    "outro_seconds": 12,
-    "font_family": "Sans",
-    "title_fontsize": 42,
-    "timer_fontsize": 34,
-    "title_x": "(w-text_w)/2",
-    "title_y": "h-220",
-    "timer_x": "w-tw-60",
-    "timer_y": "h-305",
-    "intro_x": "60",
-    "intro_y": "h-220",
-    "outro_x": "60",
-    "outro_y": "h-220",
-    "boxcolor": "black@0.55",
-    "timer_boxcolor": "black@0.40",
-    "boxborderw": 18,
-    "timer_boxborderw": 14,
-
-    # Background styling
-    "bg_blur_sigma": 18,
-    "bg_dark_overlay": 0.38,
-
-    # Ken Burns (optional)
-    "kenburns_enabled": True,
-    "kenburns_zoom_end": 1.10,     # final zoom factor
-    "kenburns_seconds": 18,        # duration of one zoom cycle (approx)
-    "kenburns_direction": "diag",  # "diag" | "left" | "right" | "up" | "down" | "center"
-}
+def _sh(cmd: List[str]) -> None:
+    subprocess.check_call(cmd)
 
 
-def _ffprobe_duration_sec(audio_path: Path) -> int:
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        str(audio_path),
-    ]
-    out = subprocess.check_output(cmd, text=True).strip()
-    try:
-        dur = float(out)
-        return max(1, int(round(dur)))
-    except Exception:
-        return 1800
+def _escape_drawtext_literal(s: str) -> str:
+    """
+    Escape a literal string for ffmpeg drawtext text=...
+    drawtext uses ':' and ',' as separators, and supports escaping via backslash.
+    """
+    s = s or ""
+    # Order matters: escape backslash first
+    s = s.replace("\\", "\\\\")
+    s = s.replace(":", "\\:")
+    s = s.replace(",", "\\,")
+    s = s.replace("'", "\\'")
+    s = s.replace("\n", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
-def _clean_chapters(chapters: List[Dict[str, Any]], total_sec: int) -> List[Dict[str, Any]]:
-    if not chapters:
-        return [{"start_sec": 0, "title": "Overview"}]
+def _timer_expr(start_sec: int) -> str:
+    """
+    Build timer expression for drawtext where:
+      MM:SS relative to start_sec
+    Critical: escape ':' between MM and SS as '\:' and escape comma in mod( , ) as '\,'.
+    """
+    s = int(start_sec)
+    # NOTE: We must escape ':' inside the eif formats and also escape the visible ":" between MM and SS.
+    # Also escape comma inside mod().
+    return f"%{{eif\\:(t-{s})/60\\:d2}}\\:%{{eif\\:mod(t-{s}\\,60)\\:d2}}"
 
-    cleaned = []
-    for ch in chapters:
-        if not isinstance(ch, dict):
-            continue
+
+def _between(t0: int, t1: int) -> str:
+    # inclusive range used in your logs
+    return f"between(t\\,{int(t0)}\\,{int(t1)})"
+
+
+def render_waveform_video(
+    bg_concat_txt: str,
+    audio_path: str,
+    ffmeta_path: str,
+    out_mp4: str,
+    segments: List[Dict[str, Any]],
+    overlay_cfg: Dict[str, Any],
+    *,
+    width: int = 1920,
+    height: int = 1080,
+    fps: int = 25,
+    crf: int = 21,                 # a touch faster than 20
+    preset: str = "veryfast",
+) -> str:
+    """
+    Renders a background slideshow + blur + dark overlay + per-segment title + timer.
+    (No waveform visual.)
+    Inputs:
+      - bg_concat_txt: ffmpeg concat demuxer file listing background images/videos
+      - audio_path: mp3
+      - ffmeta_path: ffmetadata file (chapters)
+      - segments: [{"title": "...", "start": 0, "end": 119}, ...] seconds
+      - overlay_cfg: from topic json video_overlay
+    """
+
+    bg_concat_txt = str(bg_concat_txt)
+    audio_path = str(audio_path)
+    ffmeta_path = str(ffmeta_path)
+    out_mp4 = str(out_mp4)
+
+    Path(out_mp4).parent.mkdir(parents=True, exist_ok=True)
+
+    # Overlay config defaults
+    intro_seconds = int(overlay_cfg.get("intro_seconds", 10))
+    outro_seconds = int(overlay_cfg.get("outro_seconds", 12))
+
+    title_fontsize = int(overlay_cfg.get("title_fontsize", 42))
+    timer_fontsize = int(overlay_cfg.get("timer_fontsize", 34))
+
+    title_x = str(overlay_cfg.get("title_x", "(w-text_w)/2"))
+    title_y = str(overlay_cfg.get("title_y", "h-220"))
+
+    timer_x = str(overlay_cfg.get("timer_x", "w-tw-60"))
+    timer_y = str(overlay_cfg.get("timer_y", "h-305"))
+
+    intro_x = str(overlay_cfg.get("intro_x", "60"))
+    intro_y = str(overlay_cfg.get("intro_y", "h-220"))
+    outro_x = str(overlay_cfg.get("outro_x", "60"))
+    outro_y = str(overlay_cfg.get("outro_y", "h-220"))
+
+    boxcolor = str(overlay_cfg.get("boxcolor", "black@0.55"))
+    timer_boxcolor = str(overlay_cfg.get("timer_boxcolor", "black@0.40"))
+    boxborderw = int(overlay_cfg.get("boxborderw", 18))
+    timer_boxborderw = int(overlay_cfg.get("timer_boxborderw", 14))
+
+    kenburns_enabled = bool(overlay_cfg.get("kenburns_enabled", True))
+    kenburns_zoom_end = float(overlay_cfg.get("kenburns_zoom_end", 1.08))
+    kenburns_seconds = int(overlay_cfg.get("kenburns_seconds", 18))
+    kenburns_direction = str(overlay_cfg.get("kenburns_direction", "diag"))
+
+    bg_blur_sigma = int(overlay_cfg.get("bg_blur_sigma", 18))
+    bg_dark_overlay = float(overlay_cfg.get("bg_dark_overlay", 0.38))
+
+    # SPEED OPTIMIZATION:
+    # - Use fps=25 but zoompan d=1:fps=25
+    # - Shorter kenburns window reduces compute
+    kb_frames = max(1, int(kenburns_seconds * fps))
+
+    # Ken Burns pan expressions
+    # Keep simple & cheap. (Avoid heavy per-frame math.)
+    if kenburns_direction == "h":
+        pan_x = f"(iw-ow)*on/{kb_frames}"
+        pan_y = "0"
+    elif kenburns_direction == "v":
+        pan_x = "0"
+        pan_y = f"(ih-oh)*on/{kb_frames}"
+    else:
+        pan_x = f"(iw-ow)*on/{kb_frames}"
+        pan_y = f"(ih-oh)*on/{kb_frames}"
+
+    if kenburns_enabled:
+        zoompan = (
+            f"zoompan="
+            f"z='min(1+({kenburns_zoom_end}-1)*on/{kb_frames},{kenburns_zoom_end})':"
+            f"x='{pan_x}':y='{pan_y}':"
+            f"d=1:fps={fps}"
+        )
+    else:
+        zoompan = None
+
+    # Build drawtext chain
+    # NOTE: avoid fancy quotes; keep font generic.
+    filters = []
+
+    base = f"[0:v]scale={width}:{height},format=yuv420p"
+    if zoompan:
+        base += f",{zoompan}"
+    if bg_blur_sigma > 0:
+        base += f",gblur=sigma={bg_blur_sigma}"
+    if bg_dark_overlay > 0:
+        base += f",drawbox=x=0:y=0:w=iw:h=ih:color=black@{bg_dark_overlay}:t=fill"
+    base += "[v0]"
+    filters.append(base)
+
+    # Intro / Outro text (optional)
+    intro_text = _escape_drawtext_literal(str(overlay_cfg.get("intro_text", "AGENDA • Deep Dive Overview")))
+    outro_text = _escape_drawtext_literal(str(overlay_cfg.get("outro_text", "Full sources in description • Subscribe for daily briefings")))
+
+    if intro_seconds > 0 and intro_text:
+        filters.append(
+            "[v0]"
+            f"drawtext=font='Sans':text='{intro_text}':"
+            f"x={intro_x}:y={intro_y}:fontsize=40:fontcolor=white:"
+            f"box=1:boxcolor={boxcolor}:boxborderw={boxborderw}:"
+            f"enable='{_between(0, max(0, intro_seconds))}'"
+            "[v1]"
+        )
+        cur = "v1"
+    else:
+        cur = "v0"
+
+    # Segment overlays
+    # segments: list of dicts with start/end/title
+    for seg in segments or []:
         try:
-            s = int(ch.get("start_sec", 0))
+            st = int(seg.get("start", 0))
+            en = int(seg.get("end", st + 1))
+            ttl = _escape_drawtext_literal(str(seg.get("title", "") or ""))
         except Exception:
-            s = 0
-        t = str(ch.get("title", "")).strip() or "Segment"
-        s = max(0, min(s, max(0, total_sec - 1)))
-        cleaned.append({"start_sec": s, "title": t})
-
-    cleaned.sort(key=lambda x: x["start_sec"])
-    if not cleaned or cleaned[0]["start_sec"] != 0:
-        cleaned.insert(0, {"start_sec": 0, "title": "Overview"})
-
-    out = []
-    last = -1
-    for ch in cleaned:
-        if ch["start_sec"] <= last:
             continue
-        out.append(ch)
-        last = ch["start_sec"]
+        if not ttl:
+            continue
+        if en <= st:
+            en = st + 1
+
+        # Title
+        filters.append(
+            f"[{cur}]"
+            f"drawtext=font='Sans':text='{ttl}':"
+            f"x={title_x}:y={title_y}:fontsize={title_fontsize}:fontcolor=white:"
+            f"box=1:boxcolor={boxcolor}:boxborderw={boxborderw}:"
+            f"enable='{_between(st, en)}'"
+            f"[{cur}t]"
+        )
+        cur = f"{cur}t"
+
+        # Timer (THIS IS WHERE YOUR ERROR WAS)
+        timer = _timer_expr(st)
+        filters.append(
+            f"[{cur}]"
+            f"drawtext=font='Sans':text='{timer}':"
+            f"x={timer_x}:y={timer_y}:fontsize={timer_fontsize}:fontcolor=white:"
+            f"box=1:boxcolor={timer_boxcolor}:boxborderw={timer_boxborderw}:"
+            f"enable='{_between(st, en)}'"
+            f"[{cur}m]"
+        )
+        cur = f"{cur}m"
+
+    # Outro
+    # Place outro at end range if duration known via last segment end; else do short tail
+    if outro_seconds > 0 and outro_text:
+        tail_start = 0
+        tail_end = 0
+        if segments:
+            try:
+                tail_end = int(max(s.get("end", 0) for s in segments if isinstance(s, dict)))
+            except Exception:
+                tail_end = 0
+        tail_start = max(0, tail_end - outro_seconds)
+
+        filters.append(
+            f"[{cur}]"
+            f"drawtext=font='Sans':text='{outro_text}':"
+            f"x={outro_x}:y={outro_y}:fontsize=40:fontcolor=white:"
+            f"box=1:boxcolor={boxcolor}:boxborderw={boxborderw}:"
+            f"enable='{_between(tail_start, max(tail_start + 1, tail_end))}'"
+            f"[v]"
+        )
+        out_label = "[v]"
+    else:
+        filters.append(f"[{cur}]copy[v]")
+        out_label = "[v]"
+
+    filter_complex = ";".join(filters)
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-loglevel", "error",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", bg_concat_txt,
+        "-i", audio_path,
+        "-i", ffmeta_path,
+        "-filter_complex", filter_complex,
+        "-map", out_label,
+        "-map", "1:a",
+        "-map_metadata", "2",
+        "-shortest",
+        "-movflags", "+faststart",
+        "-c:v", "libx264",
+        "-crf", str(crf),
+        "-preset", preset,
+        "-r", str(fps),
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        out_mp4,
+    ]
+
+    _sh(cmd)
+    return out_mp4        last = ch["start_sec"]
 
     return out if out else [{"start_sec": 0, "title": "Overview"}]
 
