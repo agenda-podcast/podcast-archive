@@ -1,5 +1,12 @@
 {
   "results": [],
+  "errors": [
+    {
+      "topic_id": "topic-01",
+      "error": "Invalid JSON in topics/topic-01.json: Expecting ',' delimiter: line 56 column 5 (char 1667)",
+      "traceback": "Traceback (most recent call last):\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/collect_sources.py\", line 271, in load_topic\n    return json.loads(p.read_text(encoding=\"utf-8\"))\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/json/__init__.py\", line 346, in loads\n    return _default_decoder.decode(s)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/json/decoder.py\", line 337, in decode\n    obj, end = self.raw_decode(s, idx=_w(s, 0).end())\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/json/decoder.py\", line 353, in raw_decode\n    obj, end = self.scan_once(s, idx)\n               ^^^^^^^^^^^^^^^^^^^^^^\njson.decoder.JSONDecodeError: Expecting ',' delimiter: line 56 column 5 (char 1667)\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/collect_sources.py\", line 426, in main\n    results.append(collect_for_topic(tid))\n                   ^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/collect_sources.py\", line 277, in collect_for_topic\n    topic = load_topic(topic_id)\n            ^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/collect_sources.py\", line 273, in load_topic\n    raise RuntimeError(f\"Invalid JSON in {p}: {e}\")\nRuntimeError: Invalid JSON in topics/topic-01.json: Expecting ',' delimiter: line 56 column 5 (char 1667)\n"
+    }
+  ],
   "failed": 1,
-  "timestamp_utc": "2025-12-15T13:13:30.723164Z"
+  "timestamp_utc": "2025-12-15T13:21:04.957378Z"
 }
