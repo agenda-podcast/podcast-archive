@@ -1,96 +1,89 @@
-name: Daily Overviews
+name: "Daily Overviews (Option A - single writer)"
 
 on:
   schedule:
-    - cron: "10 6 * * *"   # daily 06:10 UTC
+    - cron: "10 6 * * *" # daily 06:10 UTC
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: daily-overviews
+  group: "daily-overviews"
   cancel-in-progress: true
 
 jobs:
-  # ------------------------------------------------------------
-  # 1) COLLECT SOURCES (NO PUSH)
-  # ------------------------------------------------------------
   collect:
-    name: Collect sources (all topics)
+    name: "Collect sources (all topics)"
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: "Checkout"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Python
+      - name: "Setup Python"
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: "Install deps"
         run: |
           python -m pip install --upgrade pip
           pip install requests feedparser python-dateutil
 
-      - name: Collect sources
+      - name: "Collect sources"
         run: |
           python scripts/collect_sources.py
 
-      - name: Upload collected data
+      - name: "Upload collected data"
         uses: actions/upload-artifact@v4
         with:
-          name: collected-data
-          path: data
+          name: "collected-data"
+          path: "data"
           if-no-files-found: error
 
-  # ------------------------------------------------------------
-  # 2) VOICES (PIPER MODELS) – NO PUSH
-  # ------------------------------------------------------------
   voices:
-    name: Ensure TTS voices
+    name: "Ensure TTS voices"
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: "Checkout"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Python
+      - name: "Setup Python"
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Piper (and curl)
+      - name: "Install Piper and curl"
         run: |
           python -m pip install --upgrade pip
           pip install piper-tts
           sudo apt-get update
           sudo apt-get install -y curl
 
-      - name: Download / update voices
+      - name: "Download / update voices"
         run: |
           python scripts/ensure_voices.py
 
-      - name: Upload voices
+      - name: "Upload voices"
         uses: actions/upload-artifact@v4
         with:
-          name: voices-assets
-          path: assets/piper
+          name: "voices-assets"
+          path: "assets/piper"
           if-no-files-found: error
 
-  # ------------------------------------------------------------
-  # 3) RUN TOPIC PIPELINE (NO PUSH)
-  # ------------------------------------------------------------
   run:
-    name: Run topic pipeline
-    needs: [collect, voices]
+    name: "Run topic pipeline"
+    needs:
+      - collect
+      - voices
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -98,53 +91,52 @@ jobs:
       fail-fast: false
       matrix:
         topic:
-          - topic-01
-          # - topic-02
-          # ...
+          - "topic-01"
+          # - "topic-02"
 
     steps:
-      - name: Checkout
+      - name: "Checkout"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Download collected data
+      - name: "Download collected data"
         uses: actions/download-artifact@v4
         with:
-          name: collected-data
-          path: data
+          name: "collected-data"
+          path: "data"
 
-      - name: Download voices
+      - name: "Download voices"
         uses: actions/download-artifact@v4
         with:
-          name: voices-assets
-          path: assets/piper
+          name: "voices-assets"
+          path: "assets/piper"
 
-      - name: Setup ffmpeg
+      - name: "Setup ffmpeg"
         uses: FedericoCarboni/setup-ffmpeg@v3
 
-      - name: Setup Python
+      - name: "Setup Python"
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install deps (runtime)
+      - name: "Install deps (runtime)"
         run: |
           python -m pip install --upgrade pip
           pip install requests feedparser python-dateutil
           pip install piper-tts
           pip install google-genai
 
-      - name: Gate by fresh.json (robust)
+      - name: "Gate by fresh.json"
         id: gate
         env:
-          FRESH: data/${{ matrix.topic }}/fresh.json
+          FRESH: "data/${{ matrix.topic }}/fresh.json"
         run: |
           set -euo pipefail
 
           if [ ! -f "$FRESH" ]; then
             echo "fresh.json missing: $FRESH"
-            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -158,94 +150,89 @@ except Exception:
     print(0)
 PY
 )
-          echo "fresh_count=$COUNT"
 
+          echo "fresh_count=$COUNT"
           if [ "$COUNT" -gt 0 ]; then
-            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
-            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run topic
+      - name: "Run topic"
         if: steps.gate.outputs.should_run == 'true'
         env:
-          TOPIC_ID: ${{ matrix.topic }}
-          REPO: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          PIPER_MODEL_DIR: assets/piper
+          TOPIC_ID: "${{ matrix.topic }}"
+          REPO: "${{ github.repository }}"
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}"
+          PIPER_MODEL_DIR: "assets/piper"
           PODCAST_OWNER_NAME: "Agenda"
           PODCAST_OWNER_EMAIL: "deep.dive.podcast@unloca.com"
-          RELEASE_TAG: ${{ matrix.topic }}
+          RELEASE_TAG: "${{ matrix.topic }}"
         run: |
           python scripts/run_topic.py
 
-      - name: Upload outputs
+      - name: "Upload outputs"
         if: steps.gate.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: outputs-${{ matrix.topic }}
+          name: "outputs-${{ matrix.topic }}"
           path: |
             outputs
             feed
             data
           if-no-files-found: warn
 
-  # ------------------------------------------------------------
-  # 4) FINALIZE (SINGLE WRITER, SINGLE PUSH)
-  # ------------------------------------------------------------
   finalize:
-    name: Finalize & push
-    needs: [collect, voices, run]
+    name: "Finalize and push"
+    needs:
+      - collect
+      - voices
+      - run
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - name: Checkout (fresh)
+      - name: "Checkout (fresh)"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Prepare artifacts dir
+      - name: "Prepare artifacts dir"
         run: |
           mkdir -p _artifacts/collected-data
           mkdir -p _artifacts/voices-assets
           mkdir -p _artifacts/outputs
 
-      - name: Download collected data
+      - name: "Download collected data"
         uses: actions/download-artifact@v4
         with:
-          name: collected-data
-          path: _artifacts/collected-data
+          name: "collected-data"
+          path: "_artifacts/collected-data"
 
-      - name: Download voices
+      - name: "Download voices"
         uses: actions/download-artifact@v4
         with:
-          name: voices-assets
-          path: _artifacts/voices-assets
+          name: "voices-assets"
+          path: "_artifacts/voices-assets"
 
-      - name: Download outputs (all topics)
+      - name: "Download outputs (all topics)"
         uses: actions/download-artifact@v4
         with:
-          pattern: outputs-*
+          pattern: "outputs-*"
           merge-multiple: true
-          path: _artifacts/outputs
+          path: "_artifacts/outputs"
 
-      - name: Apply artifacts into working tree (controlled)
+      - name: "Apply artifacts into working tree"
         run: |
           set -euo pipefail
 
-          # Copy collected data
           rsync -a --delete _artifacts/collected-data/ data/
 
-          # Copy voices
           mkdir -p assets/piper
           rsync -a --delete _artifacts/voices-assets/ assets/piper/
 
-          # Copy outputs/feed/data produced by run job(s)
-          # NOTE: outputs artifacts may include data/feed/outputs
-          # We apply in a safe order:
           if [ -d "_artifacts/outputs/data" ]; then
             rsync -a _artifacts/outputs/data/ data/
           fi
@@ -258,14 +245,13 @@ PY
             rsync -a _artifacts/outputs/outputs/ outputs/
           fi
 
-      - name: Commit & push (single writer, retry-safe)
+      - name: "Commit and push (single writer, retry-safe)"
         run: |
           set -euo pipefail
 
           git config user.name "agenda-bot"
           git config user.email "bot@github.com"
 
-          # Rebase first to incorporate any external changes
           git fetch origin main
           git pull --rebase origin main
 
@@ -273,7 +259,6 @@ PY
             git add data assets feed outputs
             git commit -m "chore: daily overviews"
 
-            # Retry push in case main moved again between pull and push
             for i in 1 2 3 4 5; do
               if git push origin HEAD:main; then
                 echo "Push succeeded."
@@ -285,7 +270,6 @@ PY
               sleep $((i*5))
             done
 
-            # Final attempt (fail hard)
             git push origin HEAD:main
           else
             echo "Nothing to commit"
