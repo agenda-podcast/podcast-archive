@@ -6,10 +6,72 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 import tempfile
+import textwrap
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+
+# -------------------------
+# Piper binary detection
+# -------------------------
+def find_piper_binary() -> str:
+    """
+    Find the piper binary to use for TTS.
+    
+    Checks (in order):
+    1. Environment variable PIPER_BINARY (if set and executable)
+    2. Fallback to shutil.which('piper')
+    
+    Returns:
+        Path to the piper executable
+        
+    Raises:
+        RuntimeError: If piper binary cannot be found with helpful instructions
+    """
+    # Check environment variable first
+    piper_env = os.getenv("PIPER_BINARY", "").strip()
+    if piper_env:
+        piper_path = Path(piper_env).resolve()
+        if piper_path.exists() and os.access(piper_path, os.X_OK):
+            return str(piper_path)
+        else:
+            raise RuntimeError(
+                textwrap.dedent(f"""
+                    PIPER_BINARY environment variable is set to '{piper_env}',
+                    but the file does not exist or is not executable.
+                    
+                    Please check:
+                    1. The path is correct
+                    2. The file exists
+                    3. The file has execute permissions
+                """).strip()
+            )
+    
+    # Fallback to searching PATH
+    piper_in_path = shutil.which("piper")
+    if piper_in_path:
+        return piper_in_path
+    
+    # Not found anywhere - provide helpful error
+    raise RuntimeError(
+        textwrap.dedent("""
+            Piper TTS binary not found.
+            
+            To fix this, either:
+            1. Install piper and ensure it's in your PATH
+               - See: https://github.com/rhasspy/piper
+            
+            2. Set the PIPER_BINARY environment variable to the full path
+               of the piper executable:
+               export PIPER_BINARY=/path/to/piper
+            
+            3. For CI/testing, use the mock piper provided in tools/piper:
+               export PIPER_BINARY=./tools/piper
+        """).strip()
+    )
 
 
 # -------------------------
@@ -205,14 +267,32 @@ def _piper_tts_wav_bytes(text: str, voice: str, model_dir: Path) -> bytes:
     if not cfg.exists():
         raise RuntimeError(f"Piper config missing: {cfg}")
 
+    # Find piper binary (raises RuntimeError with helpful message if not found)
+    piper_binary = find_piper_binary()
+
     with tempfile.TemporaryDirectory() as td:
         td_p = Path(td)
         out_wav = td_p / "out.wav"
 
-        cmd = ["piper", "--model", str(model), "--output_file", str(out_wav)]
+        cmd = [piper_binary, "--model", str(model), "--output_file", str(out_wav)]
         p = subprocess.run(cmd, input=(text.strip() + "\n").encode("utf-8"), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if p.returncode != 0 or (not out_wav.exists()) or out_wav.stat().st_size < 1000:
-            raise RuntimeError(f"Piper failed ({p.returncode}): {p.stderr.decode('utf-8', 'ignore')[:1200]}")
+        
+        if p.returncode != 0:
+            stderr_text = p.stderr.decode('utf-8', 'ignore')[:1200]
+            raise RuntimeError(
+                f"Piper TTS failed with exit code {p.returncode}.\n"
+                f"Command: {' '.join(cmd)}\n"
+                f"Stderr: {stderr_text}"
+            )
+        
+        if not out_wav.exists() or out_wav.stat().st_size < 1000:
+            raise RuntimeError(
+                f"Piper TTS did not produce a valid output file.\n"
+                f"Expected: {out_wav}\n"
+                f"Exists: {out_wav.exists()}\n"
+                f"Size: {out_wav.stat().st_size if out_wav.exists() else 0} bytes"
+            )
+        
         return out_wav.read_bytes()
 
 

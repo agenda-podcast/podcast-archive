@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import time
 import traceback
 from datetime import datetime, timezone
@@ -500,4 +501,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RuntimeError as e:
+        # Catch RuntimeError from TTS or other components and display helpful message
+        print(f"\n{'='*80}", file=sys.stderr)
+        print("ERROR: Runtime error occurred", file=sys.stderr)
+        print(f"{'='*80}", file=sys.stderr)
+        print(str(e), file=sys.stderr)
+        print(f"{'='*80}\n", file=sys.stderr)
+        sys.exit(1)

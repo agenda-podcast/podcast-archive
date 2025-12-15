@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Mock piper binary for CI/testing.
+Reads text from stdin, ignores command-line options, and writes a minimal
+valid WAV file (mono, 16-bit PCM, 22050 Hz) to stdout.
+"""
+
+import struct
+import sys
+
+
+def generate_silent_wav(duration_ms=100, sample_rate=22050):
+    """
+    Generate a minimal silent WAV file.
+    Returns bytes representing a valid WAV file.
+    
+    Format: mono, 16-bit PCM, 22050 Hz
+    """
+    num_channels = 1
+    bits_per_sample = 16
+    byte_rate = sample_rate * num_channels * bits_per_sample // 8
+    block_align = num_channels * bits_per_sample // 8
+    
+    # Calculate number of samples for the given duration
+    num_samples = int(sample_rate * duration_ms / 1000.0)
+    data_size = num_samples * block_align
+    
+    # WAV file structure:
+    # RIFF header
+    riff_header = b"RIFF"
+    file_size = 36 + data_size  # Size of the rest of the file
+    wave_header = b"WAVE"
+    
+    # fmt subchunk
+    fmt_header = b"fmt "
+    fmt_size = 16  # Size of fmt subchunk (PCM)
+    audio_format = 1  # PCM
+    
+    # data subchunk
+    data_header = b"data"
+    
+    # Build the WAV file
+    wav_data = bytearray()
+    wav_data.extend(riff_header)
+    wav_data.extend(struct.pack("<I", file_size))
+    wav_data.extend(wave_header)
+    
+    # fmt subchunk
+    wav_data.extend(fmt_header)
+    wav_data.extend(struct.pack("<I", fmt_size))
+    wav_data.extend(struct.pack("<H", audio_format))
+    wav_data.extend(struct.pack("<H", num_channels))
+    wav_data.extend(struct.pack("<I", sample_rate))
+    wav_data.extend(struct.pack("<I", byte_rate))
+    wav_data.extend(struct.pack("<H", block_align))
+    wav_data.extend(struct.pack("<H", bits_per_sample))
+    
+    # data subchunk
+    wav_data.extend(data_header)
+    wav_data.extend(struct.pack("<I", data_size))
+    
+    # Silent audio data (all zeros)
+    wav_data.extend(b"\x00" * data_size)
+    
+    return bytes(wav_data)
+
+
+def main():
+    """
+    Mock piper main function.
+    Reads text from stdin (to match piper interface), accepts and ignores
+    command-line arguments, and writes a WAV to the specified output file
+    or stdout.
+    """
+    # Read stdin to consume input text (piper reads from stdin)
+    try:
+        _ = sys.stdin.read()
+    except Exception:
+        pass
+    
+    # Parse arguments to find --output_file or --output-file
+    output_file = None
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        if args[i] in ("--output_file", "--output-file", "--output"):
+            if i + 1 < len(args):
+                output_file = args[i + 1]
+                break
+        i += 1
+    
+    # Generate a silent WAV
+    wav_bytes = generate_silent_wav(duration_ms=500)
+    
+    # Write to output file or stdout
+    if output_file:
+        with open(output_file, "wb") as f:
+            f.write(wav_bytes)
+    else:
+        # Write to stdout in binary mode
+        sys.stdout.buffer.write(wav_bytes)
+    
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
