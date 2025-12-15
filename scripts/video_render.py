@@ -7,18 +7,19 @@ import os
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-import requests
+try:
+    import requests  # type: ignore
+except Exception:
+    requests = None  # type: ignore
 
 
-FONTFILE = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-
-
-TIER1 = {
+TRUST_TIERS = [
+    # Tier 1
     "reuters.com",
     "bbc.co.uk",
     "bbc.com",
@@ -26,194 +27,146 @@ TIER1 = {
     "ft.com",
     "wsj.com",
     "apnews.com",
-    "theguardian.com",
-    "economist.com",
-}
-TIER2 = {
-    "npr.org",
-    "pbs.org",
-    "cbsnews.com",
-    "abcnews.go.com",
-    "nbcnews.com",
-    "politico.com",
-    "axios.com",
     "bloomberg.com",
-}
+    "theguardian.com",
+    # Tier 2 (still good)
+    "economist.com",
+    "axios.com",
+    "npr.org",
+    "propublica.org",
+    "aljazeera.com",
+]
+
+
+def _run(cmd: List[str], timeout: int = 1800) -> None:
+    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+
+
+def _ffprobe_duration_seconds(mp3_path: str) -> float:
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        mp3_path,
+    ]
+    out = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode("utf-8", "ignore").strip()
+    try:
+        return float(out)
+    except Exception:
+        return 0.0
 
 
 def _domain(u: str) -> str:
     try:
-        h = urlparse(u).netloc.lower()
-        if h.startswith("www."):
-            h = h[4:]
-        return h
+        return (urlparse(u).netloc or "").lower()
     except Exception:
         return ""
 
 
-def _trust_score(source_url: str) -> int:
-    d = _domain(source_url)
-    if d in TIER1:
-        return 100
-    if d in TIER2:
-        return 60
-    if d:
-        return 20
-    return 0
+def _trust_score(u: str) -> int:
+    d = _domain(u)
+    for i, dom in enumerate(TRUST_TIERS):
+        if d.endswith(dom):
+            return 100 - i
+    return 10
 
 
-def _http_get(url: str, timeout: int = 12) -> requests.Response:
-    return requests.get(
-        url,
-        timeout=timeout,
-        headers={
-            "User-Agent": "agenda-video-render/1.0 (+https://github.com/agenda-podcast/podcast-archive)",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-        allow_redirects=True,
-    )
+def _pick_url(item: Dict[str, Any]) -> str:
+    for k in ("url", "link", "source_url", "canonical_url"):
+        v = item.get(k)
+        if isinstance(v, str) and v.startswith(("http://", "https://")):
+            return v
+    return ""
+
+
+def _fetch_html(url: str, timeout: int = 12) -> str:
+    if requests is None:
+        return ""
+    try:
+        r = requests.get(url, timeout=timeout, headers={"User-Agent": "agenda-video/1.0"})
+        if r.status_code != 200:
+            return ""
+        ct = (r.headers.get("content-type") or "").lower()
+        if "text/html" not in ct and "application/xhtml" not in ct:
+            return ""
+        return r.text[:500_000]
+    except Exception:
+        return ""
 
 
 def _extract_og_image(html: str) -> str:
-    # property="og:image" content="..."
-    m = re.search(r'property=["\']og:image["\']\s+content=["\']([^"\']+)["\']', html, flags=re.IGNORECASE)
+    # very small and robust regex
+    m = re.search(r'property=["\']og:image["\']\s+content=["\']([^"\']+)["\']', html, re.IGNORECASE)
     if m:
         return m.group(1).strip()
-    # name="twitter:image"
-    m = re.search(r'name=["\']twitter:image["\']\s+content=["\']([^"\']+)["\']', html, flags=re.IGNORECASE)
+    m = re.search(r'content=["\']([^"\']+)["\']\s+property=["\']og:image["\']', html, re.IGNORECASE)
     if m:
         return m.group(1).strip()
     return ""
 
 
-def _download_image(url: str, out_path: Path) -> bool:
+def _download_image(url: str, out_path: Path, timeout: int = 20) -> bool:
+    if requests is None:
+        return False
     try:
-        r = requests.get(
-            url,
-            timeout=15,
-            headers={
-                "User-Agent": "agenda-video-render/1.0 (+https://github.com/agenda-podcast/podcast-archive)",
-                "Accept": "image/*,*/*;q=0.8",
-                "Referer": url,
-            },
-            stream=True,
-            allow_redirects=True,
-        )
-        r.raise_for_status()
-        ct = (r.headers.get("content-type") or "").lower()
-        if "image" not in ct:
+        r = requests.get(url, timeout=timeout, headers={"User-Agent": "agenda-video/1.0"})
+        if r.status_code != 200:
             return False
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        with out_path.open("wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 128):
-                if chunk:
-                    f.write(chunk)
-        return out_path.exists() and out_path.stat().st_size > 10_000
+        data = r.content
+        if len(data) < 15_000:
+            return False
+        out_path.write_bytes(data)
+        return True
     except Exception:
         return False
 
 
-def _pick_best_background(sources: List[Dict[str, Any]], tmp_dir: Path) -> Optional[Path]:
-    # Sort by trust tier first
-    scored = []
-    for s in sources or []:
-        u = str(s.get("url") or "")
-        if u.startswith("http"):
-            scored.append((_trust_score(u), u))
-    scored.sort(key=lambda x: x[0], reverse=True)
+def select_and_download_backgrounds(
+    sources: List[Dict[str, Any]],
+    max_images: int,
+    work_dir: Path,
+) -> List[Path]:
+    """
+    Best-effort: from each source URL, fetch HTML, take og:image, download.
+    Prioritize by trust tier.
+    """
+    candidates: List[str] = []
+    for s in sources:
+        if isinstance(s, dict):
+            u = _pick_url(s) or ""
+            if u:
+                candidates.append(u)
 
-    # Try top N pages for og:image
-    for i, (_, page_url) in enumerate(scored[:12]):
-        try:
-            resp = _http_get(page_url, timeout=12)
-            if resp.status_code >= 400:
-                continue
-            img = _extract_og_image(resp.text or "")
-            if not img or not img.startswith("http"):
-                continue
-            out = tmp_dir / f"bg_{i:02d}.jpg"
-            if _download_image(img, out):
-                return out
-        except Exception:
+    candidates = sorted(set(candidates), key=_trust_score, reverse=True)
+
+    out: List[Path] = []
+    for u in candidates:
+        if len(out) >= max_images:
+            break
+        html = _fetch_html(u)
+        if not html:
             continue
+        img = _extract_og_image(html)
+        if not img or not img.startswith(("http://", "https://")):
+            continue
+        fn = re.sub(r"[^a-zA-Z0-9_\-\.]+", "_", _domain(u) + "_" + str(len(out) + 1)) + ".img"
+        p = work_dir / fn
+        if _download_image(img, p):
+            out.append(p)
 
-    # Fallback: local poster/cover
-    for fallback in [
-        Path("poster.jpg"),
-        Path("feed/poster.jpg"),
-        Path("assets/cover.jpg"),
-        Path("assets/cover.png"),
-    ]:
-        if fallback.exists() and fallback.stat().st_size > 10_000:
-            out = tmp_dir / "bg_fallback.jpg"
-            out.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(fallback, out)
-            return out
-
-    return None
-
-
-def _ffprobe_duration(path: str) -> float:
-    try:
-        p = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return float((p.stdout or "0").strip() or "0")
-    except Exception:
-        return 0.0
+    return out
 
 
 def _escape_drawtext_text(s: str) -> str:
-    """
-    For drawtext=text='...'
-    - escape backslash
-    - escape single quote
-    - escape colon (option separator)
-    """
-    s = (s or "")
+    # Escape for ffmpeg drawtext: \, :, ', and % (keep % only for pts expansions)
     s = s.replace("\\", "\\\\")
-    s = s.replace("'", "\\'")
     s = s.replace(":", "\\:")
+    s = s.replace("'", "\\'")
     return s
-
-
-def _timer_expr(start: int) -> str:
-    # IMPORTANT: the literal ":" between mm and ss MUST be escaped as "\:"
-    # Also internal ":" must be escaped as "\:" inside %{...}
-    return f"%{{eif\\:(t-{start})/60\\:d2}}\\:%{{eif\\:mod(t-{start},60)\\:d2}}"
-
-
-def _normalize_segments(chapters: List[Dict[str, Any]], duration: int) -> List[Dict[str, Any]]:
-    segs: List[Dict[str, Any]] = []
-    for ch in chapters or []:
-        if not isinstance(ch, dict):
-            continue
-        try:
-            title = str(ch.get("title", "Segment")).strip() or "Segment"
-            start = int(float(ch.get("start_sec", 0)))
-            end = int(float(ch.get("end_sec", start + 1)))
-            if end <= start:
-                end = start + 1
-            if start < 0:
-                start = 0
-            if end > duration:
-                end = duration
-            if start >= duration:
-                continue
-            segs.append({"title": title, "start_sec": start, "end_sec": end})
-        except Exception:
-            continue
-
-    # If empty, build a single segment
-    if not segs:
-        segs = [{"title": "Overview", "start_sec": 0, "end_sec": max(1, duration)}]
-
-    # Ensure monotonic ordering
-    segs.sort(key=lambda x: x["start_sec"])
-    return segs
 
 
 def render_background_video(
@@ -225,163 +178,142 @@ def render_background_video(
     chapters: List[Dict[str, Any]],
     ffmeta_path: str,
     overlay: Dict[str, Any],
-    intro_text: str,
-    outro_text: str,
-    sources: List[Dict[str, Any]],
+    intro_text: str = "",
+    outro_text: str = "",
+    sources: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
+    """
+    Creates a 1920x1080 video with:
+      - background slideshow from related sources (og:image)
+      - blur + dark overlay
+      - title + elapsed timer
+    """
+    max_bg = int(topic.get("max_bg_images", 12))
+    duration = _ffprobe_duration_seconds(mp3_path)
+    if duration <= 0:
+        duration = float(topic.get("duration_sec", 1800))
+
+    title = str(topic.get("title") or topic_id).strip()
+    podcast_title = str(topic.get("podcast_title") or "Agenda").strip()
+
     out_mp4_p = Path(out_mp4)
     out_mp4_p.parent.mkdir(parents=True, exist_ok=True)
 
-    duration_f = _ffprobe_duration(mp3_path)
-    duration = int(duration_f) if duration_f > 1 else int(topic.get("duration_sec", 1800))
-    if duration <= 0:
-        duration = 1800
+    with tempfile.TemporaryDirectory() as td:
+        td_p = Path(td)
+        img_dir = td_p / "imgs"
+        img_dir.mkdir(parents=True, exist_ok=True)
 
-    tmp_dir = Path(f"outputs/{topic_id}/_tmp_images")
-    if tmp_dir.exists():
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-    tmp_dir.mkdir(parents=True, exist_ok=True)
+        imgs: List[Path] = []
+        if sources:
+            imgs = select_and_download_backgrounds(sources, max_images=max_bg, work_dir=img_dir)
 
-    bg = _pick_best_background(sources, tmp_dir)
-    if bg is None:
-        raise RuntimeError("No background image available (no og:image and no local fallback poster/cover).")
+        # If no images, use a generated background
+        if not imgs:
+            # Create a single placeholder frame (dark)
+            placeholder = img_dir / "placeholder.png"
+            _run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=1920x1080", "-frames:v", "1", str(placeholder)], timeout=300)
+            imgs = [placeholder]
 
-    # Overlay config defaults
-    intro_seconds = int(float(overlay.get("intro_seconds", 10) or 10))
-    outro_seconds = int(float(overlay.get("outro_seconds", 12) or 12))
+        # Build concat list with durations
+        per = max(5.0, duration / max(1, len(imgs)))
+        concat = td_p / "bg.txt"
+        lines: List[str] = []
+        for p in imgs:
+            # concat demuxer supports: file, duration
+            lines.append(f"file '{str(p).replace(\"'\", \"'\\\\''\")}'")
+            lines.append(f"duration {per:.3f}")
+        # repeat last file without duration line requirement
+        lines.append(f"file '{str(imgs[-1]).replace(\"'\", \"'\\\\''\")}'")
+        concat.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    title_fontsize = int(float(overlay.get("title_fontsize", 42) or 42))
-    timer_fontsize = int(float(overlay.get("timer_fontsize", 34) or 34))
+        # Overlay controls
+        bg_blur = float(overlay.get("bg_blur_sigma", 18))
+        dark_overlay = float(overlay.get("bg_dark_overlay", 0.38))
+        title_fs = int(overlay.get("title_fontsize", 42))
+        timer_fs = int(overlay.get("timer_fontsize", 30))
 
-    # Use safe FFmpeg expressions; DO NOT use "tw" variable
-    title_x = str(overlay.get("title_x", "(w-text_w)/2") or "(w-text_w)/2")
-    title_y = str(overlay.get("title_y", "h-220") or "h-220")
-    timer_x = str(overlay.get("timer_x", "w-text_w-60") or "w-text_w-60")
-    timer_y = str(overlay.get("timer_y", "h-305") or "h-305")
+        # positions (simple defaults)
+        title_x = str(overlay.get("title_x", "(w-text_w)/2"))
+        title_y = str(overlay.get("title_y", "h-220"))
+        timer_x = str(overlay.get("timer_x", "w-tw-60"))
+        timer_y = str(overlay.get("timer_y", "h-305"))
 
-    intro_x = str(overlay.get("intro_x", "60") or "60")
-    intro_y = str(overlay.get("intro_y", "h*0.78") or "h*0.78")
-    outro_x = str(overlay.get("outro_x", "60") or "60")
-    outro_y = str(overlay.get("outro_y", "h*0.78") or "h*0.78")
+        # Intro/outro seconds
+        intro_sec = int(overlay.get("intro_seconds", topic.get("intro_seconds", 10) or 10))
+        outro_sec = int(overlay.get("outro_seconds", topic.get("outro_seconds", 12) or 12))
 
-    boxcolor = str(overlay.get("boxcolor", "black@0.55") or "black@0.55")
-    timer_boxcolor = str(overlay.get("timer_boxcolor", "black@0.40") or "black@0.40")
-    boxborderw = int(float(overlay.get("boxborderw", 18) or 18))
-    timer_boxborderw = int(float(overlay.get("timer_boxborderw", 14) or 14))
+        # Make safe enable expressions (escape commas)
+        def between(t0: float, t1: float) -> str:
+            return f"between(t\\,{t0:.3f}\\,{t1:.3f})"
 
-    bg_blur_sigma = int(float(overlay.get("bg_blur_sigma", 18) or 18))
-    bg_dark_overlay = float(overlay.get("bg_dark_overlay", 0.38) or 0.38)
-    if bg_dark_overlay < 0:
-        bg_dark_overlay = 0.0
-    if bg_dark_overlay > 0.9:
-        bg_dark_overlay = 0.9
+        # Texts
+        intro_line = _escape_drawtext_text(intro_text or f"{podcast_title} • Deep Dive Overview")
+        outro_line = _escape_drawtext_text(outro_text or "Full sources included • Subscribe for the next briefing")
+        main_title = _escape_drawtext_text(title)
 
-    segments = _normalize_segments(chapters, duration)
+        # Global timer (no commas)
+        timer_text = "%{pts\\:hms}"
 
-    # Build drawtext filters (intro/outro lower third + segment title + timer)
-    draws: List[str] = []
-
-    # Background processing: blur + dark overlay
-    base = (
-        f"[0:v]scale=1920:1080,format=yuv420p"
-        f",gblur=sigma={bg_blur_sigma}"
-        f",drawbox=x=0:y=0:w=iw:h=ih:color=black@{bg_dark_overlay}:t=fill[v0]"
-    )
-
-    # Intro lower-third
-    if intro_text:
-        intro_txt = _escape_drawtext_text(intro_text)
-        draws.append(
-            "drawtext="
-            f"fontfile='{FONTFILE}':text='{intro_txt}':"
-            f"x={intro_x}:y={intro_y}:fontsize={title_fontsize}:fontcolor=white:"
-            f"box=1:boxcolor={boxcolor}:boxborderw={boxborderw}:"
-            f"enable='between(t,0,{max(1,intro_seconds)})'"
+        # Filter: scale/crop, slight motion, blur, dark overlay, text
+        vf = (
+            "[0:v]"
+            "scale=1920:1080:force_original_aspect_ratio=increase,"
+            "crop=1920:1080,"
+            "format=yuv420p,"
+            "zoompan=z='1.07':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=25,"
+            f"gblur=sigma={bg_blur:.1f},"
+            f"drawbox=x=0:y=0:w=iw:h=ih:color=black@{dark_overlay:.2f}:t=fill,"
+            # Intro
+            f"drawtext=font='Sans':text='{intro_line}':x=60:y=h-220:fontsize={title_fs}:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=18:enable='{between(0, float(intro_sec))}',"
+            # Title
+            f"drawtext=font='Sans':text='{main_title}':x={title_x}:y={title_y}:fontsize={title_fs}:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=18,"
+            # Timer (global)
+            f"drawtext=font='Sans':text='{timer_text}':x={timer_x}:y={timer_y}:fontsize={timer_fs}:fontcolor=white:box=1:boxcolor=black@0.40:boxborderw=14,"
+            # Outro
+            f"drawtext=font='Sans':text='{outro_line}':x=60:y=h-220:fontsize={title_fs}:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=18:"
+            f"enable='{between(max(0.0, duration - float(outro_sec)), duration)}'"
+            "[v]"
         )
 
-    # Outro lower-third (last outro_seconds)
-    if outro_text and outro_seconds > 0:
-        outro_start = max(0, duration - outro_seconds)
-        outro_txt = _escape_drawtext_text(outro_text)
-        draws.append(
-            "drawtext="
-            f"fontfile='{FONTFILE}':text='{outro_txt}':"
-            f"x={outro_x}:y={outro_y}:fontsize={title_fontsize}:fontcolor=white:"
-            f"box=1:boxcolor={boxcolor}:boxborderw={boxborderw}:"
-            f"enable='between(t,{outro_start},{duration})'"
-        )
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat),
+            "-i",
+            mp3_path,
+            "-i",
+            ffmeta_path,
+            "-filter_complex",
+            vf,
+            "-map",
+            "[v]",
+            "-map",
+            "1:a",
+            "-map_metadata",
+            "2",
+            "-shortest",
+            "-movflags",
+            "+faststart",
+            "-c:v",
+            "libx264",
+            "-crf",
+            "20",
+            "-preset",
+            "veryfast",
+            "-r",
+            "25",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            out_mp4,
+        ]
 
-    # Per-segment title + timer
-    for seg in segments:
-        st = int(seg["start_sec"])
-        en = int(seg["end_sec"])
-        if en <= st:
-            en = st + 1
-        title = _escape_drawtext_text(str(seg["title"]))
-        timer = _timer_expr(st)
-
-        draws.append(
-            "drawtext="
-            f"fontfile='{FONTFILE}':text='{title}':"
-            f"x={title_x}:y={title_y}:fontsize={title_fontsize}:fontcolor=white:"
-            f"box=1:boxcolor={boxcolor}:boxborderw={boxborderw}:"
-            f"enable='between(t,{st},{en})'"
-        )
-        draws.append(
-            "drawtext="
-            f"fontfile='{FONTFILE}':text='{timer}':"
-            f"x={timer_x}:y={timer_y}:fontsize={timer_fontsize}:fontcolor=white:"
-            f"box=1:boxcolor={timer_boxcolor}:boxborderw={timer_boxborderw}:"
-            f"enable='between(t,{st},{en})'"
-        )
-
-    filter_complex = base + ";" + "[v0]" + ",".join(draws) + "[v]"
-
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-loop",
-        "1",
-        "-i",
-        str(bg),
-        "-i",
-        mp3_path,
-        "-i",
-        ffmeta_path,
-        "-filter_complex",
-        filter_complex,
-        "-map",
-        "[v]",
-        "-map",
-        "1:a",
-        "-map_metadata",
-        "2",
-        "-shortest",
-        "-movflags",
-        "+faststart",
-        "-c:v",
-        "libx264",
-        "-crf",
-        "20",
-        "-preset",
-        "veryfast",
-        "-r",
-        "25",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        str(out_mp4_p),
-    ]
-
-    subprocess.check_call(cmd)
-
-    # Cleanup temp images
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-
-    return str(out_mp4_p)
-
-
-# Backward-compat wrapper (if any old code calls this)
-def render_waveform_video(*args: Any, **kwargs: Any) -> str:
-    raise RuntimeError("render_waveform_video is deprecated. Use render_background_video(...) instead.")
+        subprocess.check_call(cmd)
+        return out_mp4
