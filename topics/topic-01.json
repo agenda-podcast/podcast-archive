@@ -1,17 +1,37 @@
 {
   "id": "topic-01",
-  "title": "Agenda — Artificial Intelligence",
-  "description": "A rigorous analysis of AI as a general-purpose technology: model economics, compute concentration, data advantages, productivity impact, and the long-term restructuring of industries and competitive moats.",
-  "query": "(AI OR robotics OR artificial intelligence OR gpt) AND (United States OR US)",
+  "title": "Agenda — Immigration policy",
+  "description": "Here we focus on current events, legal analysis, historical context, or lived experiences, often featuring expert interviews on border security, DACA, asylum, integration, or the broken system's future, exploring how politics, law, and community impact immigrants and the nation.",
   "duration_sec": 1800,
   "segment_count": 10,
   "gemini_model": "gemini-2.5-flash",
-  "max_items_for_script": 60,
+  "language": "EN",
+
+  "queries": [
+    "USCIS processing freeze",
+    "immigration case freeze memo",
+    "administrative freeze immigration applications"
+  ],
+
+  "languages": [
+    { "hl": "en-US", "gl": "US", "ceid": "US:en", "lang": "en" },
+    { "hl": "en-GB", "gl": "GB", "ceid": "GB:en", "lang": "en" },
+    { "hl": "es-419", "gl": "US", "ceid": "US:es-419", "lang": "es" }
+  ],
+
   "min_fresh_sources": 20,
+  "freshness_hours": 24,
+  "max_results_per_query": 50,
+  "backlog_max": 2000,
+  "fresh_cap": 500,
+
+  "max_items_for_script": 60,
+  "max_bg_images": 15,
+
+  "intro_text": "Welcome back to Agenda. Today we break down the latest immigration policy developments.",
+  "outro_text": "That’s the overview. Full sources are included. Subscribe for the next briefing.",
 
   "video_overlay": {
-    "intro_text": "AGENDA • Artificialintelligence: recent updates",
-    "outro_text": "Full sources in description • Subscribe for daily briefings",
     "intro_seconds": 10,
     "outro_seconds": 12,
 
