@@ -198,6 +198,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
+      - name: "Sync with origin (must be clean)"
+        run: |
+          set -euo pipefail
+          git config user.name "agenda-bot"
+          git config user.email "bot@github.com"
+          git fetch origin main
+          git reset --hard origin/main
+
       - name: "Prepare artifacts dir"
         run: |
           mkdir -p _artifacts/collected-data
@@ -244,15 +252,12 @@ jobs:
             rsync -a _artifacts/outputs/outputs/ outputs/
           fi
 
-      - name: "Commit and push (single writer, retry-safe)"
+      - name: "Commit and push (retry-safe)"
         run: |
           set -euo pipefail
 
           git config user.name "agenda-bot"
           git config user.email "bot@github.com"
-
-          git fetch origin main
-          git pull --rebase origin main
 
           if [ -n "$(git status --porcelain)" ]; then
             git add data assets feed outputs
@@ -265,7 +270,8 @@ jobs:
               fi
               echo "Push failed, retry $i/5..."
               git fetch origin main
-              git pull --rebase origin main
+              git reset --hard origin/main
+              git cherry-pick HEAD~0 || true
               sleep $((i*5))
             done
 
