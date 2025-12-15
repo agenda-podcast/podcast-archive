@@ -226,10 +226,10 @@ def tts_chunks_to_mp3(
     g_voice_b = gemini_voice_b or os.environ.get("GEMINI_TTS_VOICE_B") or p_voice_b
 
     provider_requested = "gemini" if premium and gemini_api_key else "piper"
-    provider = provider_requested if provider_requested == "piper" else "piper"
-    provider_used = provider
-    if provider_requested == "gemini" and provider_used == "piper":
+    provider_used = "piper"  # Gemini TTS not yet implemented; fallback to Piper
+    if provider_requested == "gemini":
         print("Gemini TTS requested but not available; falling back to Piper.", file=sys.stderr)
+    provider = "piper"
 
     ms_gap = int(round(gap_seconds * 1000))
     silence_wav = _ensure_silence_wav(cache_dir / f"silence_{ms_gap}ms.wav", seconds=gap_seconds)
