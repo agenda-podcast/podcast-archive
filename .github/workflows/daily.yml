@@ -61,14 +61,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: "Install Piper and curl"
+      - name: "Install Piper"
         run: |
           python -m pip install --upgrade pip
           pip install piper-tts
-          sudo apt-get update
-          sudo apt-get install -y curl
 
       - name: "Download / update voices"
+        env:
+          PIPER_MODEL_DIR: "assets/piper"
+          # Optional override:
+          # PIPER_VOICES: "en_US-ryan-medium,en_US-amy-medium"
+          # FORCE_VOICES: "1"
         run: |
           python scripts/ensure_voices.py
 
@@ -91,14 +94,6 @@ jobs:
         topic:
           - "topic-01"
           # - "topic-02"
-          # - "topic-03"
-          # - "topic-04"
-          # - "topic-05"
-          # - "topic-06"
-          # - "topic-07"
-          # - "topic-08"
-          # - "topic-09"
-          # - "topic-10"
 
     steps:
       - name: "Checkout"
@@ -146,14 +141,17 @@ jobs:
             exit 0
           fi
 
-          COUNT="$(python -c "import os,json; p=os.environ.get('FRESH',''); d=json.load(open(p,'r',encoding='utf-8')); print(len(d) if isinstance(d,list) else 0)" 2>/dev/null || echo 0)"
-
-          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
-            COUNT=0
-          fi
-
+          COUNT=$(python - <<'PY'
+import json, os
+p = os.environ.get("FRESH", "")
+try:
+    d = json.load(open(p, "r", encoding="utf-8"))
+    print(len(d) if isinstance(d, list) else 0)
+except Exception:
+    print(0)
+PY
+)
           echo "fresh_count=$COUNT"
-
           if [ "$COUNT" -gt 0 ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
@@ -167,7 +165,10 @@ jobs:
           REPO: "${{ github.repository }}"
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}"
+
           PIPER_MODEL_DIR: "assets/piper"
+
+          # Podcast RSS owner info
           PODCAST_OWNER_NAME: "Agenda"
           PODCAST_OWNER_EMAIL: "deep.dive.podcast@unloca.com"
           RELEASE_TAG: "${{ matrix.topic }}"
@@ -198,7 +199,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: "Sync with origin (must be clean)"
+      - name: "Sync with origin/main first (clean tree)"
         run: |
           set -euo pipefail
           git config user.name "agenda-bot"
@@ -252,12 +253,9 @@ jobs:
             rsync -a _artifacts/outputs/outputs/ outputs/
           fi
 
-      - name: "Commit and push (retry-safe)"
+      - name: "Commit and push (single writer, retry-safe)"
         run: |
           set -euo pipefail
-
-          git config user.name "agenda-bot"
-          git config user.email "bot@github.com"
 
           if [ -n "$(git status --porcelain)" ]; then
             git add data assets feed outputs
@@ -270,8 +268,7 @@ jobs:
               fi
               echo "Push failed, retry $i/5..."
               git fetch origin main
-              git reset --hard origin/main
-              git cherry-pick HEAD~0 || true
+              git rebase origin/main
               sleep $((i*5))
             done
 
