@@ -25,8 +25,8 @@ DEFAULTS = {
     "timer_boxborderw": 14,
 
     # Background styling
-    "bg_blur_sigma": 18,         # light blur
-    "bg_dark_overlay": 0.38,     # black alpha over background
+    "bg_blur_sigma": 18,
+    "bg_dark_overlay": 0.38,
 }
 
 
@@ -260,15 +260,13 @@ def _make_concat_image_list(bg_images: List[Path], durations: List[int], list_pa
     FFmpeg concat demuxer list:
       file '/abs/path/image.jpg'
       duration 12
-    Last file must be repeated without duration to avoid bug.
+    Last file must be repeated without duration.
     """
     assert len(bg_images) == len(durations)
     lines = []
     for img, dur in zip(bg_images, durations):
         lines.append(f"file '{img.absolute()}'")
         lines.append(f"duration {max(1, int(dur))}")
-
-    # repeat last file
     lines.append(f"file '{bg_images[-1].absolute()}'")
     list_path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -282,9 +280,8 @@ def render_waveform_video(
     bg_images: Optional[List[Path]] = None,
 ) -> None:
     """
-    If bg_images provided: create slideshow background aligned to chapter windows.
-    Else: use cover as static background.
-    Applies blur + dark overlay to background to improve text readability.
+    Despite name, waveform has been removed per request.
+    Video = slideshow (trusted source images) or static cover + overlays (intro/outro, chapter title, timer).
     """
     mp4_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -307,18 +304,14 @@ def render_waveform_video(
     dark_alpha = float(cfg.get("bg_dark_overlay", 0.38))
     dark_alpha = max(0.0, min(0.85, dark_alpha))
 
-    # ---- Build background input ----
     inputs = []
     filter_parts = []
 
-    # Input 0 will be background video (either slideshow or static cover)
     if bg_images and len(bg_images) >= 1:
-        # Build durations per chapter window (or evenly split if mismatch)
         windows = _chapter_windows(ch_clean, total_sec)
         if len(bg_images) >= len(windows):
             use_images = bg_images[:len(windows)]
         else:
-            # cycle images
             use_images = [bg_images[i % len(bg_images)] for i in range(len(windows))]
 
         durations = []
@@ -329,44 +322,31 @@ def render_waveform_video(
         concat_list = mp4_path.with_suffix(".bg_concat.txt")
         _make_concat_image_list(use_images, durations, concat_list)
 
-        # background from concat demuxer
         inputs += ["-f", "concat", "-safe", "0", "-i", str(concat_list)]
         bg_input_index = 0
         concat_list_path = concat_list
     else:
-        # static cover loop
         inputs += ["-loop", "1", "-i", str(cover_png)]
         bg_input_index = 0
         concat_list_path = None
 
-    # Input 1 = audio
     inputs += ["-i", str(mp3_path)]
-    # Input 2 = metadata
     inputs += ["-i", str(meta_path)]
 
     # Background styling: scale -> blur -> dark overlay
-    # Use gblur for quality; drawbox for dark overlay
     filter_parts.append(
         f"[{bg_input_index}:v]scale=1920:1080,format=yuv420p,"
         f"gblur=sigma={blur_sigma},"
         f"drawbox=x=0:y=0:w=iw:h=ih:color=black@{dark_alpha}:t=fill"
-        f"[bg];"
+        f"[v0]"
     )
-
-    # Waveform from audio stream
-    filter_parts.append(
-        "[1:a]showwaves=s=1920x280:mode=line:rate=25,format=rgba[w];"
-    )
-
-    # Composite waveform over background
-    filter_parts.append("[bg][w]overlay=0:750:format=auto[v0]")
 
     overlays = ",".join([x for x in [intro_outro_draw, chapter_draw] if x])
     if overlays:
-        filter_complex = "".join(filter_parts) + f";[v0]{overlays}[v]"
+        filter_complex = ";".join(filter_parts) + f";[v0]{overlays}[v]"
         video_map = "[v]"
     else:
-        filter_complex = "".join(filter_parts)
+        filter_complex = ";".join(filter_parts)
         video_map = "[v0]"
 
     cmd = [
@@ -383,12 +363,11 @@ def render_waveform_video(
         "-preset", "veryfast",
         "-c:a", "aac",
         "-b:a", "192k",
-        str(mp4_path)
+        str(mp4_path),
     ]
-
     subprocess.check_call(cmd)
 
-    # Cleanup local temp metadata + concat list
+    # cleanup
     try:
         meta_path.unlink()
     except Exception:
