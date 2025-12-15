@@ -6,55 +6,44 @@
   "segment_count": 10,
   "gemini_model": "gemini-2.5-flash",
   "language": "EN",
-
   "queries": [
     "USCIS processing freeze",
     "immigration case freeze memo",
     "administrative freeze immigration applications"
   ],
-
   "languages": [
     { "hl": "en-US", "gl": "US", "ceid": "US:en", "lang": "en" },
     { "hl": "en-GB", "gl": "GB", "ceid": "GB:en", "lang": "en" },
     { "hl": "es-419", "gl": "US", "ceid": "US:es-419", "lang": "es" }
   ],
-
   "min_fresh_sources": 20,
   "freshness_hours": 24,
   "max_results_per_query": 50,
   "backlog_max": 2000,
   "fresh_cap": 500,
-
   "max_items_for_script": 60,
   "max_bg_images": 15,
-
   "intro_text": "Welcome back to Agenda. Today we break down the latest immigration policy developments.",
   "outro_text": "That’s the overview. Full sources are included. Subscribe for the next briefing.",
-
   "video_overlay": {
     "intro_seconds": 10,
     "outro_seconds": 12,
-
     "title_fontsize": 42,
     "timer_fontsize": 34,
-
     "title_x": "(w-text_w)/2",
     "title_y": "h-220",
     "timer_x": "w-tw-60",
     "timer_y": "h-305",
-
     "intro_x": "60",
     "intro_y": "h-220",
     "outro_x": "60",
     "outro_y": "h-220",
-
     "boxcolor": "black@0.55",
     "timer_boxcolor": "black@0.40",
     "boxborderw": 18,
-    "timer_boxborderw": 14
-
+    "timer_boxborderw": 14,
     "kenburns_enabled": true,
-    "kenburns_zoom_end": 1.10,
+    "kenburns_zoom_end": 1.1,
     "kenburns_seconds": 18,
     "kenburns_direction": "diag",
     "bg_blur_sigma": 18,
