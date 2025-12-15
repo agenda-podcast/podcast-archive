@@ -1,25 +1,16 @@
-# -*- coding: utf-8 -*-
-"""
-tts_generate.py
-Additions:
-- find_piper_binary(): determine piper executable path (PIPER_BINARY env var preferred)
-- _piper_tts_wav_bytes updated to use resolved piper path and raise helpful errors containing stderr
-"""
-
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
 import textwrap
-from typing import Optional
+import wave
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional
 
-# -------------------------
-# IMPORTANT:
-# - If your repo already has find_piper_binary/_piper_tts_wav_bytes implementations,
-#   merge the logic below into the existing functions instead of duplicating.
-# - Ensure real CLI flags used by your project for piper are preserved in cmd.
-# -------------------------
+DEFAULT_GAP_SECONDS = 0.35
+DEFAULT_MAX_CHARS = 360
 
 
 def find_piper_binary() -> str:
@@ -54,18 +45,6 @@ def find_piper_binary() -> str:
 
             Install or provide 'piper' and make sure it's executable and on PATH,
             or set the PIPER_BINARY environment variable to its full path.
-
-            Quick options:
-              - Download a prebuilt piper binary for your platform and place it on PATH, e.g. /usr/local/bin/piper.
-              - In CI, download the release asset and chmod +x it; then set PIPER_BINARY to point at it.
-
-            Example (Linux):
-              curl -L -o /tmp/piper.tar.gz "<RELEASE_ASSET_URL>"
-              tar -xzf /tmp/piper.tar.gz -C /tmp
-              sudo mv /tmp/piper /usr/local/bin/piper && sudo chmod +x /usr/local/bin/piper
-
-            Or set:
-              export PIPER_BINARY=/path/to/piper
             """
         )
     )
@@ -81,7 +60,6 @@ def _piper_tts_wav_bytes(text: str, voice: str, model_dir: Optional[str] = None)
     """
     piper_exe = find_piper_binary()
 
-    # Build the command. Replace or extend these flags to match your project's expected piper args.
     cmd = [
         piper_exe,
         "--voice",
@@ -90,7 +68,6 @@ def _piper_tts_wav_bytes(text: str, voice: str, model_dir: Optional[str] = None)
     if model_dir:
         cmd.extend(["--model-dir", model_dir])
 
-    # Send text on stdin and capture stdout/stderr.
     try:
         proc = subprocess.run(
             cmd,
@@ -100,7 +77,6 @@ def _piper_tts_wav_bytes(text: str, voice: str, model_dir: Optional[str] = None)
             check=False,
         )
     except OSError as e:
-        # Exec-level errors (e.g., permission issues)
         raise RuntimeError(f"Failed to execute piper binary at '{piper_exe}': {e}") from e
 
     if proc.returncode != 0:
@@ -115,5 +91,160 @@ def _piper_tts_wav_bytes(text: str, voice: str, model_dir: Optional[str] = None)
 
     return proc.stdout
 
-# The rest of the original tts_generate.py file should remain unchanged below.
-# Integrate the above functions into the existing codebase where your code previously ran 'piper'.
+
+def _split_text(text: str, limit: int = DEFAULT_MAX_CHARS) -> List[str]:
+    """
+    Split text into chunks under the limit without breaking words if possible.
+    """
+    t = (text or "").strip()
+    if not t:
+        return []
+    if len(t) <= limit:
+        return [t]
+
+    parts: List[str] = []
+    cur: List[str] = []
+    cur_len = 0
+    for word in t.split():
+        wlen = len(word) + (1 if cur else 0)
+        if cur_len + wlen > limit and cur:
+            parts.append(" ".join(cur).strip())
+            cur = [word]
+            cur_len = len(word)
+        else:
+            cur.append(word)
+            cur_len += wlen
+    if cur:
+        parts.append(" ".join(cur).strip())
+    return parts
+
+
+def _ensure_silence_wav(path: Path, seconds: float = DEFAULT_GAP_SECONDS, sample_rate: int = 22050) -> Path:
+    """
+    Create a small silence wav for padding between utterances (cached on disk).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        return path
+
+    n_frames = int(sample_rate * max(seconds, 0.0))
+    with wave.open(path, "w") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)  # 16-bit
+        wf.setframerate(sample_rate)
+        wf.writeframes(b"\x00\x00" * n_frames)
+    return path
+
+
+def _concat_wavs_to_mp3(wavs: List[Path], out_mp3: Path) -> None:
+    """
+    Concatenate wavs using ffmpeg concat demuxer and emit mp3.
+    """
+    if not wavs:
+        raise RuntimeError("No audio chunks to concatenate.")
+
+    out_mp3.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = [f"file '{w}'" for w in wavs]
+    with out_mp3.with_suffix(".concat.txt").open("w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        str(out_mp3.with_suffix(".concat.txt")),
+        "-acodec",
+        "libmp3lame",
+        "-b:a",
+        "192k",
+        "-ac",
+        "1",
+        "-ar",
+        "22050",
+        str(out_mp3),
+    ]
+    subprocess.check_call(cmd)
+
+
+def _tts_provider_to_bytes(
+    *,
+    provider: str,
+    text: str,
+    voice: str,
+    model_dir: Optional[str],
+) -> bytes:
+    """
+    Currently only Piper is supported for audio generation. Premium requests fall back here.
+    """
+    if provider not in {"piper", "gemini"}:
+        raise RuntimeError(f"Unsupported TTS provider: {provider}")
+    return _piper_tts_wav_bytes(text, voice=voice, model_dir=model_dir)
+
+
+def tts_chunks_to_mp3(
+    chunks: Iterable[Dict[str, str]],
+    mp3_path: str,
+    *,
+    premium: bool = False,
+    gemini_api_key: Optional[str] = None,
+    gemini_model: Optional[str] = None,
+    gemini_voice_a: Optional[str] = None,
+    gemini_voice_b: Optional[str] = None,
+    piper_voice_a: Optional[str] = None,
+    piper_voice_b: Optional[str] = None,
+    piper_model_dir: Optional[str] = None,
+    gap_seconds: float = DEFAULT_GAP_SECONDS,
+    max_chars: int = DEFAULT_MAX_CHARS,
+) -> str:
+    """
+    Convert a list of dialogue chunks to an MP3 file.
+
+    chunks: iterable of {"speaker": "A"/"B", "text": "..."}
+    premium: if True, attempt premium provider (Gemini); falls back to Piper on errors/misconfig.
+    """
+    cache_dir = Path("outputs/_tts_cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Voice selection
+    p_voice_a = piper_voice_a or os.environ.get("PIPER_VOICE_A") or "en_US-ryan-medium"
+    p_voice_b = piper_voice_b or os.environ.get("PIPER_VOICE_B") or "en_US-amy-medium"
+    g_voice_a = gemini_voice_a or os.environ.get("GEMINI_TTS_VOICE_A") or p_voice_a
+    g_voice_b = gemini_voice_b or os.environ.get("GEMINI_TTS_VOICE_B") or p_voice_b
+
+    provider = "gemini" if premium and gemini_api_key else "piper"
+
+    silence_wav = _ensure_silence_wav(cache_dir / f"silence_{int(gap_seconds*1000)}ms.wav", seconds=gap_seconds)
+    wav_paths: List[Path] = []
+
+    for raw_chunk in chunks:
+        if not isinstance(raw_chunk, dict):
+            continue
+        speaker = str(raw_chunk.get("speaker", "A") or "A").strip().upper()
+        text = str(raw_chunk.get("text") or "").strip()
+        if not text:
+            continue
+
+        voice = g_voice_a if speaker == "A" else g_voice_b
+        if provider == "piper":
+            voice = p_voice_a if speaker == "A" else p_voice_b
+
+        for part in _split_text(text, max_chars):
+            key = hashlib.sha256(f"{provider}|{voice}|{part}".encode("utf-8")).hexdigest()
+            wav_path = cache_dir / f"{key}.wav"
+            if not wav_path.exists():
+                audio_bytes = _tts_provider_to_bytes(provider=provider, text=part, voice=voice, model_dir=piper_model_dir)
+                wav_path.write_bytes(audio_bytes)
+            wav_paths.append(wav_path)
+            if gap_seconds > 0:
+                wav_paths.append(silence_wav)
+
+    if wav_paths and wav_paths[-1] == silence_wav:
+        wav_paths = wav_paths[:-1]
+
+    _concat_wavs_to_mp3(wav_paths, Path(mp3_path))
+    return mp3_path
