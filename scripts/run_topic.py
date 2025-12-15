@@ -199,15 +199,15 @@ def main():
 
     # 7) Update RSS feed for this topic
     episode = {
-        "title": f"{topic['title']} — Daily Overview ({utc_today()})",
-        "guid": f"{TOPIC_ID}-{date_tag}",
-        "pubDate": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000"),
-        "enclosure_url": mp3_url,
-        "enclosure_type": "audio/mpeg",
-        "description_html": package["description_html"],
-        "itunes_duration": package["duration_sec"],
-        "chapters": chapters,
-    }
+    "title": f"{topic['title']} — Daily Overview ({utc_today()})",
+    "guid": f"{TOPIC_ID}-{date_tag}",
+    "pubDate": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000"),
+    "enclosure_url": mp3_url,
+    "enclosure_type": "audio/mpeg",
+    "description_html": package["description_html"],
+    "itunes_duration": real_duration,
+    "chapters": chapters,
+}
 
     update_topic_feed(TOPIC_ID, topic, state, episode)
 
