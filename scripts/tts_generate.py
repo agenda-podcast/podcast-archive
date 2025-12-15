@@ -39,7 +39,6 @@ def _split_to_chunks(text: str, max_chars: int) -> List[str]:
     if len(t) <= max_chars:
         return [t]
 
-    # Split by sentences, then pack.
     sents = re.split(r"(?<=[.!?])\s+", t)
     out: List[str] = []
     buf: List[str] = []
@@ -79,7 +78,6 @@ def script_to_tts_chunks(script_text: str) -> List[Dict[str, str]]:
 
     turns: List[Tuple[str, str]] = []
     if tagged_turns:
-        # merge consecutive same speaker
         last_sp = None
         buf: List[str] = []
         for sp, tx in tagged_turns:
@@ -91,7 +89,6 @@ def script_to_tts_chunks(script_text: str) -> List[Dict[str, str]]:
         if buf:
             turns.append((last_sp or "A", " ".join(buf).strip()))
     else:
-        # No explicit dialogue tags -> alternate by paragraph for full coverage
         paras = _split_paragraphs(script_text)
         sp = "A"
         for p in paras:
@@ -106,7 +103,6 @@ def script_to_tts_chunks(script_text: str) -> List[Dict[str, str]]:
 
     out: List[Dict[str, str]] = []
     for sp, tx in turns:
-        # Ensure we don't create ultra-short "service words" turns
         tx = re.sub(r"\s+", " ", tx).strip()
         if not tx:
             continue
@@ -116,7 +112,6 @@ def script_to_tts_chunks(script_text: str) -> List[Dict[str, str]]:
                 continue
             out.append({"speaker": sp, "text": c})
 
-    # Optional: merge tiny chunks forward
     merged: List[Dict[str, str]] = []
     for t in out:
         if merged and merged[-1]["speaker"] == t["speaker"] and len(merged[-1]["text"]) < min_chars:
@@ -143,7 +138,6 @@ def _ensure_dir(p: Path) -> None:
 
 
 def _trim_silence_wav(in_wav: Path, out_wav: Path) -> None:
-    # Trim leading/trailing silence conservatively
     cmd = [
         "ffmpeg", "-y",
         "-i", str(in_wav),
@@ -152,7 +146,6 @@ def _trim_silence_wav(in_wav: Path, out_wav: Path) -> None:
     ]
     p = _run(cmd, timeout=1800)
     if p.returncode != 0 or (not out_wav.exists()) or out_wav.stat().st_size < 1000:
-        # fallback: copy original if trim fails
         out_wav.write_bytes(in_wav.read_bytes())
 
 
@@ -161,7 +154,7 @@ def _make_silence_wav(ms: int, out_wav: Path) -> None:
     cmd = [
         "ffmpeg", "-y",
         "-f", "lavfi",
-        "-i", f"anullsrc=channel_layout=stereo:sample_rate=24000",
+        "-i", "anullsrc=channel_layout=stereo:sample_rate=24000",
         "-t", f"{sec:.3f}",
         str(out_wav),
     ]
@@ -199,18 +192,13 @@ def _concat_wavs_to_mp3(wavs: List[Path], out_mp3: Path) -> None:
 
 
 def _piper_tts_wav_bytes(text: str, voice: str, model_dir: Path) -> bytes:
-    """
-    Uses piper CLI. Expects:
-      assets/piper/<voice>.onnx
-      assets/piper/<voice>.onnx.json
-    """
     model = Path(voice)
     if not model.suffix:
         model = model_dir / f"{voice}.onnx"
     elif model.suffix.lower() != ".onnx":
         model = model_dir / f"{voice}.onnx"
 
-    cfg = Path(str(model) + ".json")  # piper uses <model>.json (for onnx it's typically .onnx.json)
+    cfg = Path(str(model) + ".json")  # expects <voice>.onnx.json
 
     if not model.exists():
         raise RuntimeError(f"Piper model missing: {model}")
@@ -241,28 +229,15 @@ def tts_chunks_to_mp3(
     piper_model_dir: Optional[str] = None,
     **_: Any,
 ) -> None:
-    """
-    Premium TTS:
-      - Only uses Gemini-TTS if you have Google Cloud creds (GOOGLE_APPLICATION_CREDENTIALS / ADC).
-      - Otherwise falls back to Piper.
-    Non-premium:
-      - Piper only.
-
-    Output: MP3 at mp3_path.
-    """
     out_mp3 = Path(mp3_path)
     _ensure_dir(out_mp3.parent)
 
-    # Defaults
     piper_a = piper_voice_a or os.getenv("PIPER_VOICE_A", "").strip() or "en_US-ryan-medium"
     piper_b = piper_voice_b or os.getenv("PIPER_VOICE_B", "").strip() or "en_US-amy-medium"
     model_dir = Path(piper_model_dir or os.getenv("PIPER_MODEL_DIR", "assets/piper")).resolve()
 
-    # Decide engine
     provider_requested = "gemini" if premium else "piper"
 
-    # Gemini-TTS requires Google Cloud TTS (not AI Studio API key).
-    # If no GCP creds, force Piper even if premium.
     has_gcp_creds = bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or os.getenv("GOOGLE_CLOUD_PROJECT"))
     if premium and not has_gcp_creds:
         provider_requested = "piper"
@@ -273,34 +248,30 @@ def tts_chunks_to_mp3(
     trim = os.getenv("TRIM_SILENCE", "1").strip().lower() in ("1", "true", "yes", "y")
     gap_ms = int(os.getenv("TTS_TURN_GAP_MS", "120"))
 
-    # Pre-generate gap file
-    silence_wav = cache_root / "silence_%dms.wav" % gap_ms
+    # FIX: format filename before joining Path
+    silence_name = f"silence_{gap_ms}ms.wav"
+    silence_wav = cache_root / silence_name
+
     if gap_ms > 0 and (not silence_wav.exists() or silence_wav.stat().st_size < 1000):
         _make_silence_wav(gap_ms, silence_wav)
 
     wavs: List[Path] = []
-    idx = 0
     for turn in tts_chunks:
-        idx += 1
         sp = (turn.get("speaker") or "A").strip().upper()
         txt = (turn.get("text") or "").strip()
         if not txt:
             continue
 
-        # choose voice per speaker
         if provider_requested == "piper":
             voice = piper_a if sp == "A" else piper_b
         else:
-            # Placeholder: if you later add GCP Gemini-TTS, map voices here.
             voice = (voice_a or "Puck") if sp == "A" else (voice_b or "Kore")
 
         key = _sha1_bytes((provider_requested + "|" + voice + "|" + txt).encode("utf-8"))
         wav_path = cache_root / provider_requested / f"{key}.wav"
         trimmed_path = cache_root / provider_requested / f"{key}.trim.wav"
 
-        if wav_path.exists() and wav_path.stat().st_size > 1000:
-            pass
-        else:
+        if not (wav_path.exists() and wav_path.stat().st_size > 1000):
             if provider_requested == "piper":
                 wav_bytes = _piper_tts_wav_bytes(text=txt, voice=voice, model_dir=model_dir)
                 wav_path.write_bytes(wav_bytes)
@@ -311,17 +282,15 @@ def tts_chunks_to_mp3(
                 )
 
         if trim:
-            if not trimmed_path.exists() or trimmed_path.stat().st_size < 1000:
+            if not (trimmed_path.exists() and trimmed_path.stat().st_size > 1000):
                 _trim_silence_wav(wav_path, trimmed_path)
             wavs.append(trimmed_path)
         else:
             wavs.append(wav_path)
 
-        # add gap between turns
         if gap_ms > 0:
             wavs.append(silence_wav)
 
-    # Remove last gap
     if wavs and gap_ms > 0 and wavs[-1] == silence_wav:
         wavs = wavs[:-1]
 
