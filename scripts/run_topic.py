@@ -364,46 +364,48 @@ def main():
     tmp_img_dir = OUT_DIR / "_tmp_bg_images"
     bg_images = []
     picked = []
+
     try:
-    # items_for_script — ваш список источников, лучше свежие + топ по trust tier
-    bg_images, picked = select_and_download_backgrounds(
-        items=items_for_script,
-        tmp_dir=tmp_img_dir,
-        max_images=int(topic.get("max_bg_images", 8)),
-    )
-    print(f"[{TOPIC_ID}] backgrounds downloaded: {len(bg_images)}")
-        except Exception as e:
-    print(f"[{TOPIC_ID}] background download skipped: {e}")
-    bg_images = []
+        bg_images, picked = select_and_download_backgrounds(
+            items=items_for_script,
+            tmp_dir=tmp_img_dir,
+            max_images=int(topic.get("max_bg_images", 8)),
+        )
+        print(f"[{TOPIC_ID}] backgrounds downloaded: {len(bg_images)}")
+    except Exception as e:
+        print(f"[{TOPIC_ID}] background download skipped: {e}")
+        bg_images = []
+        picked = []
 
-# Render video with slideshow backgrounds if available
-render_waveform_video(
-    cover_png=cover,
-    mp3_path=mp3_path,
-    mp4_path=mp4_path,
-    chapters=chapters,
-    topic_cfg=topic,
-    bg_images=bg_images if bg_images else None,
-)
-
-# Cleanup temp images after video creation
-try:
-    for p in bg_images:
-        try:
-            p.unlink()
-        except Exception:
-            pass
-    if tmp_img_dir.exists():
-        tmp_img_dir.rmdir()
-except Exception:
-    pass
+    # Render video with slideshow backgrounds if available
     render_waveform_video(
         cover_png=cover,
         mp3_path=mp3_path,
         mp4_path=mp4_path,
         chapters=chapters,
-        topic_cfg=topic
+        topic_cfg=topic,
+        bg_images=bg_images if bg_images else None,
     )
+
+    # Cleanup temp images after video creation
+    try:
+        for p in bg_images:
+            try:
+                p.unlink()
+            except Exception:
+                pass
+        if tmp_img_dir.exists():
+            for extra in tmp_img_dir.glob("*"):
+                try:
+                    extra.unlink()
+                except Exception:
+                    pass
+            try:
+                tmp_img_dir.rmdir()
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     # 6) Upload to GitHub Release (tag == topic-id)
     urls = ensure_release_and_upload(
