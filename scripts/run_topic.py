@@ -1,5 +1,8 @@
 import os
 import json
+import subprocess
+from pathlib import Path
+from typing import List, Dict
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
@@ -15,6 +18,97 @@ REPO = os.environ.get("REPO", "").strip()
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 RELEASE_TAG = os.environ.get("RELEASE_TAG", TOPIC_ID).strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+
+def ffprobe_duration_sec(audio_path: Path) -> int:
+    """
+    Return duration in seconds using ffprobe.
+    """
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(audio_path),
+    ]
+    out = subprocess.check_output(cmd, text=True).strip()
+    try:
+        dur = float(out)
+        return max(1, int(round(dur)))
+    except Exception:
+        return 1800
+
+
+def normalize_chapters(chapters: List[Dict], total_sec: int) -> List[Dict]:
+    """
+    Ensure:
+      - sorted by start_sec
+      - first chapter starts at 0
+      - last chapter start < total_sec
+      - if model timestamps exceed total_sec, compress proportionally
+      - if model timestamps end far earlier than total_sec, stretch proportionally
+    """
+    if not chapters:
+        return [{"start_sec": 0, "title": "Overview"}]
+
+    cleaned = []
+    for ch in chapters:
+        if not isinstance(ch, dict):
+            continue
+        try:
+            s = int(ch.get("start_sec", 0))
+        except Exception:
+            s = 0
+        t = str(ch.get("title", "")).strip() or "Segment"
+        cleaned.append({"start_sec": max(0, s), "title": t})
+
+    cleaned.sort(key=lambda x: x["start_sec"])
+
+    # Ensure first is 0
+    if cleaned[0]["start_sec"] != 0:
+        cleaned.insert(0, {"start_sec": 0, "title": "Overview"})
+
+    # Remove duplicates / non-increasing starts
+    dedup = []
+    last = -1
+    for ch in cleaned:
+        s = ch["start_sec"]
+        if s <= last:
+            continue
+        dedup.append(ch)
+        last = s
+    cleaned = dedup
+
+    # If only one chapter, keep simple
+    if len(cleaned) == 1:
+        return cleaned
+
+    last_start = cleaned[-1]["start_sec"]
+    if last_start <= 0:
+        return [{"start_sec": 0, "title": "Overview"}]
+
+    # Compute scale so that last chapter starts at ~90% of total duration
+    target_last = max(1, int(total_sec * 0.90))
+    scale = target_last / float(last_start)
+
+    # Apply scaling
+    scaled = []
+    for ch in cleaned:
+        s = int(round(ch["start_sec"] * scale))
+        scaled.append({"start_sec": max(0, min(s, max(0, total_sec - 1))), "title": ch["title"]})
+
+    # Re-sort and ensure increasing
+    scaled.sort(key=lambda x: x["start_sec"])
+    final = []
+    last = -1
+    for ch in scaled:
+        if ch["start_sec"] <= last:
+            continue
+        final.append(ch)
+        last = ch["start_sec"]
+
+    if not final or final[0]["start_sec"] != 0:
+        final.insert(0, {"start_sec": 0, "title": "Overview"})
+
+    return final
 
 def utc_today():
     return datetime.now(timezone.utc).date().isoformat()
