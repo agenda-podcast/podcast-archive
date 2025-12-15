@@ -29,6 +29,8 @@ jobs:
 
       - name: Download latest rhasspy/piper release and install piper
         id: install_piper
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python .github/scripts/install_piper.py
 
       - name: Show installed piper

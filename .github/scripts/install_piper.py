@@ -35,10 +35,18 @@ def main() -> None:
     extract if needed, and install to tools/piper.
     """
     api_url = "https://api.github.com/repos/rhasspy/piper/releases/latest"
-    
+    token = os.getenv("GITHUB_TOKEN", "").strip()
+    headers = {
+        "User-Agent": "agenda-podcast-ci/1.0",
+        "Accept": "application/vnd.github+json",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     print(f"Fetching: {api_url}")
     try:
-        with urllib.request.urlopen(api_url, timeout=30) as response:
+        req = urllib.request.Request(api_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=30) as response:
             data = json.load(response)
     except Exception as e:
         print(f"ERROR: Failed to fetch release data from GitHub API: {e}", file=sys.stderr)
