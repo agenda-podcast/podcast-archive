@@ -26,15 +26,6 @@
       "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20251205-Episode_2_The_General-Purpose_AI_GPAI_Battleground_and_Innovation_Conflict.mp3",
       "length_bytes": 23857760,
       "description_html": "This episode focuses on the highly contested regulatory territory of large foundation models, primarily developed by U.S. technology leaders, examining the unique obligations, compliance challenges, and industry resistance."
-    },
-    "enclosure:https://www.buzzsprout.com/2562524/episodes/18349854-episode-1-the-u-s-domestic-ai-regulatory-war-and-federal-preemption.mp3": {
-      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18349854-episode-1-the-u-s-domestic-ai-regulatory-war-and-federal-preemption.mp3",
-      "guid": "agenda-18349854",
-      "title": "Episode 1: The U.S. Domestic AI Regulatory War and Federal Preemption",
-      "pubDate_rfc822": "Mon, 01 Dec 2025 05:00:00 +0000",
-      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20251201-Episode_1_The_U.S._Domestic_AI_Regulatory_War_and_Federal_Preemption.mp3",
-      "length_bytes": 7266056,
-      "description_html": "This episode focuses on the internal battle within the United States regarding AI regulation, defining the fragmented nature of the U.S. approach, and detailing the Executive Branch’s controversial legal efforts to assert federal dominance over state laws."
     }
   }
 }
