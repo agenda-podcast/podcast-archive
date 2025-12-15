@@ -1,18 +1,32 @@
 import subprocess
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Any
 
 
-# --------- Visual tuning (hardcoded) ----------
-INTRO_SECONDS = 10
-OUTRO_SECONDS = 12
+DEFAULTS = {
+    "intro_text": "AGENDA • Automated Deep Dive Overview",
+    "outro_text": "Full sources in description • Subscribe for daily briefings",
+    "intro_seconds": 10,
+    "outro_seconds": 12,
+    "font_family": "Sans",
+    "title_fontsize": 42,
+    "timer_fontsize": 34,
 
-INTRO_TEXT = "AGENDA • Automated Deep Dive Overview"
-OUTRO_TEXT = "Full sources in description • Subscribe for daily briefings"
+    "title_x": "(w-text_w)/2",
+    "title_y": "h-220",
+    "timer_x": "w-tw-60",
+    "timer_y": "h-305",
 
-FONT_FAMILY = "Sans"
-TITLE_FONTSIZE = 42
-TIMER_FONTSIZE = 34
+    "intro_x": "60",
+    "intro_y": "h-220",
+    "outro_x": "60",
+    "outro_y": "h-220",
+
+    "boxcolor": "black@0.55",
+    "timer_boxcolor": "black@0.40",
+    "boxborderw": 18,
+    "timer_boxborderw": 14,
+}
 
 
 def _ffprobe_duration_sec(audio_path: Path) -> int:
@@ -30,7 +44,7 @@ def _ffprobe_duration_sec(audio_path: Path) -> int:
         return 1800
 
 
-def _clean_chapters(chapters: List[Dict], total_sec: int) -> List[Dict]:
+def _clean_chapters(chapters: List[Dict[str, Any]], total_sec: int) -> List[Dict[str, Any]]:
     if not chapters:
         return [{"start_sec": 0, "title": "Overview"}]
 
@@ -62,7 +76,7 @@ def _clean_chapters(chapters: List[Dict], total_sec: int) -> List[Dict]:
     return out if out else [{"start_sec": 0, "title": "Overview"}]
 
 
-def _write_ffmetadata(meta_path: Path, chapters: List[Dict], total_sec: int) -> None:
+def _write_ffmetadata(meta_path: Path, chapters: List[Dict[str, Any]], total_sec: int) -> None:
     lines = [";FFMETADATA1"]
 
     if len(chapters) == 1:
@@ -98,9 +112,7 @@ def _write_ffmetadata(meta_path: Path, chapters: List[Dict], total_sec: int) -> 
 
 
 def _escape_drawtext(s: str) -> str:
-    """
-    Escape drawtext text value for FFmpeg.
-    """
+    s = (s or "")
     s = s.replace("\\", "\\\\")
     s = s.replace(":", "\\:")
     s = s.replace("'", "\\'")
@@ -108,11 +120,7 @@ def _escape_drawtext(s: str) -> str:
     return s
 
 
-def _chapter_windows(chapters: List[Dict], total_sec: int) -> List[Dict]:
-    """
-    Produce [{start, end, title}] windows for chapters.
-    end is inclusive-ish for enable(between(t,start,end)).
-    """
+def _chapter_windows(chapters: List[Dict[str, Any]], total_sec: int) -> List[Dict[str, Any]]:
     windows = []
     for i, ch in enumerate(chapters):
         start = int(ch["start_sec"])
@@ -124,38 +132,55 @@ def _chapter_windows(chapters: List[Dict], total_sec: int) -> List[Dict]:
     return windows
 
 
-def _build_filters_for_chapters(chapters: List[Dict], total_sec: int) -> str:
-    """
-    Build drawtext chain:
-      - chapter title lower-third during each chapter window
-      - timer for current chapter: MM:SS elapsed in that segment
-    """
+def _cfg(topic_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    v = topic_cfg.get("video_overlay") if isinstance(topic_cfg, dict) else None
+    v = v if isinstance(v, dict) else {}
+    merged = dict(DEFAULTS)
+    for k, val in v.items():
+        merged[k] = val
+    return merged
+
+
+def _build_filters_for_chapters(chapters: List[Dict[str, Any]], total_sec: int, cfg: Dict[str, Any]) -> str:
     windows = _chapter_windows(chapters, total_sec)
     filters = []
 
+    font = str(cfg["font_family"])
+    title_fs = int(cfg["title_fontsize"])
+    timer_fs = int(cfg["timer_fontsize"])
+
+    title_x = str(cfg["title_x"])
+    title_y = str(cfg["title_y"])
+    timer_x = str(cfg["timer_x"])
+    timer_y = str(cfg["timer_y"])
+
+    boxcolor = str(cfg["boxcolor"])
+    timer_boxcolor = str(cfg["timer_boxcolor"])
+    boxborderw = int(cfg["boxborderw"])
+    timer_boxborderw = int(cfg["timer_boxborderw"])
+
     for w in windows:
-        start = w["start"]
-        end = w["end"]
+        start = int(w["start"])
+        end = int(w["end"])
         title = _escape_drawtext(w["title"])
         enable = f"between(t,{start},{end})"
 
-        # Title lower-third (centered, above waveform)
+        # Title lower-third
         filters.append(
             "drawtext="
-            f"font='{FONT_FAMILY}':"
+            f"font='{font}':"
             f"text='{title}':"
-            "x=(w-text_w)/2:"
-            "y=h-220:"
-            f"fontsize={TITLE_FONTSIZE}:"
+            f"x={title_x}:"
+            f"y={title_y}:"
+            f"fontsize={title_fs}:"
             "fontcolor=white:"
             "box=1:"
-            "boxcolor=black@0.55:"
-            "boxborderw=18:"
+            f"boxcolor={boxcolor}:"
+            f"boxborderw={boxborderw}:"
             f"enable='{enable}'"
         )
 
-        # Segment timer (right side): elapsed MM:SS since chapter start
-        # Use eif to format with leading zeros; compute elapsed = t - start
+        # Segment timer (elapsed within the current chapter) MM:SS
         timer_expr = (
             "%{eif\\:(t-" + str(start) + ")/60\\:d2}"
             ":%{eif\\:mod(t-" + str(start) + ",60)\\:d2}"
@@ -163,71 +188,88 @@ def _build_filters_for_chapters(chapters: List[Dict], total_sec: int) -> str:
 
         filters.append(
             "drawtext="
-            f"font='{FONT_FAMILY}':"
+            f"font='{font}':"
             f"text='{timer_expr}':"
-            "x=w-tw-60:"
-            "y=h-305:"
-            f"fontsize={TIMER_FONTSIZE}:"
+            f"x={timer_x}:"
+            f"y={timer_y}:"
+            f"fontsize={timer_fs}:"
             "fontcolor=white:"
             "box=1:"
-            "boxcolor=black@0.40:"
-            "boxborderw=14:"
+            f"boxcolor={timer_boxcolor}:"
+            f"boxborderw={timer_boxborderw}:"
             f"enable='{enable}'"
         )
 
     return ",".join(filters)
 
 
-def _build_intro_outro_filters(total_sec: int) -> str:
+def _build_intro_outro_filters(total_sec: int, cfg: Dict[str, Any]) -> str:
     filters = []
 
-    intro_text = _escape_drawtext(INTRO_TEXT)
-    outro_text = _escape_drawtext(OUTRO_TEXT)
+    intro_text = _escape_drawtext(str(cfg["intro_text"]))
+    outro_text = _escape_drawtext(str(cfg["outro_text"]))
 
-    intro_end = max(1, min(INTRO_SECONDS, total_sec))
-    outro_start = max(0, total_sec - OUTRO_SECONDS)
+    intro_seconds = int(cfg["intro_seconds"])
+    outro_seconds = int(cfg["outro_seconds"])
 
-    # Intro lower-third (bottom-left)
-    filters.append(
-        "drawtext="
-        f"font='{FONT_FAMILY}':"
-        f"text='{intro_text}':"
-        "x=60:"
-        "y=h-220:"
-        "fontsize=40:"
-        "fontcolor=white:"
-        "box=1:"
-        "boxcolor=black@0.55:"
-        "boxborderw=18:"
-        f"enable='between(t,0,{intro_end})'"
-    )
+    intro_end = max(1, min(intro_seconds, total_sec))
+    outro_start = max(0, total_sec - max(1, outro_seconds))
 
-    # Outro lower-third (bottom-left)
-    filters.append(
-        "drawtext="
-        f"font='{FONT_FAMILY}':"
-        f"text='{outro_text}':"
-        "x=60:"
-        "y=h-220:"
-        "fontsize=40:"
-        "fontcolor=white:"
-        "box=1:"
-        "boxcolor=black@0.55:"
-        "boxborderw=18:"
-        f"enable='between(t,{outro_start},{total_sec})'"
-    )
+    font = str(cfg["font_family"])
+    boxcolor = str(cfg["boxcolor"])
+    boxborderw = int(cfg["boxborderw"])
+
+    intro_x = str(cfg["intro_x"])
+    intro_y = str(cfg["intro_y"])
+    outro_x = str(cfg["outro_x"])
+    outro_y = str(cfg["outro_y"])
+
+    if intro_text:
+        filters.append(
+            "drawtext="
+            f"font='{font}':"
+            f"text='{intro_text}':"
+            f"x={intro_x}:"
+            f"y={intro_y}:"
+            "fontsize=40:"
+            "fontcolor=white:"
+            "box=1:"
+            f"boxcolor={boxcolor}:"
+            f"boxborderw={boxborderw}:"
+            f"enable='between(t,0,{intro_end})'"
+        )
+
+    if outro_text:
+        filters.append(
+            "drawtext="
+            f"font='{font}':"
+            f"text='{outro_text}':"
+            f"x={outro_x}:"
+            f"y={outro_y}:"
+            "fontsize=40:"
+            "fontcolor=white:"
+            "box=1:"
+            f"boxcolor={boxcolor}:"
+            f"boxborderw={boxborderw}:"
+            f"enable='between(t,{outro_start},{total_sec})'"
+        )
 
     return ",".join(filters)
 
 
-def render_waveform_video(cover_png: Path, mp3_path: Path, mp4_path: Path, chapters: List[Dict]) -> None:
+def render_waveform_video(
+    cover_png: Path,
+    mp3_path: Path,
+    mp4_path: Path,
+    chapters: List[Dict[str, Any]],
+    topic_cfg: Dict[str, Any] | None = None
+) -> None:
     """
     Render MP4:
-      - looped cover image as background
+      - cover as background
       - waveform overlay
-      - chapter title lower-third
-      - segment timer (MM:SS elapsed within current chapter)
-      - intro/outro lower-third
+      - intro/outro lower-third (per topic config)
+      - chapter title lower-third + segment timer (per topic config)
       - embedded chapter metadata
     """
     mp4_path.parent.mkdir(parents=True, exist_ok=True)
@@ -243,17 +285,18 @@ def render_waveform_video(cover_png: Path, mp3_path: Path, mp4_path: Path, chapt
     meta_path = mp4_path.with_suffix(".ffmeta")
     _write_ffmetadata(meta_path, ch_clean, total_sec)
 
-    chapter_draw = _build_filters_for_chapters(ch_clean, total_sec)
-    intro_outro_draw = _build_intro_outro_filters(total_sec)
+    cfg = _cfg(topic_cfg or {})
 
-    # Base: cover + waveform => label output as [v0]
+    chapter_draw = _build_filters_for_chapters(ch_clean, total_sec, cfg)
+    intro_outro_draw = _build_intro_outro_filters(total_sec, cfg)
+
+    # Base: cover + waveform => [v0]
     filter_complex = (
         "[0:v]scale=1920:1080,format=yuv420p[bg];"
         "[1:a]showwaves=s=1920x280:mode=line:rate=25,format=rgba[w];"
         "[bg][w]overlay=0:750:format=auto[v0]"
     )
 
-    # Apply text overlays on [v0] -> [v]
     overlays = ",".join([x for x in [intro_outro_draw, chapter_draw] if x])
     if overlays:
         filter_complex += f";[v0]{overlays}[v]"
