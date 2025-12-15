@@ -7,7 +7,7 @@
   "gemini_model": "gemini-2.5-flash",
   "language": "EN",
 
-  "use_premium_tts": true,
+  "use_premium_tts": false,
 
   "queries": [
     "USCIS processing freeze",
