@@ -122,6 +122,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests feedparser python-dateutil
 
+      - name: "Install piper binary"
+        run: |
+          python .github/scripts/install_piper.py
+
+      - name: "Set PIPER_BINARY env"
+        run: echo "PIPER_BINARY=./tools/piper" >> $GITHUB_ENV
+
       - name: "Gate by fresh.json"
         id: gate
         env:

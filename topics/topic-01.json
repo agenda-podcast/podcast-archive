@@ -9,6 +9,13 @@
 
   "premium_tts": false,
   "gemini_model": "gemini-2.5-flash",
+  "gemini_tts_model": "gemini-2.0-flash",
+  "gemini_voice_a": "Puck",
+  "gemini_voice_b": "Charon",
+  "piper_voice_a": "en_US-ryan-medium",
+  "piper_voice_b": "en_US-amy-medium",
+  "piper_model_dir": "assets/piper",
+  "audio_sample_rate": 22050,
 
   "queries": [
     "USCIS processing freeze",
