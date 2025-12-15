@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHON_VERSION: "3.11"
+      # Ensure repository root is on sys.path for module-style imports (recommended)
+      PYTHONPATH: ${{ github.workspace }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,16 +57,16 @@ jobs:
           PIPER_BINARY: ./tools/piper
         run: |
           python - <<'PY'
-          import sys
-          try:
-              from scripts.tts_generate import find_piper_binary
-              p = find_piper_binary()
-              print("Found piper at:", p)
-          except Exception as e:
-              print("Smoke-check failed:", e, file=sys.stderr)
-              sys.exit(2)
-          print("Smoke-check succeeded.")
-          PY
+import sys
+try:
+    from scripts.tts_generate import find_piper_binary
+    p = find_piper_binary()
+    print("Found piper at:", p)
+except Exception as e:
+    print("Smoke-check failed:", e, file=sys.stderr)
+    sys.exit(2)
+print("Smoke-check succeeded.")
+PY
 
       - name: Upload logs on failure
         if: failure()
