@@ -10,13 +10,13 @@
         "immigration case freeze memo",
         "administrative freeze immigration applications"
       ],
-      "collected_now": 430,
+      "collected_now": 423,
       "fresh_written": 112,
       "backlog_now": 152,
-      "timestamp_utc": "2025-12-15T14:45:23.073963Z"
+      "timestamp_utc": "2025-12-15T15:14:48.619301Z"
     }
   ],
   "errors": [],
   "failed": 0,
-  "timestamp_utc": "2025-12-15T14:45:23.074203Z"
+  "timestamp_utc": "2025-12-15T15:14:48.619570Z"
 }
