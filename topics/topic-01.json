@@ -2,14 +2,13 @@
   "id": "topic-01",
   "title": "Agenda — Immigration policy",
   "description": "Here we focus on current events, legal analysis, historical context, or lived experiences, often featuring expert interviews on border security, DACA, asylum, integration, or the broken system's future, exploring how politics, law, and community impact immigrants and the nation.",
-  "duration_sec": 1800,
-  "segment_count": 10,
-  "gemini_model": "gemini-2.5-flash",
   "language": "EN",
 
+  "duration_sec": 1800,
+  "segment_count": 10,
+
   "premium_tts": false,
-  "piper_voice_a": "en_US-ryan-medium",
-  "piper_voice_b": "en_US-amy-medium"
+  "gemini_model": "gemini-2.5-flash",
 
   "queries": [
     "USCIS processing freeze",
@@ -23,10 +22,10 @@
     { "hl": "es-419", "gl": "US", "ceid": "US:es-419", "lang": "es" }
   ],
 
-  "min_fresh_sources": 5,
-  "freshness_hours": 500,
+  "min_fresh_sources": 20,
+  "freshness_hours": 24,
   "max_results_per_query": 50,
-  "backlog_max": 5000,
+  "backlog_max": 2000,
   "fresh_cap": 500,
 
   "max_items_for_script": 60,
