@@ -1,83 +1,247 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+from __future__ import annotations
+
 import json
 import os
 import re
-import subprocess
+import sys
+import time
+import hashlib
+import traceback
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+import requests
+
+# Local modules (expected in scripts/)
+from tts_generate import tts_chunks_to_mp3, script_to_tts_chunks  # your updated file
+
+# script_generate must exist in repo
 from script_generate import generate_30min_script_and_chapters
-from tts_generate import tts_chunks_to_mp3
-from video_render import render_waveform_video
-from image_fetch import select_and_download_backgrounds
 
 
-TOPIC_ID = os.environ.get("TOPIC_ID", "topic-01").strip()
-REPO = os.environ.get("REPO", "").strip()
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-RELEASE_TAG = os.environ.get("RELEASE_TAG", TOPIC_ID).strip()
+# =========================
+# Paths / Constants
+# =========================
+TOPICS_DIR = Path("topics")
+DATA_DIR = Path("data")
+OUTPUTS_DIR = Path("outputs")
+FEEDS_DIR = Path("feeds")
 
-PODCAST_OWNER_NAME = os.environ.get("PODCAST_OWNER_NAME", "Agenda").strip()
-PODCAST_OWNER_EMAIL = os.environ.get("PODCAST_OWNER_EMAIL", "").strip()
-
-ROOT = Path(".")
-TOPICS_DIR = ROOT / "topics"
-DATA_DIR = ROOT / "data" / TOPIC_ID
-OUT_DIR = ROOT / "outputs" / TOPIC_ID
-ASSETS_DIR = ROOT / "assets" / TOPIC_ID
-
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+GITHUB_API = "https://api.github.com"
 
 
-def utc_date_tag() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%d")
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def ffprobe_duration_sec(audio_path: Path) -> int:
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        str(audio_path),
-    ]
-    out = subprocess.check_output(cmd, text=True).strip()
+def safe_mkdir(p: Path) -> None:
+    p.mkdir(parents=True, exist_ok=True)
+
+
+def load_json(path: Path, default: Any = None) -> Any:
+    if not path.exists():
+        return default
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def save_json(path: Path, data: Any) -> None:
+    safe_mkdir(path.parent)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def sha1(s: str) -> str:
+    return hashlib.sha1(s.encode("utf-8")).hexdigest()
+
+
+def is_url(s: str) -> bool:
+    return isinstance(s, str) and (s.startswith("http://") or s.startswith("https://"))
+
+
+def pick_source_url(item: Dict[str, Any]) -> str:
+    for k in ("url", "link", "source_url", "canonical_url"):
+        v = item.get(k)
+        if is_url(v):
+            return v
+    return ""
+
+
+def pick_source_title(item: Dict[str, Any]) -> str:
+    for k in ("title", "name", "headline"):
+        v = item.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return "Untitled"
+
+
+def pick_source_date(item: Dict[str, Any]) -> str:
+    for k in ("published", "published_at", "date", "datetime", "ts_utc"):
+        v = item.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def normalize_source(item: Dict[str, Any]) -> Dict[str, Any]:
+    url = pick_source_url(item)
+    title = pick_source_title(item)
+    dt = pick_source_date(item)
+    lang = item.get("lang") or item.get("language") or ""
+    src = item.get("source") or item.get("publisher") or item.get("site") or ""
+    return {
+        "title": title,
+        "url": url,
+        "published": dt,
+        "source": src,
+        "lang": lang,
+        "raw": item,
+        "key": sha1((url or title) + "|" + (dt or "")),
+    }
+
+
+def dedupe_sources(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = set()
+    out = []
+    for it in items:
+        k = it.get("key") or sha1((it.get("url", "") or it.get("title", "")) + "|" + (it.get("published", "") or ""))
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(it)
+    return out
+
+
+# =========================
+# GitHub Release helpers
+# =========================
+def gh_headers(token: str) -> Dict[str, str]:
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "agenda-topic-runner/1.0",
+    }
+
+
+def ensure_release(repo: str, token: str, tag: str) -> Dict[str, Any]:
+    # Try existing
+    r = requests.get(f"{GITHUB_API}/repos/{repo}/releases/tags/{tag}", headers=gh_headers(token), timeout=60)
+    if r.status_code == 200:
+        return r.json()
+
+    # Create
+    payload = {"tag_name": tag, "name": tag, "draft": False, "prerelease": False}
+    r = requests.post(f"{GITHUB_API}/repos/{repo}/releases", headers=gh_headers(token), json=payload, timeout=60)
+    r.raise_for_status()
+    return r.json()
+
+
+def list_assets(release: Dict[str, Any], token: str) -> List[Dict[str, Any]]:
+    url = release.get("assets_url")
+    if not url:
+        return []
+    r = requests.get(url, headers=gh_headers(token), timeout=60)
+    r.raise_for_status()
+    return r.json()
+
+
+def delete_asset(asset_api_url: str, token: str) -> None:
+    r = requests.delete(asset_api_url, headers=gh_headers(token), timeout=60)
+    if r.status_code not in (204, 404):
+        r.raise_for_status()
+
+
+def upload_asset(release: Dict[str, Any], token: str, file_path: Path) -> str:
+    """
+    Upload asset. If asset name exists, delete then upload.
+    Returns browser_download_url.
+    """
+    name = file_path.name
+    assets = list_assets(release, token)
+    for a in assets:
+        if a.get("name") == name:
+            delete_asset(a["url"], token)
+            break
+
+    upload_url = release["upload_url"].split("{")[0]
+    with file_path.open("rb") as f:
+        r = requests.post(
+            f"{upload_url}?name={name}",
+            headers={**gh_headers(token), "Content-Type": "application/octet-stream"},
+            data=f,
+            timeout=600,
+        )
+    r.raise_for_status()
+    return r.json().get("browser_download_url", "")
+
+
+# =========================
+# Topic load + state
+# =========================
+def load_topic(topic_id: str) -> Dict[str, Any]:
+    p = TOPICS_DIR / f"{topic_id}.json"
+    if not p.exists():
+        raise RuntimeError(f"Topic file missing: {p}")
     try:
-        dur = float(out)
-        return max(1, int(round(dur)))
-    except Exception:
-        return 1800
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise RuntimeError(f"Invalid JSON in {p}: {e}")
 
 
-def load_topic() -> Dict[str, Any]:
-    topic_path = TOPICS_DIR / f"{TOPIC_ID}.json"
-    if not topic_path.exists():
-        raise RuntimeError(f"Missing topic config: {topic_path}")
-    return json.loads(topic_path.read_text(encoding="utf-8"))
+def topic_paths(topic_id: str) -> Dict[str, Path]:
+    base = DATA_DIR / topic_id
+    return {
+        "base": base,
+        "fresh": base / "fresh.json",
+        "backlog": base / "backlog.json",
+        "picked": base / "picked_for_script.json",
+    }
 
 
-def load_sources() -> Tuple[List[Dict[str, Any]], int, int]:
+def load_sources_for_topic(topic_id: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    paths = topic_paths(topic_id)
+    fresh_raw = load_json(paths["fresh"], default=[])
+    backlog_raw = load_json(paths["backlog"], default=[])
+
+    fresh = [normalize_source(x) for x in fresh_raw if isinstance(x, dict)]
+    backlog = [normalize_source(x) for x in backlog_raw if isinstance(x, dict)]
+
+    fresh = dedupe_sources(fresh)
+    backlog = dedupe_sources(backlog)
+    return fresh, backlog
+
+
+def pick_sources_for_script(topic: Dict[str, Any], fresh: List[Dict[str, Any]], backlog: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Expected files:
-      data/<topic>/fresh.json
-      data/<topic>/backlog.json
-      data/<topic>/sources.json (fallback)
+    Strategy:
+    - Use fresh first, then backlog.
+    - Cap at max_items_for_script
     """
-    fresh_path = DATA_DIR / "fresh.json"
-    backlog_path = DATA_DIR / "backlog.json"
-    sources_path = DATA_DIR / "sources.json"
+    max_items = int(topic.get("max_items_for_script", 60))
+    combined = fresh + backlog
+    combined = dedupe_sources(combined)
 
-    fresh: List[Dict[str, Any]] = []
-    backlog: List[Dict[str, Any]] = []
+    # Keep only those with URLs (script should cite real sources)
+    combined = [x for x in combined if is_url(x.get("url", ""))]
 
-    if fresh_path.exists():
-        x = json.loads(fresh_path.read_text(encoding="utf-8"))
-        if isinstance(x, list):
-            fresh = x
+    return combined[:max_items]
 
-    if backlog_path.exists():
-        x = json.loads(backlog_path.read_text(encoding="utf-8"))
-        if isinstance(x, list):
+
+# =========================
+# Optional: ffmetadata chapters
+# =========================
+def write_ffmetadata(chapters: List[Dict[str, Any]], out_path: Path) -> None:
+    """
+    Writes FFmpeg metadata for chapters.
+    Expected chapter fields: title, start_sec, end_sec
+    """
+    lines = [";FFMETADATA1"]
+    for ch in chapters or []:
+        try:
+            title = str(ch.get("title", "Segment")).strip()        if isinstance(x, list):
             backlog = x
 
     if (not fresh and not backlog) and sources_path.exists():
