@@ -128,6 +128,7 @@ jobs:
           pip install piper-tts
           pip install google-genai
 
+      # ---- reverted gate style (fresh_ok + fresh_count) ----
       - name: "Gate by fresh.json"
         id: gate
         env:
@@ -136,23 +137,37 @@ jobs:
           set -euo pipefail
 
           if [ ! -f "$FRESH" ]; then
-            echo "fresh.json missing: $FRESH"
+            echo "Fresh file missing: $FRESH"
             echo "should_run=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          python - <<'PY'
+          import json, os
+          p = os.environ["FRESH"]
+          try:
+              data = json.load(open(p, "r", encoding="utf-8"))
+              ok = isinstance(data, list) and len(data) > 0
+              count = (len(data) if isinstance(data, list) else 0)
+          except Exception:
+              ok = False
+              count = 0
+          print("fresh_ok=", ok)
+          print("fresh_count=", count)
+          PY
+
           COUNT=$(python - <<'PY'
-import json, os
-p = os.environ.get("FRESH", "")
-try:
-    d = json.load(open(p, "r", encoding="utf-8"))
-    print(len(d) if isinstance(d, list) else 0)
-except Exception:
-    print(0)
-PY
-)
-          echo "fresh_count=$COUNT"
-          if [ "$COUNT" -gt 0 ]; then
+          import json, os
+          p = os.environ["FRESH"]
+          try:
+              d = json.load(open(p, "r", encoding="utf-8"))
+              print(len(d) if isinstance(d, list) else 0)
+          except Exception:
+              print(0)
+          PY
+          )
+
+          if [ "${COUNT:-0}" -gt 0 ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
@@ -165,10 +180,7 @@ PY
           REPO: "${{ github.repository }}"
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}"
-
           PIPER_MODEL_DIR: "assets/piper"
-
-          # Podcast RSS owner info
           PODCAST_OWNER_NAME: "Agenda"
           PODCAST_OWNER_EMAIL: "deep.dive.podcast@unloca.com"
           RELEASE_TAG: "${{ matrix.topic }}"
@@ -276,3 +288,4 @@ PY
           else
             echo "Nothing to commit"
           fi
+```0
