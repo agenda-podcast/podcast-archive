@@ -17,12 +17,12 @@
     { "hl": "es-419", "gl": "US", "ceid": "US:es-419", "lang": "es" }
   ],
   "min_fresh_sources": 20,
-  "freshness_hours": 72,
+  "freshness_hours": 500,
   "max_results_per_query": 50,
-  "backlog_max": 2000,
+  "backlog_max": 5000,
   "fresh_cap": 500,
   "max_items_for_script": 60,
-  "max_bg_images": 15,
+  "max_bg_images": 30,
   "intro_text": "Welcome back to Agenda. Today we break down the latest immigration policy developments.",
   "outro_text": "That’s the overview. Full sources are included. Subscribe for the next briefing.",
   "video_overlay": {
