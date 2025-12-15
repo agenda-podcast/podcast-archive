@@ -10,6 +10,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+# Helpful message when running the file directly instead of as a module.
+if __name__ == "__main__" and (__package__ is None or __package__ == ""):
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    print(
+        "Warning: running run_topic.py directly. Prefer running as a module:\n"
+        "  python -m scripts.run_topic\n"
+        f"Adding repository root to sys.path temporarily: {repo_root}"
+    )
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
+# rest of your existing imports
+from scripts.collect_sources import merge_dedupe, pub_dt, read_json_list, stable_id
 from scripts.collect_sources import merge_dedupe, pub_dt, read_json_list, stable_id
 from scripts.feed_build import load_state, save_state, update_topic_feed
 from scripts.github_release import ensure_release_and_upload
