@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 
 
 DEFAULTS = {
-    "intro_text": "AGENDA • Automated Deep Dive Overview",
+    "intro_text": "AGENDA • Deep Dive Overview",
     "outro_text": "Full sources in description • Subscribe for daily briefings",
     "intro_seconds": 10,
     "outro_seconds": 12,
@@ -27,6 +27,12 @@ DEFAULTS = {
     # Background styling
     "bg_blur_sigma": 18,
     "bg_dark_overlay": 0.38,
+
+    # Ken Burns (optional)
+    "kenburns_enabled": True,
+    "kenburns_zoom_end": 1.10,     # final zoom factor
+    "kenburns_seconds": 18,        # duration of one zoom cycle (approx)
+    "kenburns_direction": "diag",  # "diag" | "left" | "right" | "up" | "down" | "center"
 }
 
 
@@ -271,6 +277,53 @@ def _make_concat_image_list(bg_images: List[Path], durations: List[int], list_pa
     list_path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _kenburns_zoompan(cfg: Dict[str, Any], fps: int = 25) -> str:
+    """
+    Adds a gentle Ken Burns effect using zoompan.
+    Works on a continuous video stream (slideshow or static loop).
+    """
+    enabled = bool(cfg.get("kenburns_enabled", True))
+    if not enabled:
+        return ""
+
+    zoom_end = float(cfg.get("kenburns_zoom_end", 1.10))
+    zoom_end = max(1.0, min(1.25, zoom_end))
+
+    seconds = int(cfg.get("kenburns_seconds", 18))
+    seconds = max(6, min(60, seconds))
+    frames = seconds * fps
+
+    direction = str(cfg.get("kenburns_direction", "diag")).lower()
+
+    # zoom expression: slowly approach zoom_end, then effectively stays near it
+    # Using a linear-ish growth until frames, then clamps.
+    z = f"min(1+({zoom_end}-1)*on/{frames}, {zoom_end})"
+
+    # Pan expressions (x/y) depend on direction; 'iw'/'ih' available after scale.
+    # NOTE: zoompan uses x/y in source coordinates after zoom.
+    if direction == "left":
+        x = "0"
+        y = "(ih-oh)/2"
+    elif direction == "right":
+        x = "(iw-ow)"
+        y = "(ih-oh)/2"
+    elif direction == "up":
+        x = "(iw-ow)/2"
+        y = "0"
+    elif direction == "down":
+        x = "(iw-ow)/2"
+        y = "(ih-oh)"
+    elif direction == "center":
+        x = "(iw-ow)/2"
+        y = "(ih-oh)/2"
+    else:  # diag (default)
+        x = "(iw-ow)*on/{}".format(frames)
+        y = "(ih-oh)*on/{}".format(frames)
+
+    # We already scale to 1920x1080; keep output fixed.
+    return f"zoompan=z='{z}':x='{x}':y='{y}':d=1:fps={fps}"
+
+
 def render_waveform_video(
     cover_png: Path,
     mp3_path: Path,
@@ -280,8 +333,8 @@ def render_waveform_video(
     bg_images: Optional[List[Path]] = None,
 ) -> None:
     """
-    Despite name, waveform has been removed per request.
-    Video = slideshow (trusted source images) or static cover + overlays (intro/outro, chapter title, timer).
+    Video = slideshow (trusted source images) or static cover + overlays.
+    Waveform removed. Adds optional Ken Burns effect.
     """
     mp4_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -306,6 +359,9 @@ def render_waveform_video(
 
     inputs = []
     filter_parts = []
+
+    fps = 25
+    kb = _kenburns_zoompan(cfg, fps=fps)
 
     if bg_images and len(bg_images) >= 1:
         windows = _chapter_windows(ch_clean, total_sec)
@@ -333,13 +389,12 @@ def render_waveform_video(
     inputs += ["-i", str(mp3_path)]
     inputs += ["-i", str(meta_path)]
 
-    # Background styling: scale -> blur -> dark overlay
-    filter_parts.append(
-        f"[{bg_input_index}:v]scale=1920:1080,format=yuv420p,"
-        f"gblur=sigma={blur_sigma},"
-        f"drawbox=x=0:y=0:w=iw:h=ih:color=black@{dark_alpha}:t=fill"
-        f"[v0]"
-    )
+    # Background: scale -> (optional kenburns) -> blur -> dark overlay
+    bg_chain = f"[{bg_input_index}:v]scale=1920:1080,format=yuv420p"
+    if kb:
+        bg_chain += f",{kb}"
+    bg_chain += f",gblur=sigma={blur_sigma},drawbox=x=0:y=0:w=iw:h=ih:color=black@{dark_alpha}:t=fill[v0]"
+    filter_parts.append(bg_chain)
 
     overlays = ",".join([x for x in [intro_outro_draw, chapter_draw] if x])
     if overlays:
@@ -361,6 +416,7 @@ def render_waveform_video(
         "-c:v", "libx264",
         "-crf", "20",
         "-preset", "veryfast",
+        "-r", str(fps),
         "-c:a", "aac",
         "-b:a", "192k",
         str(mp4_path),
