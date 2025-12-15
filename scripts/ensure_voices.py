@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+import json
 import hashlib
 from pathlib import Path
 from typing import Optional, Tuple
@@ -28,21 +29,19 @@ def _parse_voice_id(voice: str) -> Tuple[str, str, str]:
     """
     Supports common Piper IDs:
       - en_US-ryan-medium  => locale, name, quality
-      - en_US-amy-low      => locale, name, quality
-    Also tolerates extra dashes in name by treating the LAST token as quality
-    and the FIRST token as locale.
+    Tolerates extra dashes in name by treating:
+      first token = locale, last token = quality, middle = name
     """
     parts = [p for p in voice.split("-") if p.strip()]
     if len(parts) < 3:
         raise ValueError(f"Unexpected voice id format: {voice}")
 
-    locale = parts[0]          # en_US
-    quality = parts[-1]        # medium / high / low / x_low, etc.
-    name = "-".join(parts[1:-1])  # ryan / amy / (any name with dashes)
+    locale = parts[0]
+    quality = parts[-1]
+    name = "-".join(parts[1:-1])
 
     if "_" not in locale:
         raise ValueError(f"Unexpected locale in voice id: {voice}")
-
     if not name:
         raise ValueError(f"Missing name in voice id: {voice}")
 
@@ -50,11 +49,9 @@ def _parse_voice_id(voice: str) -> Tuple[str, str, str]:
 
 
 def _voice_url(voice: str, ext: str) -> str:
-    # voice: en_US-amy-medium -> lang=en, locale=en_US, name=amy, quality=medium
-    # path: en/en_US/amy/medium/en_US-amy-medium.onnx(.json)
+    # voice: en_US-amy-medium -> en/en_US/amy/medium/en_US-amy-medium.onnx(.json)
     locale, name, quality = _parse_voice_id(voice)
-    lang = locale.split("_")[0]  # en
-
+    lang = locale.split("_")[0]
     return f"{BASE}/{lang}/{locale}/{name}/{quality}/{voice}{ext}"
 
 
@@ -66,49 +63,84 @@ def _sha256_file(p: Path) -> str:
     return h.hexdigest()
 
 
-def _download(url: str, out: Path, *, min_bytes: int = 200_000, retries: int = 3) -> None:
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    # If file exists and looks non-trivial, keep it
-    if out.exists() and out.stat().st_size >= min_bytes:
-        return
-
+def _fetch_bytes(url: str, *, retries: int = 3) -> bytes:
     last_err: Optional[Exception] = None
     for attempt in range(1, retries + 1):
         try:
             req = Request(
                 url,
                 headers={
-                    "User-Agent": "agenda-ensure-voices/1.1 (+https://github.com/agenda-podcast/podcast-archive)",
+                    "User-Agent": "agenda-ensure-voices/1.2 (+https://github.com/agenda-podcast/podcast-archive)",
                     "Accept": "*/*",
                 },
                 method="GET",
             )
-            with urlopen(req, timeout=120) as resp:
+            with urlopen(req, timeout=180) as resp:
                 status = getattr(resp, "status", 200)
                 if status >= 400:
                     raise RuntimeError(f"HTTP {status} while fetching {url}")
 
-                tmp = out.with_suffix(out.suffix + ".tmp")
-                with tmp.open("wb") as f:
-                    while True:
-                        chunk = resp.read(1024 * 256)
-                        if not chunk:
-                            break
-                        f.write(chunk)
+                data = resp.read()
 
-                if (not tmp.exists()) or tmp.stat().st_size < min_bytes:
-                    size = tmp.stat().st_size if tmp.exists() else 0
-                    raise RuntimeError(f"Downloaded file too small ({size} bytes): {url}")
+                # Guard: HF/CDN sometimes returns an HTML block/redirect page
+                # (still HTTP 200). Detect and fail fast.
+                head = data[:200].lstrip().lower()
+                if head.startswith(b"<!doctype html") or head.startswith(b"<html"):
+                    snippet = data[:400].decode("utf-8", "ignore")
+                    raise RuntimeError(f"Got HTML instead of file for {url}: {snippet}")
 
-                tmp.replace(out)
-                return
+                return data
 
         except (HTTPError, URLError, TimeoutError, RuntimeError) as e:
             last_err = e
             time.sleep(attempt * 2)
 
     raise RuntimeError(f"Failed to download after {retries} retries: {url}. Last error: {last_err}")
+
+
+def _ensure_binary(url: str, out: Path, *, min_bytes: int, retries: int = 3) -> None:
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    if out.exists() and out.stat().st_size >= min_bytes:
+        return
+
+    data = _fetch_bytes(url, retries=retries)
+
+    if len(data) < min_bytes:
+        raise RuntimeError(f"Downloaded file too small ({len(data)} bytes): {url}")
+
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(out)
+
+
+def _ensure_json(url: str, out: Path, *, retries: int = 3) -> None:
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    # If file already exists and parses as JSON, keep it.
+    if out.exists():
+        try:
+            obj = json.loads(out.read_text(encoding="utf-8"))
+            if isinstance(obj, dict):
+                return
+        except Exception:
+            pass  # re-download if invalid
+
+    data = _fetch_bytes(url, retries=retries)
+
+    # Validate JSON content (configs can be only a few KB)
+    try:
+        text = data.decode("utf-8")
+        obj = json.loads(text)
+        if not isinstance(obj, dict):
+            raise ValueError("config JSON is not an object")
+    except Exception as e:
+        snippet = data[:400].decode("utf-8", "ignore")
+        raise RuntimeError(f"Config JSON invalid for {url}: {e}. Snippet: {snippet}")
+
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(out)
 
 
 def main() -> None:
@@ -133,10 +165,10 @@ def main() -> None:
 
         print(f"- {v}:")
         print(f"  model:  {onnx.name}")
-        _download(onnx_url, onnx, min_bytes=500_000, retries=3)
+        _ensure_binary(onnx_url, onnx, min_bytes=500_000, retries=3)
 
         print(f"  config: {cfg.name}")
-        _download(cfg_url, cfg, min_bytes=10_000, retries=3)
+        _ensure_json(cfg_url, cfg, retries=3)
 
         print(f"  ok: size(model)={onnx.stat().st_size} sha256={_sha256_file(onnx)[:12]}...")
 
