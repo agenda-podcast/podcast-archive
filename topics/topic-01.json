@@ -21,10 +21,10 @@
     { "hl": "es-419", "gl": "US", "ceid": "US:es-419", "lang": "es" }
   ],
 
-  "min_fresh_sources": 20,
-  "freshness_hours": 24,
+  "min_fresh_sources": 5,
+  "freshness_hours": 500,
   "max_results_per_query": 50,
-  "backlog_max": 2000,
+  "backlog_max": 5000,
   "fresh_cap": 500,
 
   "max_items_for_script": 60,
