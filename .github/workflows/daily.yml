@@ -119,18 +119,25 @@ jobs:
 
       - name: Gate by fresh.json
         id: gate
+        env:
+          FRESH: data/${{ matrix.topic }}/fresh.json
         run: |
-          FRESH="data/${{ matrix.topic }}/fresh.json"
+          set -e
+
           if [ ! -f "$FRESH" ]; then
             echo "should_run=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          python - << 'PY'
-          import json, sys
-          d=json.load(open(sys.argv[1]))
-          print(len(d))
-          sys.exit(0 if isinstance(d,list) and len(d)>0 else 1)
-          PY "$FRESH" && echo "should_run=true" >> $GITHUB_OUTPUT || echo "should_run=false" >> $GITHUB_OUTPUT
+
+          COUNT=$(python -c "import json; d=json.load(open('$FRESH')); print(len(d) if isinstance(d,list) else 0)")
+
+          echo "fresh_count=$COUNT"
+
+          if [ "$COUNT" -gt 0 ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Run topic
         if: steps.gate.outputs.should_run == 'true'
