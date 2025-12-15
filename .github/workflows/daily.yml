@@ -13,8 +13,174 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  voices:
+    name: Ensure Piper voices (assets)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure Piper runtime deps
+        run: |
+          python -m pip install --upgrade pip
+          # piper-tts typically provides the piper CLI, keep it here for safety (your pipeline uses it)
+          pip install piper-tts
+
+      - name: Download/Update Piper voices into assets (with manifest + ETag/Last-Modified)
+        run: |
+          set -euo pipefail
+
+          VOICE_ROOT="assets/piper"
+          mkdir -p "$VOICE_ROOT"
+
+          # Voices you want available by default
+          # Female: en_US-lessac-medium
+          # Male:   en_US-ryan-medium
+          # HuggingFace resolve/main URLs (onnx + onnx.json)
+          declare -A URLS
+          URLS["en_US-lessac-medium.onnx"]="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
+          URLS["en_US-lessac-medium.onnx.json"]="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
+          URLS["en_US-ryan-medium.onnx"]="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx"
+          URLS["en_US-ryan-medium.onnx.json"]="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx.json"
+
+          MANIFEST="$VOICE_ROOT/manifest.json"
+          python - << 'PY'
+          import json, os
+          p=os.environ.get("MANIFEST")
+          if p and (not os.path.exists(p)):
+              with open(p,"w",encoding="utf-8") as f:
+                  json.dump({"files":{}}, f, ensure_ascii=False, indent=2)
+          PY
+        env:
+          MANIFEST: assets/piper/manifest.json
+
+      - name: Sync assets/piper (ETag/Last-Modified check + sha256)
+        run: |
+          set -euo pipefail
+          VOICE_ROOT="assets/piper"
+          MANIFEST="$VOICE_ROOT/manifest.json"
+          mkdir -p "$VOICE_ROOT"
+
+          python - << 'PY'
+          import os, json, hashlib, urllib.request, urllib.error
+          from datetime import datetime
+
+          VOICE_ROOT = "assets/piper"
+          MANIFEST = os.path.join(VOICE_ROOT, "manifest.json")
+
+          URLS = {
+            "en_US-lessac-medium.onnx": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx",
+            "en_US-lessac-medium.onnx.json": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json",
+            "en_US-ryan-medium.onnx": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx",
+            "en_US-ryan-medium.onnx.json": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx.json",
+          }
+
+          os.makedirs(VOICE_ROOT, exist_ok=True)
+          if os.path.exists(MANIFEST):
+              data = json.load(open(MANIFEST,"r",encoding="utf-8"))
+          else:
+              data = {"files":{}}
+
+          files = data.setdefault("files", {})
+          changed = False
+
+          def sha256_file(path: str) -> str:
+              h = hashlib.sha256()
+              with open(path,"rb") as f:
+                  for chunk in iter(lambda: f.read(1024*1024), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          def head(url: str):
+              req = urllib.request.Request(url, method="HEAD", headers={
+                  "User-Agent": "agenda-voices-bot/1.0"
+              })
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  hdrs = dict(r.headers.items())
+              etag = hdrs.get("ETag") or hdrs.get("Etag") or ""
+              lm = hdrs.get("Last-Modified") or ""
+              clen = hdrs.get("Content-Length") or ""
+              return etag, lm, clen
+
+          def download(url: str, out_path: str):
+              req = urllib.request.Request(url, headers={"User-Agent":"agenda-voices-bot/1.0"})
+              with urllib.request.urlopen(req, timeout=120) as r:
+                  tmp = out_path + ".tmp"
+                  with open(tmp,"wb") as f:
+                      while True:
+                          b = r.read(1024*1024)
+                          if not b:
+                              break
+                          f.write(b)
+                  os.replace(tmp, out_path)
+
+          for fname, url in URLS.items():
+              out_path = os.path.join(VOICE_ROOT, fname)
+              meta = files.get(fname, {})
+              need = (not os.path.exists(out_path)) or (os.path.getsize(out_path) < 1024)
+
+              remote_etag = ""
+              remote_lm = ""
+              remote_len = ""
+              try:
+                  remote_etag, remote_lm, remote_len = head(url)
+              except Exception:
+                  # If HEAD is blocked, we still keep existing, and only download if missing.
+                  remote_etag, remote_lm, remote_len = "", "", ""
+
+              if not need and (remote_etag or remote_lm):
+                  if (remote_etag and meta.get("etag") != remote_etag) or (remote_lm and meta.get("last_modified") != remote_lm):
+                      need = True
+
+              if need:
+                  print(f"Downloading: {fname}")
+                  download(url, out_path)
+                  changed = True
+              else:
+                  print(f"OK cached: {fname}")
+
+              # Update metadata (even if unchanged, keep consistent)
+              if os.path.exists(out_path):
+                  files[fname] = {
+                      "url": url,
+                      "etag": remote_etag,
+                      "last_modified": remote_lm,
+                      "content_length": remote_len,
+                      "sha256": sha256_file(out_path),
+                      "updated_utc": datetime.utcnow().isoformat() + "Z",
+                  }
+
+          data["updated_utc"] = datetime.utcnow().isoformat() + "Z"
+          with open(MANIFEST,"w",encoding="utf-8") as f:
+              json.dump(data,f,ensure_ascii=False,indent=2)
+
+          print("changed=", changed)
+          PY
+
+      - name: Commit assets changes (voices/manifest)
+        run: |
+          git config user.name "agenda-bot"
+          git config user.email "bot@github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add assets/piper
+            git commit -m "chore: update piper voices (assets)" || true
+            git push
+          else
+            echo "No assets changes to commit"
+          fi
+
   collect:
     name: Collect sources (all topics)
+    needs: voices
     runs-on: ubuntu-latest
 
     steps:
@@ -32,11 +198,8 @@ jobs:
       - name: Install python deps
         run: |
           python -m pip install --upgrade pip
-          pip install piper-tts
           pip install requests feedparser python-dateutil
 
-      # Optional: if you want to restrict collection to a subset, set TOPIC_IDS in repo/environment vars
-      # Example: TOPIC_IDS="topic-01,topic-02"
       - name: Collect sources into fresh/backlog
         run: |
           python scripts/collect_sources.py
@@ -73,7 +236,7 @@ jobs:
           # - topic-10
 
     steps:
-      - name: Checkout (latest after collect commit)
+      - name: Checkout (latest after collect+voices commits)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -91,41 +254,40 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install requests feedparser python-dateutil
+          # Piper CLI/provider (used when premium_tts=false OR when quota fallback occurs)
+          pip install piper-tts
+          # Gemini SDK (only used when premium_tts=true)
+          pip install google-genai
 
       - name: Skip if not enough fresh sources (empty fresh.json)
         id: gate
+        env:
+          FRESH: data/${{ matrix.topic }}/fresh.json
         run: |
-          FRESH="data/${{ matrix.topic }}/fresh.json"
+          set -euo pipefail
           if [ ! -f "$FRESH" ]; then
             echo "Fresh file missing: $FRESH"
             echo "should_run=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          python - << 'PY'
-          import json, os, sys
-          p = os.environ["FRESH"]
-          try:
-              data = json.load(open(p, "r", encoding="utf-8"))
-              ok = isinstance(data, list) and len(data) > 0
-          except Exception:
-              ok = False
-          print("fresh_ok=", ok)
-          print("fresh_count=", (len(data) if isinstance(data, list) else 0))
-          sys.exit(0)
-          PY
+
           COUNT=$(python - << 'PY'
-          import json
-          d=json.load(open("data/${{ matrix.topic }}/fresh.json","r",encoding="utf-8"))
-          print(len(d) if isinstance(d,list) else 0)
+          import json, os
+          p=os.environ["FRESH"]
+          try:
+              d=json.load(open(p,"r",encoding="utf-8"))
+              print(len(d) if isinstance(d,list) else 0)
+          except Exception:
+              print(0)
           PY
           )
+
+          echo "fresh_count=$COUNT"
           if [ "$COUNT" -gt 0 ]; then
             echo "should_run=true" >> $GITHUB_OUTPUT
           else
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
-        env:
-          FRESH: data/${{ matrix.topic }}/fresh.json
 
       - name: Run topic pipeline
         if: steps.gate.outputs.should_run == 'true'
@@ -138,6 +300,12 @@ jobs:
           GEMINI_TTS_MODEL: gemini-2.5-flash-preview-tts
           VOICE_A: Kore
           VOICE_B: Puck
+
+          # Piper voices available in repo assets (tts_generate.py can resolve via PIPER_MODEL_DIR)
+          PIPER_MODEL_DIR: assets/piper
+          PIPER_VOICE_A: en_US-lessac-medium
+          PIPER_VOICE_B: en_US-ryan-medium
+
           TTS_MAX_CHARS_PER_CHUNK: "9000"
           MERGE_SAME_VOICE_TURNS: "1"
           MIN_CHUNK_CHARS: "800"
@@ -161,7 +329,7 @@ jobs:
           git config user.name "agenda-bot"
           git config user.email "bot@github.com"
           if [ -n "$(git status --porcelain)" ]; then
-            git add data feed outputs
+            git add data feed outputs assets/piper
             git commit -m "chore: update feed/data/outputs (${{ matrix.topic }})" || true
             git push
           else
