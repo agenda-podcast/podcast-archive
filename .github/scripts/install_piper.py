@@ -11,6 +11,8 @@ Usage:
 
 Exits with non-zero code on failure with helpful error messages.
 Installs piper to ./tools/piper and makes it executable.
+
+This script is called by the CI workflow to ensure piper is available.
 """
 
 from __future__ import annotations
