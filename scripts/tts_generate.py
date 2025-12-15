@@ -220,7 +220,8 @@ def tts_chunks_to_mp3(
 
     provider = "gemini" if premium and gemini_api_key else "piper"
 
-    silence_wav = _ensure_silence_wav(cache_dir / f"silence_{int(gap_seconds*1000)}ms.wav", seconds=gap_seconds)
+    ms_gap = int(round(gap_seconds * 1000))
+    silence_wav = _ensure_silence_wav(cache_dir / f"silence_{ms_gap}ms.wav", seconds=gap_seconds)
     wav_paths: List[Path] = []
 
     for raw_chunk in chunks:
@@ -236,7 +237,9 @@ def tts_chunks_to_mp3(
             voice = p_voice_a if speaker == "A" else p_voice_b
 
         for part in _split_text(text, max_chars):
-            key = hashlib.sha256(f"{provider}|{voice}|{part}".encode("utf-8")).hexdigest()
+            key = hashlib.sha256(
+                f"{provider}|{voice}|{part}|{piper_model_dir or ''}".encode("utf-8")
+            ).hexdigest()
             wav_path = cache_dir / f"{key}.wav"
             if not wav_path.exists():
                 audio_bytes = _tts_provider_to_bytes(provider=provider, text=part, voice=voice, model_dir=piper_model_dir)
