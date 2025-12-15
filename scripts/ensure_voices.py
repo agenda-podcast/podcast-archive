@@ -8,7 +8,7 @@ import sys
 import time
 import hashlib
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
@@ -24,19 +24,37 @@ VOICES = [
 BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
 
-def _voice_url(voice: str, ext: str) -> str:
-    # voice: en_US-amy-medium -> lang=en, locale=en_US, name=amy, quality=medium
-    # path: en/en_US/amy/medium/en_US-amy-medium.onnx
-    parts = voice.split("-")
-    if len(parts) < 4 or "_" not in parts[0]:
+def _parse_voice_id(voice: str) -> Tuple[str, str, str]:
+    """
+    Supports common Piper IDs:
+      - en_US-ryan-medium  => locale, name, quality
+      - en_US-amy-low      => locale, name, quality
+    Also tolerates extra dashes in name by treating the LAST token as quality
+    and the FIRST token as locale.
+    """
+    parts = [p for p in voice.split("-") if p.strip()]
+    if len(parts) < 3:
         raise ValueError(f"Unexpected voice id format: {voice}")
 
-    locale = parts[0]            # en_US
-    lang = locale.split("_")[0]  # en
-    name = parts[1]              # amy
-    quality = parts[2]           # medium
+    locale = parts[0]          # en_US
+    quality = parts[-1]        # medium / high / low / x_low, etc.
+    name = "-".join(parts[1:-1])  # ryan / amy / (any name with dashes)
 
-    # Note: rhasspy repo uses: <lang>/<locale>/<name>/<quality>/<voice>.onnx(.json)
+    if "_" not in locale:
+        raise ValueError(f"Unexpected locale in voice id: {voice}")
+
+    if not name:
+        raise ValueError(f"Missing name in voice id: {voice}")
+
+    return locale, name, quality
+
+
+def _voice_url(voice: str, ext: str) -> str:
+    # voice: en_US-amy-medium -> lang=en, locale=en_US, name=amy, quality=medium
+    # path: en/en_US/amy/medium/en_US-amy-medium.onnx(.json)
+    locale, name, quality = _parse_voice_id(voice)
+    lang = locale.split("_")[0]  # en
+
     return f"{BASE}/{lang}/{locale}/{name}/{quality}/{voice}{ext}"
 
 
@@ -61,14 +79,15 @@ def _download(url: str, out: Path, *, min_bytes: int = 200_000, retries: int = 3
             req = Request(
                 url,
                 headers={
-                    "User-Agent": "agenda-ensure-voices/1.0 (+https://github.com/agenda-podcast/podcast-archive)",
+                    "User-Agent": "agenda-ensure-voices/1.1 (+https://github.com/agenda-podcast/podcast-archive)",
                     "Accept": "*/*",
                 },
                 method="GET",
             )
             with urlopen(req, timeout=120) as resp:
-                if getattr(resp, "status", 200) >= 400:
-                    raise RuntimeError(f"HTTP {getattr(resp, 'status', '??')} while fetching {url}")
+                status = getattr(resp, "status", 200)
+                if status >= 400:
+                    raise RuntimeError(f"HTTP {status} while fetching {url}")
 
                 tmp = out.with_suffix(out.suffix + ".tmp")
                 with tmp.open("wb") as f:
@@ -78,8 +97,9 @@ def _download(url: str, out: Path, *, min_bytes: int = 200_000, retries: int = 3
                             break
                         f.write(chunk)
 
-                if not tmp.exists() or tmp.stat().st_size < min_bytes:
-                    raise RuntimeError(f"Downloaded file too small ({tmp.stat().st_size if tmp.exists() else 0} bytes): {url}")
+                if (not tmp.exists()) or tmp.stat().st_size < min_bytes:
+                    size = tmp.stat().st_size if tmp.exists() else 0
+                    raise RuntimeError(f"Downloaded file too small ({size} bytes): {url}")
 
                 tmp.replace(out)
                 return
@@ -112,13 +132,12 @@ def main() -> None:
         cfg_url = _voice_url(v, ".onnx.json")
 
         print(f"- {v}:")
-        print(f"  model: {onnx.name}")
+        print(f"  model:  {onnx.name}")
         _download(onnx_url, onnx, min_bytes=500_000, retries=3)
 
         print(f"  config: {cfg.name}")
         _download(cfg_url, cfg, min_bytes=10_000, retries=3)
 
-        # Optional integrity signal (helps debugging)
         print(f"  ok: size(model)={onnx.stat().st_size} sha256={_sha256_file(onnx)[:12]}...")
 
     print(f"OK. Piper voices present in {model_dir}")
