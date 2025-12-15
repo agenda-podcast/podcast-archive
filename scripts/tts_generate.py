@@ -1,6 +1,5 @@
 import os
 import re
-import io
 import json
 import time
 import base64
@@ -8,15 +7,16 @@ import wave
 import random
 import subprocess
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
+from pathlib import Path
 
 import requests
 
-# Gemini TTS uses generateContent with AUDIO modality (not generateSpeech).
-# Docs: https://ai.google.dev/gemini-api/docs/speech-generation
 
-
-DEFAULT_SAMPLE_RATE = 24000  # Gemini TTS PCM rate in docs
+# Gemini TTS via REST:
+# POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+# with generationConfig.responseModalities=["AUDIO"] and speechConfig.
+DEFAULT_SAMPLE_RATE = 24000
 DEFAULT_CHANNELS = 1
 DEFAULT_SAMPLE_WIDTH = 2  # 16-bit PCM
 
@@ -35,9 +35,14 @@ def _env_str(name: str, default: str) -> str:
     return v if v else default
 
 
+# SPEED OPTIMIZATION DEFAULTS (you can still override in workflow env)
 GEMINI_TTS_MODEL = _env_str("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts")
-TTS_MAX_CHARS_PER_CHUNK = _env_int("TTS_MAX_CHARS_PER_CHUNK", 3200)
-TTS_TURN_GAP_MS = _env_int("TTS_TURN_GAP_MS", 200)
+
+# Raise chunk size: fewer HTTP calls => faster
+TTS_MAX_CHARS_PER_CHUNK = _env_int("TTS_MAX_CHARS_PER_CHUNK", 5200)
+
+# Reduce gap a bit (still natural)
+TTS_TURN_GAP_MS = _env_int("TTS_TURN_GAP_MS", 120)
 
 VOICE_A = _env_str("VOICE_A", "Kore")
 VOICE_B = _env_str("VOICE_B", "Puck")
@@ -60,21 +65,23 @@ def _split_text_soft(text: str, max_chars: int) -> List[str]:
     if len(text) <= max_chars:
         return [text]
 
-    # Split by paragraphs then by sentences if needed
     paras = re.split(r"\n\s*\n+", text)
     out: List[str] = []
 
-    def push_piece(piece: str):
+    def push_piece(piece: str) -> None:
         piece = piece.strip()
         if not piece:
             return
+
         if len(piece) <= max_chars:
             out.append(piece)
             return
+
         # sentence-ish split
         parts = re.split(r"(?<=[\.\!\?])\s+", piece)
         buf = ""
         for p in parts:
+            p = p.strip()
             if not p:
                 continue
             if not buf:
@@ -90,7 +97,7 @@ def _split_text_soft(text: str, max_chars: int) -> List[str]:
     for para in paras:
         push_piece(para)
 
-    # final safety split if any still too big
+    # hard split fallback
     final: List[str] = []
     for s in out:
         if len(s) <= max_chars:
@@ -111,15 +118,9 @@ def _gemini_tts_pcm_bytes(
     voice: str,
     api_key: str,
     model: str,
-    sample_rate: int = DEFAULT_SAMPLE_RATE,
     timeout_s: int = 120,
     max_retries: int = 6,
 ) -> bytes:
-    """
-    Calls Gemini TTS via REST:
-      POST /v1beta/models/{model}:generateContent
-    Returns raw PCM (s16le, 24kHz, mono) bytes decoded from inlineData.data.
-    """
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is empty")
     if not model:
@@ -137,20 +138,18 @@ def _gemini_tts_pcm_bytes(
             "responseModalities": ["AUDIO"],
             "speechConfig": {
                 "voiceConfig": {
-                    "prebuiltVoiceConfig": {
-                        "voiceName": voice
-                    }
+                    "prebuiltVoiceConfig": {"voiceName": voice}
                 }
             }
         },
-        "model": model,
     }
 
-    # Retry for transient failures
-    last_err = None
+    last_err: Optional[Exception] = None
+
     for attempt in range(max_retries):
         try:
             r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=timeout_s)
+
             if r.status_code == 200:
                 data = r.json()
                 b64 = (
@@ -164,35 +163,38 @@ def _gemini_tts_pcm_bytes(
                     raise RuntimeError(f"TTS returned 200 but no inlineData.data (voice={voice})")
                 return base64.b64decode(b64)
 
-            # Retryable
+            # Retryable statuses
             if r.status_code in (429, 500, 502, 503, 504):
-                sleep_s = min(30, (2 ** attempt) + random.random())
+                # smaller backoff to speed up while still safe
+                sleep_s = min(12.0, (1.6 ** attempt) + random.random() * 0.4)
                 time.sleep(sleep_s)
                 continue
 
-            # Non-retryable
             raise RuntimeError(f"TTS HTTP {r.status_code}: {r.text[:400]}")
 
         except Exception as e:
             last_err = e
-            # retry network-ish
-            sleep_s = min(30, (2 ** attempt) + random.random())
+            sleep_s = min(12.0, (1.6 ** attempt) + random.random() * 0.4)
             time.sleep(sleep_s)
 
     raise RuntimeError(f"TTS failed after retries: {last_err}")
 
 
-def _write_wav(path: str, pcm: bytes, rate: int = DEFAULT_SAMPLE_RATE, channels: int = DEFAULT_CHANNELS, width: int = DEFAULT_SAMPLE_WIDTH) -> None:
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with wave.open(path, "wb") as wf:
-        wf.setnchannels(channels)
-        wf.setsampwidth(width)
+def _write_wav(path: Union[str, Path], pcm: bytes, rate: int = DEFAULT_SAMPLE_RATE) -> None:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(p), "wb") as wf:
+        wf.setnchannels(DEFAULT_CHANNELS)
+        wf.setsampwidth(DEFAULT_SAMPLE_WIDTH)
         wf.setframerate(rate)
         wf.writeframes(pcm)
 
 
-def _ffmpeg_wav_to_mp3(wav_path: str, mp3_path: str) -> None:
-    os.makedirs(os.path.dirname(mp3_path) or ".", exist_ok=True)
+def _ffmpeg_wav_to_mp3(wav_path: Union[str, Path], mp3_path: Union[str, Path]) -> None:
+    wav_path = str(wav_path)
+    mp3_path = str(mp3_path)
+    Path(mp3_path).parent.mkdir(parents=True, exist_ok=True)
+
     cmd = [
         "ffmpeg",
         "-y",
@@ -208,40 +210,44 @@ def _ffmpeg_wav_to_mp3(wav_path: str, mp3_path: str) -> None:
         raise RuntimeError(f"ffmpeg failed: {p.stderr[:800]}")
 
 
-def tts_chunks_to_mp3(tts_chunks: List[Dict[str, Any]], mp3_path: str, api_key: str) -> str:
+def tts_chunks_to_mp3(tts_chunks: List[Dict[str, Any]], mp3_path: Union[str, Path], api_key: str) -> str:
     """
-    Expected by run_topic.py.
-    tts_chunks: list of dicts with at least {"text": "..."} and optionally {"voice": "..."}.
-    Produces MP3 at mp3_path. Returns mp3_path.
+    tts_chunks: list[{"text": "...", "voice": "..." (optional)}]
+    mp3_path may be str or pathlib.Path.
     """
-    if not isinstance(tts_chunks, list) or len(tts_chunks) == 0:
+    if not isinstance(tts_chunks, list) or not tts_chunks:
         raise RuntimeError("tts_chunks_to_mp3: empty tts_chunks")
+
+    mp3_p = Path(mp3_path)  # normalize Path/str
+    if mp3_p.suffix.lower() != ".mp3":
+        # ensure output ends with .mp3
+        mp3_p = mp3_p.with_suffix(".mp3")
+
+    wav_p = mp3_p.with_suffix(".wav")  # FIX: no string replace on Path
 
     model = _env_str("GEMINI_TTS_MODEL", GEMINI_TTS_MODEL)
     gap_ms = _env_int("TTS_TURN_GAP_MS", TTS_TURN_GAP_MS)
+    max_chars = _env_int("TTS_MAX_CHARS_PER_CHUNK", TTS_MAX_CHARS_PER_CHUNK)
 
     pcm_all = bytearray()
 
-    # Alternate voices if not provided
     alt = [VOICE_A, VOICE_B]
     alt_i = 0
 
     for chunk in tts_chunks:
-        text = (chunk.get("text") if isinstance(chunk, dict) else "") or ""
-        text = str(text).strip()
+        if not isinstance(chunk, dict):
+            continue
+        text = str(chunk.get("text") or "").strip()
         if not text:
             continue
 
-        voice = ""
-        if isinstance(chunk, dict):
-            voice = str(chunk.get("voice") or "").strip()
+        voice = str(chunk.get("voice") or "").strip()
         if not voice:
             voice = alt[alt_i % 2]
             alt_i += 1
 
-        # Enforce size limit
-        parts = _split_text_soft(text, _env_int("TTS_MAX_CHARS_PER_CHUNK", TTS_MAX_CHARS_PER_CHUNK))
-        for i, part in enumerate(parts):
+        parts = _split_text_soft(text, max_chars)
+        for part in parts:
             pcm = _gemini_tts_pcm_bytes(
                 text=part,
                 voice=voice,
@@ -249,22 +255,18 @@ def tts_chunks_to_mp3(tts_chunks: List[Dict[str, Any]], mp3_path: str, api_key: 
                 model=model,
             )
             pcm_all.extend(pcm)
-
-            # gap between subparts and turns
             pcm_all.extend(_silence_pcm(gap_ms))
 
-    if len(pcm_all) == 0:
+    if not pcm_all:
         raise RuntimeError("tts_chunks_to_mp3: produced 0 audio bytes")
 
-    tmp_wav = mp3_path.replace(".mp3", ".wav")
-    _write_wav(tmp_wav, bytes(pcm_all))
-
-    _ffmpeg_wav_to_mp3(tmp_wav, mp3_path)
+    _write_wav(wav_p, bytes(pcm_all))
+    _ffmpeg_wav_to_mp3(wav_p, mp3_p)
 
     # Cleanup wav
     try:
-        os.remove(tmp_wav)
+        wav_p.unlink()
     except OSError:
         pass
 
-    return mp3_path
+    return str(mp3_p)
