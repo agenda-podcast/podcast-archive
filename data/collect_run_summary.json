@@ -1,12 +1,22 @@
 {
-  "results": [],
-  "errors": [
+  "results": [
     {
       "topic_id": "topic-01",
-      "error": "Invalid JSON in topics/topic-01.json: Expecting ',' delimiter: line 56 column 5 (char 1667)",
-      "traceback": "Traceback (most recent call last):\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/collect_sources.py\", line 271, in load_topic\n    return json.loads(p.read_text(encoding=\"utf-8\"))\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/json/__init__.py\", line 346, in loads\n    return _default_decoder.decode(s)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/json/decoder.py\", line 337, in decode\n    obj, end = self.raw_decode(s, idx=_w(s, 0).end())\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/json/decoder.py\", line 353, in raw_decode\n    obj, end = self.scan_once(s, idx)\n               ^^^^^^^^^^^^^^^^^^^^^^\njson.decoder.JSONDecodeError: Expecting ',' delimiter: line 56 column 5 (char 1667)\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/collect_sources.py\", line 426, in main\n    results.append(collect_for_topic(tid))\n                   ^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/collect_sources.py\", line 277, in collect_for_topic\n    topic = load_topic(topic_id)\n            ^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/collect_sources.py\", line 273, in load_topic\n    raise RuntimeError(f\"Invalid JSON in {p}: {e}\")\nRuntimeError: Invalid JSON in topics/topic-01.json: Expecting ',' delimiter: line 56 column 5 (char 1667)\n"
+      "status": "SKIP",
+      "min_fresh_sources": 20,
+      "freshness_hours": 24,
+      "queries": [
+        "USCIS processing freeze",
+        "immigration case freeze memo",
+        "administrative freeze immigration applications"
+      ],
+      "collected_now": 429,
+      "fresh_written": 0,
+      "backlog_now": 252,
+      "timestamp_utc": "2025-12-15T13:26:41.100321Z"
     }
   ],
-  "failed": 1,
-  "timestamp_utc": "2025-12-15T13:21:04.957378Z"
+  "errors": [],
+  "failed": 0,
+  "timestamp_utc": "2025-12-15T13:26:41.100537Z"
 }
