@@ -1,3 +1,4 @@
+# .github/workflows/ci.yml
 name: CI - smoke
 
 on:
@@ -30,13 +31,14 @@ jobs:
         id: install_piper
         run: |
           set -euo pipefail
-
           python - <<'PY'
-import json, sys, urllib.request
+import json, sys, urllib.request, tempfile, os, shutil, subprocess
+
 api = "https://api.github.com/repos/rhasspy/piper/releases/latest"
 print("Fetching:", api)
 with urllib.request.urlopen(api) as r:
     data = json.load(r)
+
 assets = data.get("assets", [])
 candidates = []
 for a in assets:
@@ -46,18 +48,22 @@ for a in assets:
         continue
     if "linux" in name and ("amd64" in name or "x86_64" in name or "x86" in name):
         candidates.append((name, url))
+
 if not candidates and assets:
     candidates = [(a.get("name", ""), a.get("browser_download_url")) for a in assets if a.get("browser_download_url")]
+
 if not candidates:
     print("No release asset found for piper; assets:", [a.get("name") for a in assets])
     sys.exit(2)
+
 name, download_url = candidates[0]
 print("Selected asset:", name, download_url)
-import subprocess, os, shutil, tempfile
+
 tmpdir = tempfile.mkdtemp()
 archive = os.path.join(tmpdir, "asset")
 print("Downloading to", archive)
 subprocess.check_call(["curl", "-L", "-o", archive, download_url])
+
 def try_extract(archive_path, dest):
     import tarfile, zipfile
     if tarfile.is_tarfile(archive_path):
@@ -69,8 +75,10 @@ def try_extract(archive_path, dest):
             zf.extractall(dest)
         return True
     return False
+
 extracted = try_extract(archive, tmpdir)
 piper_path = None
+
 if extracted:
     for root, dirs, files in os.walk(tmpdir):
         if "piper" in files:
@@ -78,10 +86,12 @@ if extracted:
             piper_path = candidate
             break
 else:
+    # treat a single-file asset as the binary
     cand = os.path.join(tmpdir, "piper.bin")
     shutil.move(archive, cand)
     os.chmod(cand, 0o755)
     piper_path = cand
+
 if not piper_path:
     for root, dirs, files in os.walk(tmpdir):
         for f in files:
@@ -91,9 +101,11 @@ if not piper_path:
                 break
         if piper_path:
             break
+
 if not piper_path:
     print("Failed to locate 'piper' executable in downloaded asset.")
     sys.exit(3)
+
 dest = os.path.join(os.getcwd(), "tools")
 os.makedirs(dest, exist_ok=True)
 final = os.path.join(dest, "piper")
