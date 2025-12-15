@@ -181,8 +181,7 @@ def main() -> None:
 
         chunks = _script_to_chunks(script_text)
         provider_requested = "gemini" if topic.get("premium_tts") else "piper"
-        provider_used = "gemini" if (provider_requested == "gemini" and os.getenv("GEMINI_API_KEY")) else "piper"
-        tts_engine_used = provider_used
+        provider_used = "piper"  # Gemini TTS not yet implemented; fallback to Piper
         mp3_out = tts_chunks_to_mp3(
             chunks=chunks,
             mp3_path=str(mp3_path),
@@ -270,7 +269,7 @@ def main() -> None:
         "timestamp_utc": _utc_now_iso(),
         "premium_tts": bool(topic.get("premium_tts")),
         "provider_requested": provider_requested,
-        "tts_engine": tts_engine_used,
+        "tts_engine": provider_used,
         "gemini_model": os.getenv("GEMINI_SCRIPT_MODEL", "").strip() or topic.get("gemini_model"),
         "voices": {
             "gemini": {"A": os.getenv("GEMINI_TTS_VOICE_A"), "B": os.getenv("GEMINI_TTS_VOICE_B")},

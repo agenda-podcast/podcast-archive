@@ -181,11 +181,14 @@ def _tts_provider_to_bytes(
     model_dir: Optional[str],
 ) -> bytes:
     """
-    Currently only Piper is supported for audio generation. Premium requests fall back here.
+    Currently only Piper is supported for audio generation. Premium (Gemini) requests are
+    transparently routed to Piper until a Gemini TTS endpoint is available.
     """
-    if provider not in {"piper", "gemini"}:
-        raise RuntimeError(f"Unsupported TTS provider: {provider}")
-    return _piper_tts_wav_bytes(text, voice=voice, model_dir=model_dir)
+    if provider == "piper":
+        return _piper_tts_wav_bytes(text, voice=voice, model_dir=model_dir)
+    if provider == "gemini":
+        return _piper_tts_wav_bytes(text, voice=voice, model_dir=model_dir)
+    raise RuntimeError(f"Unsupported TTS provider: {provider}")
 
 
 def tts_chunks_to_mp3(
