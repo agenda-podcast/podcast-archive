@@ -17,7 +17,6 @@ jobs:
     name: "Collect sources (all topics)"
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
       - name: "Checkout"
         uses: actions/checkout@v4
@@ -49,7 +48,6 @@ jobs:
     name: "Ensure TTS voices"
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
       - name: "Checkout"
         uses: actions/checkout@v4
@@ -69,9 +67,7 @@ jobs:
       - name: "Download / update voices"
         env:
           PIPER_MODEL_DIR: "assets/piper"
-          # Optional override:
-          # PIPER_VOICES: "en_US-ryan-medium,en_US-amy-medium"
-          # FORCE_VOICES: "1"
+          PIPER_VOICES: "en_US-ryan-medium,en_US-amy-medium"
         run: |
           python scripts/ensure_voices.py
 
@@ -87,13 +83,13 @@ jobs:
     needs: [collect, voices]
     runs-on: ubuntu-latest
     timeout-minutes: 120
-
     strategy:
       fail-fast: false
       matrix:
         topic:
           - "topic-01"
           # - "topic-02"
+          # - "topic-03"
 
     steps:
       - name: "Checkout"
@@ -125,10 +121,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install requests feedparser python-dateutil
-          pip install piper-tts
-          pip install google-genai
 
-      # ---- reverted gate style (fresh_ok + fresh_count) ----
       - name: "Gate by fresh.json"
         id: gate
         env:
@@ -180,9 +173,19 @@ jobs:
           REPO: "${{ github.repository }}"
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}"
+
+          # Piper location
           PIPER_MODEL_DIR: "assets/piper"
+          PIPER_VOICE_A: "en_US-ryan-medium"
+          PIPER_VOICE_B: "en_US-amy-medium"
+
+          # Script model (Gemini is for script even if premium_tts=false)
+          GEMINI_SCRIPT_MODEL: "gemini-2.0-flash"
+
+          # Podcast metadata
           PODCAST_OWNER_NAME: "Agenda"
           PODCAST_OWNER_EMAIL: "deep.dive.podcast@unloca.com"
+
           RELEASE_TAG: "${{ matrix.topic }}"
         run: |
           python scripts/run_topic.py
@@ -203,21 +206,12 @@ jobs:
     needs: [collect, voices, run]
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
       - name: "Checkout (fresh)"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
-
-      - name: "Sync with origin/main first (clean tree)"
-        run: |
-          set -euo pipefail
-          git config user.name "agenda-bot"
-          git config user.email "bot@github.com"
-          git fetch origin main
-          git reset --hard origin/main
 
       - name: "Prepare artifacts dir"
         run: |
@@ -244,6 +238,12 @@ jobs:
           merge-multiple: true
           path: "_artifacts/outputs"
 
+      - name: "Sync to origin/main first"
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+
       - name: "Apply artifacts into working tree"
         run: |
           set -euo pipefail
@@ -268,6 +268,9 @@ jobs:
       - name: "Commit and push (single writer, retry-safe)"
         run: |
           set -euo pipefail
+
+          git config user.name "agenda-bot"
+          git config user.email "bot@github.com"
 
           if [ -n "$(git status --porcelain)" ]; then
             git add data assets feed outputs
