@@ -170,6 +170,9 @@ def main() -> None:
 
         gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
         gemini_model = os.getenv("GEMINI_SCRIPT_MODEL", "").strip() or str(topic.get("gemini_model", "gemini-2.0-flash"))
+        gemini_tts_model = os.getenv("GEMINI_TTS_MODEL", "").strip() or str(topic.get("gemini_tts_model", "")) or None
+        audio_sample_rate = int(str(topic.get("audio_sample_rate") or os.getenv("AUDIO_SAMPLE_RATE") or 0) or 0) or None
+        piper_model_dir = os.getenv("PIPER_MODEL_DIR") or str(topic.get("piper_model_dir") or "assets/piper")
 
         script_out = generate_30min_script_and_chapters(
             topic=topic,
@@ -192,13 +195,15 @@ def main() -> None:
             chunks=chunks,
             mp3_path=str(mp3_path),
             premium=bool(topic.get("premium_tts")),
-            gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
-            gemini_model=os.getenv("GEMINI_TTS_MODEL") or None,
-            gemini_voice_a=os.getenv("GEMINI_TTS_VOICE_A") or None,
-            gemini_voice_b=os.getenv("GEMINI_TTS_VOICE_B") or None,
-            piper_voice_a=os.getenv("PIPER_VOICE_A") or None,
-            piper_voice_b=os.getenv("PIPER_VOICE_B") or None,
-            piper_model_dir=os.getenv("PIPER_MODEL_DIR") or "assets/piper",
+            gemini_api_key=gemini_api_key,
+            gemini_model=gemini_model,
+            gemini_tts_model=gemini_tts_model,
+            gemini_voice_a=os.getenv("GEMINI_TTS_VOICE_A") or str(topic.get("gemini_voice_a") or ""),
+            gemini_voice_b=os.getenv("GEMINI_TTS_VOICE_B") or str(topic.get("gemini_voice_b") or ""),
+            piper_voice_a=os.getenv("PIPER_VOICE_A") or str(topic.get("piper_voice_a") or ""),
+            piper_voice_b=os.getenv("PIPER_VOICE_B") or str(topic.get("piper_voice_b") or ""),
+            piper_model_dir=piper_model_dir,
+            sample_rate=audio_sample_rate,
         )
 
         video_enabled = bool(topic.get("video_enabled", True))
@@ -281,7 +286,7 @@ def main() -> None:
             "gemini": {"A": os.getenv("GEMINI_TTS_VOICE_A"), "B": os.getenv("GEMINI_TTS_VOICE_B")},
             "piper": {"A": os.getenv("PIPER_VOICE_A"), "B": os.getenv("PIPER_VOICE_B")},
         },
-        "piper_model_dir": os.getenv("PIPER_MODEL_DIR") or "assets/piper",
+        "piper_model_dir": piper_model_dir,
         "fresh_count": len(fresh),
         "backlog_count": len(backlog),
         "skipped": skipped,

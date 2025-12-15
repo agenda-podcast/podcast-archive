@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import shutil
@@ -9,11 +10,11 @@ import tempfile
 import textwrap
 import wave
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 DEFAULT_GAP_SECONDS = 0.35
 DEFAULT_MAX_CHARS = 360
-PIPER_SAMPLE_RATE = 22050
+DEFAULT_SAMPLE_RATE = 22050
 
 
 def find_piper_binary() -> str:
@@ -95,6 +96,38 @@ def _piper_tts_wav_bytes(text: str, voice: str, model_dir: Optional[str] = None)
     return proc.stdout
 
 
+def _gemini_tts_wav_bytes(*, text: str, voice: Optional[str], api_key: str, model: str) -> bytes:
+    try:
+        import google.genai as genai  # type: ignore
+    except Exception as e:
+        raise RuntimeError(f"Gemini TTS unavailable (missing google-genai): {e}") from e
+
+    client = genai.Client(api_key=api_key)
+    cfg = {"response_mime_type": "audio/wav"}
+    if voice:
+        cfg["voice_name"] = voice
+
+    try:
+        resp = client.models.generate_content(
+            model=model,
+            contents=[{"role": "user", "parts": [{"text": text}]}],
+            generation_config=cfg,
+        )
+    except Exception as e:
+        raise RuntimeError(f"Gemini TTS request failed: {e}") from e
+
+    try:
+        parts = resp.candidates[0].content.parts
+        for p in parts:
+            if hasattr(p, "inline_data") and getattr(p.inline_data, "data", None):
+                return base64.b64decode(p.inline_data.data)
+            if isinstance(p, dict) and p.get("inline_data", {}).get("data"):
+                return base64.b64decode(p["inline_data"]["data"])
+    except Exception:
+        pass
+    raise RuntimeError("Gemini TTS returned no audio payload.")
+
+
 def _split_text(text: str, limit: int = DEFAULT_MAX_CHARS) -> List[str]:
     """
     Split text into chunks under the limit without breaking words if possible.
@@ -122,7 +155,15 @@ def _split_text(text: str, limit: int = DEFAULT_MAX_CHARS) -> List[str]:
     return parts
 
 
-def _ensure_silence_wav(path: Path, seconds: float = DEFAULT_GAP_SECONDS, sample_rate: int = PIPER_SAMPLE_RATE) -> Path:
+def _resolve_sample_rate(sample_rate: Optional[int]) -> int:
+    try:
+        env_sr = int(os.getenv("AUDIO_SAMPLE_RATE", "").strip() or 0)
+    except Exception:
+        env_sr = 0
+    return int(sample_rate or env_sr or DEFAULT_SAMPLE_RATE)
+
+
+def _ensure_silence_wav(path: Path, seconds: float = DEFAULT_GAP_SECONDS, sample_rate: int = DEFAULT_SAMPLE_RATE) -> Path:
     """
     Create a small silence wav for padding between utterances (cached on disk).
     """
@@ -139,7 +180,7 @@ def _ensure_silence_wav(path: Path, seconds: float = DEFAULT_GAP_SECONDS, sample
     return path
 
 
-def _concat_wavs_to_mp3(wavs: List[Path], out_mp3: Path) -> None:
+def _concat_wavs_to_mp3(wavs: List[Path], out_mp3: Path, sample_rate: int) -> None:
     """
     Concatenate wavs using ffmpeg concat demuxer and emit mp3.
     """
@@ -169,7 +210,7 @@ def _concat_wavs_to_mp3(wavs: List[Path], out_mp3: Path) -> None:
             "-ac",
             "1",
             "-ar",
-            str(PIPER_SAMPLE_RATE),
+            str(sample_rate),
             str(out_mp3),
         ]
         subprocess.check_call(cmd)
@@ -181,15 +222,15 @@ def _tts_provider_to_bytes(
     text: str,
     voice: str,
     model_dir: Optional[str],
+    gemini_model: Optional[str],
+    gemini_api_key: Optional[str],
 ) -> bytes:
-    """
-    Currently only Piper is supported for audio generation. Premium (Gemini) requests are
-    transparently routed to Piper until a Gemini TTS endpoint is available.
-    """
     if provider == "piper":
         return _piper_tts_wav_bytes(text, voice=voice, model_dir=model_dir)
     if provider == "gemini":
-        return _piper_tts_wav_bytes(text, voice=voice, model_dir=model_dir)
+        if not gemini_api_key or not gemini_model:
+            raise RuntimeError("Gemini TTS requires GEMINI_API_KEY and gemini_model.")
+        return _gemini_tts_wav_bytes(text=text, voice=voice, api_key=gemini_api_key, model=gemini_model)
     raise RuntimeError(f"Unsupported TTS provider: {provider}")
 
 
@@ -200,6 +241,7 @@ def tts_chunks_to_mp3(
     premium: bool = False,
     gemini_api_key: Optional[str] = None,
     gemini_model: Optional[str] = None,
+    gemini_tts_model: Optional[str] = None,
     gemini_voice_a: Optional[str] = None,
     gemini_voice_b: Optional[str] = None,
     piper_voice_a: Optional[str] = None,
@@ -207,6 +249,7 @@ def tts_chunks_to_mp3(
     piper_model_dir: Optional[str] = None,
     gap_seconds: float = DEFAULT_GAP_SECONDS,
     max_chars: int = DEFAULT_MAX_CHARS,
+    sample_rate: Optional[int] = None,
 ) -> tuple[str, str]:
     """
     Convert a list of dialogue chunks to an MP3 file.
@@ -225,14 +268,12 @@ def tts_chunks_to_mp3(
     g_voice_a = gemini_voice_a or os.environ.get("GEMINI_TTS_VOICE_A") or p_voice_a
     g_voice_b = gemini_voice_b or os.environ.get("GEMINI_TTS_VOICE_B") or p_voice_b
 
-    provider_requested = "gemini" if premium and gemini_api_key else "piper"
-    provider_used = "piper"  # Gemini TTS not yet implemented; fallback to Piper
-    if provider_requested == "gemini":
-        print("Gemini TTS requested but not available; falling back to Piper.", file=sys.stderr)
-    provider = "piper"
+    provider_requested = "gemini" if (premium and gemini_api_key and (gemini_tts_model or gemini_model)) else "piper"
+    provider_used = provider_requested
 
+    sr = _resolve_sample_rate(sample_rate)
     ms_gap = int(round(gap_seconds * 1000))
-    silence_wav = _ensure_silence_wav(cache_dir / f"silence_{ms_gap}ms.wav", seconds=gap_seconds)
+    silence_wav = _ensure_silence_wav(cache_dir / f"silence_{ms_gap}ms_{sr}hz.wav", seconds=gap_seconds, sample_rate=sr)
     wav_paths: List[Path] = []
 
     for raw_chunk in chunks:
@@ -243,17 +284,46 @@ def tts_chunks_to_mp3(
         if not text:
             continue
 
-        voice = g_voice_a if speaker == "A" else g_voice_b
-        if provider == "piper":
-            voice = p_voice_a if speaker == "A" else p_voice_b
+        voice_g = g_voice_a if speaker == "A" else g_voice_b
+        voice_p = p_voice_a if speaker == "A" else p_voice_b
 
         for part in _split_text(text, max_chars):
+            provider_for_chunk = provider_requested
+            voice_for_chunk = voice_p if provider_for_chunk == "piper" else voice_g
+            audio_bytes = None
+            if provider_for_chunk == "piper" and provider_used != "piper":
+                provider_used = "piper"
+            if audio_bytes is None:
+                try:
+                    audio_bytes = _tts_provider_to_bytes(
+                        provider=provider_for_chunk,
+                        text=part,
+                        voice=voice_for_chunk,
+                        model_dir=piper_model_dir,
+                        gemini_model=gemini_tts_model or gemini_model,
+                        gemini_api_key=gemini_api_key,
+                    )
+                except Exception:
+                    if provider_for_chunk == "gemini":
+                        provider_used = "piper"
+                        provider_for_chunk = "piper"
+                        voice_for_chunk = voice_p
+                        audio_bytes = _tts_provider_to_bytes(
+                            provider="piper",
+                            text=part,
+                            voice=voice_for_chunk,
+                            model_dir=piper_model_dir,
+                            gemini_model=None,
+                            gemini_api_key=None,
+                        )
+                    else:
+                        raise
+
             key = hashlib.sha256(
-                f"{provider}|{voice}|{part}|{piper_model_dir or ''}".encode("utf-8")
+                f"{provider_for_chunk}|{voice_for_chunk}|{part}|{piper_model_dir or ''}|{sr}".encode("utf-8")
             ).hexdigest()
             wav_path = cache_dir / f"{key}.wav"
             if not wav_path.exists():
-                audio_bytes = _tts_provider_to_bytes(provider=provider, text=part, voice=voice, model_dir=piper_model_dir)
                 wav_path.write_bytes(audio_bytes)
             wav_paths.append(wav_path)
             if gap_seconds > 0:
@@ -262,5 +332,5 @@ def tts_chunks_to_mp3(
     if wav_paths and wav_paths[-1] == silence_wav:
         wav_paths = wav_paths[:-1]
 
-    _concat_wavs_to_mp3(wav_paths, Path(mp3_path))
+    _concat_wavs_to_mp3(wav_paths, Path(mp3_path), sample_rate=sr)
     return mp3_path, provider_used
