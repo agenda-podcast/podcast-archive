@@ -16,7 +16,7 @@
     { "hl": "en-GB", "gl": "GB", "ceid": "GB:en", "lang": "en" },
     { "hl": "es-419", "gl": "US", "ceid": "US:es-419", "lang": "es" }
   ],
-  "min_fresh_sources": 20,
+  "min_fresh_sources": 5,
   "freshness_hours": 500,
   "max_results_per_query": 50,
   "backlog_max": 5000,
