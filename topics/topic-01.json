@@ -17,7 +17,7 @@
     { "hl": "es-419", "gl": "US", "ceid": "US:es-419", "lang": "es" }
   ],
   "min_fresh_sources": 20,
-  "freshness_hours": 24,
+  "freshness_hours": 72,
   "max_results_per_query": 50,
   "backlog_max": 2000,
   "fresh_cap": 500,
