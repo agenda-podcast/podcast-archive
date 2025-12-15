@@ -1,0 +1,24 @@
+id: topic-01
+rss_title: "Agenda — Artificial Intelligence"
+rss_description: "A rigorous analysis of AI as a general-purpose technology: model economics, compute concentration, data advantages, productivity impact, and the long-term restructuring of industries and competitive moats."
+language: "en-us"
+
+owner_name: "Agenda"
+owner_email: "deep.dive.podcast@unloca.com"
+
+category: "News"
+subcategory: "Tech News"
+
+cover_image: "assets/topic-01.png"   # положите файл в репо
+sources:
+  - "https://example.com/rss"
+  - "https://another.com/feed"
+
+duration_minutes: 30
+tts_model: "gemini-2.5-flash-preview-tts"
+tts_voice: "Kore"
+
+text_model: "gemini-2.5-pro"
+
+max_items: 20
+lookback_hours: 30
