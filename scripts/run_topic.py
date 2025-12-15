@@ -10,11 +10,13 @@ import hashlib
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple
 
 import requests
 
 from tts_generate import tts_chunks_to_mp3, script_to_tts_chunks
+
+# Your generator must exist in scripts/script_generate.py
 from script_generate import generate_30min_script_and_chapters
 
 TOPICS_DIR = Path("topics")
@@ -284,16 +286,33 @@ def main() -> None:
 
     topic = load_topic(topic_id)
 
-    premium_tts = bool(topic.get("premium_tts", True))
+    # -------------------------
+    # PREMIUM FLAG (IMPORTANT)
+    # Accept both keys:
+    #   - "premium": false
+    #   - "premium_tts": false
+    # Default is FALSE (safe) so you don't accidentally burn Gemini quota.
+    # -------------------------
+    premium_flag = topic.get("premium", None)
+    if premium_flag is None:
+        premium_flag = topic.get("premium_tts", None)
+    premium_tts = bool(premium_flag) if premium_flag is not None else False
+
+    # Provider resolution:
+    # - If premium_tts true AND key exists => gemini
+    # - Else => piper
+    provider = "gemini" if (premium_tts and bool(gemini_api_key)) else "piper"
 
     gemini_model_env = (os.getenv("GEMINI_TTS_MODEL", "") or "").strip()
     gemini_model_topic = (topic.get("gemini_tts_model", "") or "").strip()
-    gemini_model = (gemini_model_env or gemini_model_topic) or None
+    gemini_model = (gemini_model_env or gemini_model_topic or "").strip()
 
-    voice_a = (os.getenv("VOICE_A", "") or "").strip() or None
-    voice_b = (os.getenv("VOICE_B", "") or "").strip() or None
-    piper_voice_a = (os.getenv("PIPER_VOICE_A", "") or "").strip() or None
-    piper_voice_b = (os.getenv("PIPER_VOICE_B", "") or "").strip() or None
+    # Voices (fallbacks are handled in tts_generate defaults, but pass clean strings anyway)
+    voice_a = (os.getenv("VOICE_A", "") or "").strip()
+    voice_b = (os.getenv("VOICE_B", "") or "").strip()
+    piper_voice_a = (os.getenv("PIPER_VOICE_A", "") or "").strip()
+    piper_voice_b = (os.getenv("PIPER_VOICE_B", "") or "").strip()
+    piper_model_dir = (os.getenv("PIPER_MODEL_DIR", "assets/piper") or "assets/piper").strip()
 
     fresh, backlog = load_sources_for_topic(topic_id)
 
@@ -319,12 +338,14 @@ def main() -> None:
         "topic_id": topic_id,
         "timestamp_utc": utc_now_iso(),
         "premium_tts": premium_tts,
-        "tts_engine": "gemini" if premium_tts else "piper",
-        "gemini_model": gemini_model,
+        "provider_requested": provider,
+        "tts_engine": provider,  # may become "piper" if gemini falls back (we detect marker below)
+        "gemini_model": gemini_model_env or gemini_model_topic or None,
         "voices": {
-            "gemini": {"A": voice_a, "B": voice_b},
-            "piper": {"A": piper_voice_a, "B": piper_voice_b},
+            "gemini": {"A": voice_a or None, "B": voice_b or None},
+            "piper": {"A": piper_voice_a or None, "B": piper_voice_b or None},
         },
+        "piper_model_dir": piper_model_dir,
         "fresh_count": len(fresh),
         "backlog_count": len(backlog),
         "skipped": False,
@@ -356,6 +377,7 @@ def main() -> None:
     try:
         gen = generate_30min_script_and_chapters(topic=topic, sources=picked)
     except TypeError:
+        # Backward-compatible call signature
         gen = generate_30min_script_and_chapters(topic_id, topic, picked)
 
     script_text: str = ""
@@ -392,12 +414,13 @@ def main() -> None:
             tts_chunks,
             mp3_path,
             api_key=gemini_api_key,
-            premium=premium_tts,
-            gemini_model=gemini_model,
-            voice_a=voice_a,
-            voice_b=voice_b,
-            piper_voice_a=piper_voice_a,
-            piper_voice_b=piper_voice_b,
+            provider=provider,                 # <-- critical: forces Piper when premium=false
+            gemini_model=gemini_model or os.getenv("GEMINI_TTS_MODEL", ""),
+            voice_a=voice_a or "Kore",
+            voice_b=voice_b or "Puck",
+            piper_voice_a=piper_voice_a or "en_US-amy-medium",
+            piper_voice_b=piper_voice_b or "en_US-ryan-medium",
+            piper_model_dir=piper_model_dir,
         )
     except Exception as e:
         summary["errors"].append({"stage": "tts", "error": str(e), "traceback": traceback.format_exc()})
@@ -405,6 +428,15 @@ def main() -> None:
         raise
 
     summary["tts_seconds"] = round(time.time() - t0, 2)
+
+    # Detect Gemini quota fallback marker (if tts_generate switched to Piper mid-run)
+    quota_marker = Path(os.getenv("TTS_QUOTA_MARKER", "outputs/_tts_quota_exceeded.txt"))
+    if quota_marker.exists():
+        try:
+            summary["tts_engine"] = "piper_fallback"
+            summary["quota_marker"] = quota_marker.read_text(encoding="utf-8").strip()[:800]
+        except Exception:
+            summary["tts_engine"] = "piper_fallback"
 
     # Video render (best effort)
     disable_video = (os.getenv("DISABLE_VIDEO", "0").strip().lower() in ("1", "true", "yes", "y"))
@@ -441,6 +473,7 @@ def main() -> None:
                     sources=picked,
                 )
             except TypeError:
+                # Very old signature fallback
                 render_fn(str(mp3_path), str(mp4_path))
 
             if mp4_path.exists() and mp4_path.stat().st_size > 1000:
@@ -474,7 +507,11 @@ def main() -> None:
         {"topic_id": topic_id, "latest_base": base_name, "assets": assets_uploaded, "timestamp_utc": utc_now_iso(), "skipped": False},
     )
 
-    print(f"[{topic_id}] OK. assets={list(assets_uploaded.keys())} tts_engine={summary['tts_engine']} video_ok={video_ok}", flush=True)
+    print(
+        f"[{topic_id}] OK. assets={list(assets_uploaded.keys())} "
+        f"provider_requested={provider} tts_engine={summary.get('tts_engine')} video_ok={video_ok}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
