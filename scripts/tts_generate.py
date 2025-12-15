@@ -4,6 +4,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import tempfile
 import textwrap
 import wave
 from pathlib import Path
@@ -144,31 +145,32 @@ def _concat_wavs_to_mp3(wavs: List[Path], out_mp3: Path) -> None:
         raise RuntimeError("No audio chunks to concatenate.")
 
     out_mp3.parent.mkdir(parents=True, exist_ok=True)
-
     lines = [f"file '{w}'" for w in wavs]
-    with out_mp3.with_suffix(".concat.txt").open("w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
 
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        str(out_mp3.with_suffix(".concat.txt")),
-        "-acodec",
-        "libmp3lame",
-        "-b:a",
-        "192k",
-        "-ac",
-        "1",
-        "-ar",
-        "22050",
-        str(out_mp3),
-    ]
-    subprocess.check_call(cmd)
+    with tempfile.TemporaryDirectory() as td:
+        concat_path = Path(td) / "concat.txt"
+        concat_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_path),
+            "-acodec",
+            "libmp3lame",
+            "-b:a",
+            "192k",
+            "-ac",
+            "1",
+            "-ar",
+            "22050",
+            str(out_mp3),
+        ]
+        subprocess.check_call(cmd)
 
 
 def _tts_provider_to_bytes(
