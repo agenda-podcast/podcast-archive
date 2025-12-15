@@ -137,8 +137,8 @@ jobs:
           GEMINI_TTS_MODEL: gemini-2.5-flash-preview-tts
           VOICE_A: Kore
           VOICE_B: Puck
-          TTS_MAX_CHARS_PER_CHUNK: "3200"
-          TTS_TURN_GAP_MS: "200"
+          TTS_MAX_CHARS_PER_CHUNK: "5200"
+          TTS_TURN_GAP_MS: "120"
 
           # Apple requires owner email in RSS
           PODCAST_OWNER_NAME: "Agenda"
