@@ -1,240 +1,276 @@
-import json
-import os
+# scripts/script_generate.py
+# Copyright (c) Agenda Podcast
+# All rights reserved.
+
+from __future__ import annotations
+
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional
 
-from dateutil import parser as dtparser
+
+def _now_utc_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 def _clean_text(s: str) -> str:
-    s = (s or "").strip()
-    s = re.sub(r"\s+", " ", s)
+    if not s:
+        return ""
+    s = s.replace("\u00a0", " ").replace("\u200b", " ")
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
 
-def _safe_url(u: str) -> str:
-    u = (u or "").strip()
-    if u.startswith("http://") or u.startswith("https://"):
-        return u
-    return ""
-
-
-def _pick(item: Dict[str, Any], *keys: str, default: str = "") -> str:
-    for k in keys:
-        v = item.get(k)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return default
-
-
-def _parse_date(item: Dict[str, Any]) -> str:
-    # Try common keys; returns ISO date string or empty
-    for k in ("published", "published_at", "date", "datetime", "time", "pubDate"):
-        v = item.get(k)
-        if isinstance(v, str) and v.strip():
-            try:
-                dt = dtparser.parse(v)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                dt = dt.astimezone(timezone.utc)
-                return dt.strftime("%Y-%m-%d")
-            except Exception:
-                pass
-    return ""
-
-
-def _format_source_line(idx: int, item: Dict[str, Any]) -> str:
-    title = _clean_text(_pick(item, "title", "headline", default="(untitled)"))
-    url = _safe_url(_pick(item, "url", "link", default=""))
-    domain = _clean_text(_pick(item, "domain", default=""))
-    lang = _clean_text(_pick(item, "lang", "language", default=""))
-    d = _parse_date(item)
-
-    meta_bits = []
-    if domain:
-        meta_bits.append(domain)
-    if d:
-        meta_bits.append(d)
-    if lang:
-        meta_bits.append(lang)
-
-    meta = " • ".join(meta_bits)
-    if meta:
-        return f"{idx}. {title} ({meta})\n{url}".strip()
-    return f"{idx}. {title}\n{url}".strip()
-
-
-def _build_sources_block(items: List[Dict[str, Any]], max_sources: int = 25) -> str:
-    lines: List[str] = []
-    n = 0
-    for it in items:
-        url = _safe_url(_pick(it, "url", "link", default=""))
-        if not url:
-            continue
-        n += 1
-        lines.append(_format_source_line(n, it))
-        if n >= max_sources:
-            break
-    return "\n\n".join(lines)
-
-
-def _topic_fields(topic: Dict[str, Any]) -> Tuple[str, str, str]:
-    title = (topic.get("title") or topic.get("name") or "Agenda Topic").strip()
-    angle = (topic.get("angle") or topic.get("prompt") or "").strip()
-    language = (topic.get("language") or "EN").strip()
-    return title, angle, language
-
-
-def _desired_chapter_plan(total_minutes: int = 30) -> List[Tuple[str, int]]:
-    """
-    Simple, predictable chapter plan for a 30-min overview.
-    Returns list of (chapter_title, minutes_allocated).
-    """
-    return [
-        ("Opening & context", 2),
-        ("What happened", 6),
-        ("Why it matters", 7),
-        ("Key actors & incentives", 6),
-        ("Signals & scenarios", 6),
-        ("Practical takeaways", 2),
-        ("Wrap-up", 1),
-    ]
-
-
-def _chapter_start_seconds(plan: List[Tuple[str, int]]) -> List[Dict[str, Any]]:
+def _dedupe_sources(sources: List[dict]) -> List[dict]:
+    seen = set()
     out = []
-    acc = 0
-    for title, mins in plan:
-        out.append({"title": title, "start_sec": int(acc * 60)})
-        acc += max(1, int(mins))
-    # Ensure first is 0
-    if not out or out[0]["start_sec"] != 0:
-        out.insert(0, {"title": "Overview", "start_sec": 0})
+    for x in sources or []:
+        if not isinstance(x, dict):
+            continue
+        url = str(x.get("url") or x.get("link") or "").strip()
+        key = url.lower() if url else _clean_text(str(x.get("title", ""))).lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(x)
     return out
 
 
-def _build_dialogue_script(
-    podcast_title: str,
-    topic_title: str,
-    topic_angle: str,
-    items: List[Dict[str, Any]],
-    intro_text: str = "",
-    outro_text: str = "",
-) -> str:
+def _pick_points(sources: List[dict], limit: int = 18) -> List[str]:
     """
-    Produces a dialogue script using SPEAKER_A / SPEAKER_B lines.
-    Includes chapter markers required by run_topic.py TTS splitting.
+    Create short factual bullet points from sources (titles/snippets).
     """
-    plan = _desired_chapter_plan(30)
-
-    sources_block = _build_sources_block(items, max_sources=30)
-
-    # Keep intro/outro optional; these are visual overlays too, but TTS can say them.
-    intro_text = (intro_text or "").strip()
-    outro_text = (outro_text or "").strip()
-    if not intro_text:
-        intro_text = f"Welcome back to {podcast_title}. Today: {topic_title}."
-    if not outro_text:
-        outro_text = "That’s the overview. Full sources are included. See you tomorrow."
-
-    angle_line = f"Angle: {topic_angle}" if topic_angle else ""
-
-    # The script is intentionally structured and repetitive to reduce TTS parsing failures.
-    parts: List[str] = []
-
-    # Global opener
-    parts.append("=== CHAPTER: Opening & context ===")
-    parts.append(f"SPEAKER_A: {intro_text}")
-    if angle_line:
-        parts.append(f"SPEAKER_B: {angle_line}")
-    parts.append("SPEAKER_A: We pulled a set of fresh, credible sources across outlets and regions.")
-    parts.append("SPEAKER_B: We’ll separate confirmed facts from interpretation, then close with scenarios and takeaways.")
-
-    # Chapter content templates (source-driven but robust)
-    for ch_title, mins in plan[1:]:
-        parts.append(f"\n=== CHAPTER: {ch_title} ===")
-        parts.append(f"SPEAKER_A: Let’s move into {ch_title.lower()}.")
-        parts.append("SPEAKER_B: First, the key points that multiple sources agree on.")
-
-        # Use up to 6 sources per chapter to keep it manageable
-        start_idx = (plan.index((ch_title, mins)) - 1) * 6
-        chunk = items[start_idx:start_idx + 6] if items else []
-
-        if chunk:
-            for it in chunk[:6]:
-                t = _clean_text(_pick(it, "title", "headline", default="(untitled)"))
-                url = _safe_url(_pick(it, "url", "link", default=""))
-                dom = _clean_text(_pick(it, "domain", default=""))
-                if dom:
-                    parts.append(f"SPEAKER_A: One data point from {dom}: {t}.")
-                else:
-                    parts.append(f"SPEAKER_A: One data point: {t}.")
-                if url:
-                    parts.append("SPEAKER_B: We’ll include the link in the source list for reference.")
+    pts: List[str] = []
+    for s in sources[: max(0, limit)]:
+        title = _clean_text(str(s.get("title", "")))
+        snippet = _clean_text(str(s.get("snippet") or s.get("summary") or s.get("description") or ""))
+        publisher = _clean_text(str(s.get("publisher") or s.get("source") or ""))
+        # Prefer title; fallback to snippet
+        base = title if title else snippet
+        if not base:
+            continue
+        # Keep it short
+        base = re.sub(r"\s*\|\s*.+$", "", base)  # drop "Title | Publisher" patterns
+        base = base[:220].rstrip(" .,:;")  # cap length
+        if publisher and publisher.lower() not in base.lower():
+            pts.append(f"{base} ({publisher})")
         else:
-            parts.append("SPEAKER_A: Sources today are sparse for this sub-topic, so we’ll keep this section brief and factual.")
-            parts.append("SPEAKER_B: The pipeline will keep accumulating evidence until we can support a full segment.")
-
-        # Add analysis scaffolding (works even if sources are thin)
-        parts.append("SPEAKER_A: Here is the most conservative interpretation.")
-        parts.append("SPEAKER_B: And here is the alternative explanation if incentives or constraints differ.")
-        parts.append("SPEAKER_A: Watch for follow-up confirmations, official statements, and second-day reporting corrections.")
-
-    # Wrap
-    parts.append("\n=== CHAPTER: Wrap-up ===")
-    parts.append("SPEAKER_A: Quick recap: what changed, why it matters, and what to watch next.")
-    parts.append("SPEAKER_B: If you want a deeper dive, check the sources and revisit this episode as updates land.")
-    parts.append(f"SPEAKER_A: {outro_text}")
-
-    # Append sources (not spoken as dialogue; keep outside speaker tags)
-    parts.append("\n=== SOURCES (for description) ===")
-    parts.append(sources_block if sources_block else "No valid source URLs were provided in the input list.")
-
-    return "\n".join(parts).strip()
+            pts.append(base)
+    # Deduplicate by normalized text
+    uniq = []
+    seen = set()
+    for p in pts:
+        k = re.sub(r"\W+", "", p.lower())
+        if k and k not in seen:
+            seen.add(k)
+            uniq.append(p)
+    return uniq
 
 
-def generate_30min_script_and_chapters(topic: Dict[str, Any], items: List[Dict[str, Any]], gemini_api_key: str) -> Dict[str, Any]:
+def _default_chapter_titles(n: int) -> List[str]:
+    base = [
+        "Opening & context",
+        "What happened",
+        "Key facts & timeline",
+        "Why it matters",
+        "Who is affected",
+        "Policy & legal angles",
+        "Economic & social impact",
+        "Signals & scenarios",
+        "Practical takeaways",
+        "Closing summary",
+    ]
+    if n <= len(base):
+        return base[:n]
+    # extend if needed
+    out = base[:]
+    i = 1
+    while len(out) < n:
+        out.append(f"Segment {len(out)+1}")
+        i += 1
+    return out
+
+
+def _build_dialogue(
+    topic_title: str,
+    intro_text: str,
+    outro_text: str,
+    chapter_titles: List[str],
+    points: List[str],
+    duration_sec: int,
+) -> Dict[str, Any]:
     """
-    This repository previously used an LLM here. To make the pipeline robust and deterministic,
-    we generate a structured dialogue script locally from the collected sources.
-
-    If you later re-enable Gemini generation, keep the chapter markers:
-      === CHAPTER: ... ===
-    and speaker prefixes:
-      SPEAKER_A: ...
-      SPEAKER_B: ...
+    Build a two-speaker dialogue and chapters with approximate timings.
+    This is deterministic and does not call external LLMs (keeps pipeline stable).
     """
-    podcast_title = (topic.get("podcast_title") or "Agenda").strip()
-    topic_title, topic_angle, _lang = _topic_fields(topic)
+    # Heuristic: allocate time per segment evenly
+    seg_count = max(1, len(chapter_titles))
+    seg_len = max(30, int(duration_sec / seg_count))
+    chapters = []
+    t = 0
+    for i, title in enumerate(chapter_titles):
+        chapters.append({"title": title, "start_sec": int(t)})
+        t += seg_len
 
-    intro_text = str(topic.get("intro_text", "") or "").strip()
-    outro_text = str(topic.get("outro_text", "") or "").strip()
+    # Spread points across segments
+    per_seg = max(1, int(len(points) / seg_count)) if points else 0
 
-    script = _build_dialogue_script(
-        podcast_title=podcast_title,
-        topic_title=topic_title,
-        topic_angle=topic_angle,
-        items=items or [],
-        intro_text=intro_text,
-        outro_text=outro_text,
-    )
+    lines: List[str] = []
+    tts_chunks: List[Dict[str, str]] = []
 
-    # Chapter plan (approx) — the video renderer will normalize to the real mp3 duration.
-    plan = _desired_chapter_plan(30)
-    chapters = _chapter_start_seconds(plan)
+    def say(speaker: str, text: str) -> None:
+        text = _clean_text(text)
+        if not text:
+            return
+        # Keep chunks manageable for TTS
+        lines.append(f"{speaker}: {text}")
+        tts_chunks.append({"speaker": speaker, "text": text})
 
-    # Description HTML for RSS / episode page
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    sources_html = _build_sources_block(items or [], max_sources=25).replace("\n", "<br>")
-    description_html = (
-        f"<p><b>{_clean_text(topic_title)}</b> — {now}.</p>"
-        f"<p>{_clean_text(topic_angle)}</p>" if topic_angle else f"<p><b>{_clean_text(topic_title)}</b> — {now}.</p>"
-    )
-    description_html += "<p><b>Sources</b><br>" + (sources_html or "No sources.") + "</p>"
+    # Intro
+    say("A", intro_text or f"Welcome back to Agenda. Today’s deep dive: {topic_title}.")
+    say("B", "We’ll break down what happened, why it matters, and what to watch next. Let’s begin.")
+
+    # Body
+    idx = 0
+    for i, ch in enumerate(chapter_titles):
+        say("A", f"Segment {i+1}: {ch}.")
+        # Insert points
+        if points:
+            seg_pts = points[idx : idx + per_seg] if per_seg > 0 else []
+            idx += len(seg_pts)
+            if not seg_pts and idx < len(points):
+                seg_pts = [points[idx]]
+                idx += 1
+            if seg_pts:
+                say("B", "Here are the key signals from the reporting:")
+                for p in seg_pts[:6]:
+                    say("B", f"- {p}")
+                say("A", "Now, here’s the interpretation and what it implies going forward.")
+                say(
+                    "A",
+                    "When multiple sources align on the same pattern, the takeaway is usually not the headline itself, "
+                    "but the incentives and constraints underneath it.",
+                )
+            else:
+                say("B", "This segment is a structured recap based on the best available reporting.")
+                say("A", "Focus on measurable signals and what would falsify the leading narrative.")
+
+        # Keep dialogue flowing even with few sources
+        if i in (0, 1):
+            say("B", "Pay attention to dates, definitions, and which agency or court actually has authority here.")
+        if i in (3, 4):
+            say("A", "Ask: who benefits, who absorbs the cost, and what the second-order effects look like.")
+        if i == seg_count - 2:
+            say("B", "If you only remember one thing: track implementation details, not press releases.")
+
+    # Outro
+    say("A", outro_text or "That’s the overview. Full sources are included. Subscribe for the next briefing.")
+    say("B", "See you next time.")
+
+    script_text = "\n".join(lines).strip()
 
     return {
-        "script": script,
+        "script_text": script_text,
         "chapters": chapters,
-        "description_html": description_html,
+        "tts_chunks": tts_chunks,
+    }
+
+
+def generate_30min_script_and_chapters(*args, **kwargs) -> Dict[str, Any]:
+    """
+    Backward/forward compatible generator.
+
+    Accepts ANY of these calling patterns:
+      1) generate_30min_script_and_chapters(topic=topic_dict, sources=list)
+      2) generate_30min_script_and_chapters(topic_id, topic_dict, picked_list)
+      3) generate_30min_script_and_chapters(topic_dict, picked_list)
+      4) generate_30min_script_and_chapters(topic_id=..., topic=..., sources=...)
+
+    Returns dict:
+      { topic_id, script_text, chapters, tts_chunks, sources_used, generated_utc }
+    """
+    topic_id: Optional[str] = None
+    topic: Optional[dict] = None
+    sources: List[dict] = []
+
+    # Prefer keyword inputs
+    if isinstance(kwargs.get("topic_id"), str):
+        topic_id = kwargs["topic_id"]
+    if isinstance(kwargs.get("topic"), dict):
+        topic = kwargs["topic"]
+    # sources may be passed as sources= or picked= or items=
+    for k in ("sources", "picked", "items"):
+        if isinstance(kwargs.get(k), list):
+            sources = kwargs[k]
+            break
+
+    # Parse positional variants
+    # (topic_id, topic, sources)
+    if topic is None:
+        for a in args:
+            if isinstance(a, dict):
+                topic = a
+                break
+    if not sources:
+        for a in reversed(args):
+            if isinstance(a, list):
+                sources = a
+                break
+    if topic_id is None:
+        # first string positional might be topic_id
+        for a in args:
+            if isinstance(a, str) and a.strip().startswith("topic-"):
+                topic_id = a.strip()
+                break
+
+    if topic is None:
+        raise RuntimeError("generate_30min_script_and_chapters: topic dict is missing/invalid.")
+
+    topic_id = topic_id or str(topic.get("id") or "topic")
+
+    # Normalize
+    sources = _dedupe_sources(sources)
+
+    podcast_title = _clean_text(str(topic.get("podcast_title") or "Agenda"))
+    topic_title = _clean_text(str(topic.get("title") or topic_id))
+    intro_text = _clean_text(str(topic.get("intro_text") or ""))
+    outro_text = _clean_text(str(topic.get("outro_text") or ""))
+    duration_sec = int(topic.get("duration_sec") or 1800)
+    seg_count = int(topic.get("segment_count") or 10)
+
+    chapter_titles = _default_chapter_titles(seg_count)
+
+    points = _pick_points(sources, limit=max(12, min(60, int(topic.get("max_items_for_script") or 60))))
+
+    built = _build_dialogue(
+        topic_title=f"{podcast_title} — {topic_title}" if podcast_title else topic_title,
+        intro_text=intro_text,
+        outro_text=outro_text,
+        chapter_titles=chapter_titles,
+        points=points,
+        duration_sec=duration_sec,
+    )
+
+    # Prepare sources_used for show notes
+    sources_used = []
+    for s in sources[: min(len(sources), int(topic.get("max_items_for_script") or 60))]:
+        title = _clean_text(str(s.get("title", "")))
+        url = _clean_text(str(s.get("url") or s.get("link") or ""))
+        pub = _clean_text(str(s.get("publisher") or s.get("source") or ""))
+        if url or title:
+            sources_used.append({"title": title, "url": url, "publisher": pub})
+
+    return {
+        "topic_id": topic_id,
+        "generated_utc": _now_utc_iso(),
+        "script_text": built["script_text"],
+        "chapters": built["chapters"],
+        "tts_chunks": built["tts_chunks"],
+        "sources_used": sources_used,
+        "meta": {
+            "segment_count": seg_count,
+            "duration_sec": duration_sec,
+            "sources_in": len(sources),
+            "sources_used": len(sources_used),
+        },
     }
