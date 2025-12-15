@@ -23,7 +23,6 @@ if __name__ == "__main__" and (__package__ is None or __package__ == ""):
 
 # rest of your existing imports
 from scripts.collect_sources import merge_dedupe, pub_dt, read_json_list, stable_id
-from scripts.collect_sources import merge_dedupe, pub_dt, read_json_list, stable_id
 from scripts.feed_build import load_state, save_state, update_topic_feed
 from scripts.github_release import ensure_release_and_upload
 from scripts.script_generate import generate_30min_script_and_chapters
@@ -167,6 +166,7 @@ def main() -> None:
     skipped = False
     skip_reason = ""
     video_ok = False
+    provider_used = None  # Initialize here
 
     if not fresh:
         skipped = True
