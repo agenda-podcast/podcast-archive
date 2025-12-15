@@ -24,7 +24,6 @@ import requests
 #   - tts_chunks_to_mp3(chunks, mp3_path, provider=..., premium=..., ...)
 # ============================================================
 
-
 # -------------------------
 # Defaults & env knobs
 # -------------------------
@@ -34,9 +33,9 @@ DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-preview-tts"
 DEFAULT_GEMINI_VOICE_A = "Kore"  # female-ish
 DEFAULT_GEMINI_VOICE_B = "Puck"  # male-ish
 
-# Piper voice IDs
-DEFAULT_PIPER_VOICE_A = "en_US-amy-medium"   # female
-DEFAULT_PIPER_VOICE_B = "en_US-ryan-medium"  # male
+# Piper voice IDs (we download from HF if missing/bad)
+DEFAULT_PIPER_VOICE_A = "en_US-amy-medium"    # female
+DEFAULT_PIPER_VOICE_B = "en_US-ryan-medium"   # male
 
 DEFAULT_LANGUAGE_CODE = "en-US"
 
@@ -64,7 +63,7 @@ CACHE_DIR = Path(os.getenv("TTS_CACHE_DIR", "outputs/_tts_cache")).resolve()
 # Piper models directory
 PIPER_MODEL_DIR = Path(os.getenv("PIPER_MODEL_DIR", "assets/piper")).resolve()
 
-# Piper voices repo base (versioned)
+# Piper voices repo base (versioned). You can override to "main" if needed.
 PIPER_HF_BASE = os.getenv(
     "PIPER_HF_BASE",
     "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0",
@@ -75,6 +74,10 @@ HTTP_TIMEOUT = int(os.getenv("TTS_HTTP_TIMEOUT", "120"))
 
 # Gemini endpoint
 GEMINI_API_BASE = os.getenv("GEMINI_API_BASE", "https://generativelanguage.googleapis.com").rstrip("/")
+
+# Piper validation thresholds (key reliability guard)
+MIN_PIPER_MODEL_BYTES = int(os.getenv("MIN_PIPER_MODEL_BYTES", str(2 * 1024 * 1024)))  # 2MB
+MIN_PIPER_CFG_BYTES = int(os.getenv("MIN_PIPER_CFG_BYTES", "200"))  # tiny JSON threshold
 
 
 # -------------------------
@@ -298,7 +301,7 @@ def _gemini_tts_wav_bytes(
         try:
             r = requests.post(url, json=payload, timeout=HTTP_TIMEOUT)
             if r.status_code >= 400:
-                last_err = f"HTTP {r.status_code}: {r.text[:600]}"
+                last_err = f"HTTP {r.status_code}: {r.text[:900]}"
                 if r.status_code in (429, 403) and _is_quota_error(r.text):
                     _mark_quota_exceeded(last_err)
                 if r.status_code in (429, 500, 502, 503, 504):
@@ -320,7 +323,7 @@ def _gemini_tts_wav_bytes(
                     break
 
             if not wav_b64:
-                raise RuntimeError(f"Gemini TTS: no audio inlineData in response: {json.dumps(data)[:800]}")
+                raise RuntimeError(f"Gemini TTS: no audio inlineData in response: {json.dumps(data)[:900]}")
 
             return base64.b64decode(wav_b64)
         except Exception as e:
@@ -334,8 +337,9 @@ def _gemini_tts_wav_bytes(
 
 
 # ============================================================
-# Piper voice resolution + download
+# Piper voice resolution + download (robust)
 # ============================================================
+# Voice -> HF relative path (without extensions)
 _PIPER_VOICE_MAP: Dict[str, str] = {
     "en_US-amy-medium": "en/en_US/amy/medium/en_US-amy-medium",
     "en_US-ryan-medium": "en/en_US/ryan/medium/en_US-ryan-medium",
@@ -350,11 +354,13 @@ def _resolve_piper_model_paths(voice: str, model_dir: Path) -> Tuple[Path, Path]
         raise RuntimeError("Piper voice is empty")
 
     vp = Path(v)
+    # Allow absolute or relative .onnx path
     if vp.suffix.lower() == ".onnx":
         model_path = vp if vp.is_absolute() else (model_dir / vp)
         cfg_path = Path(str(model_path) + ".json")  # expects model.onnx.json
         return model_path, cfg_path
 
+    # Default naming convention: voice_id.onnx / voice_id.onnx.json
     model_path = model_dir / f"{v}.onnx"
     cfg_path = model_dir / f"{v}.onnx.json"
     return model_path, cfg_path
@@ -364,43 +370,92 @@ def _download_to(path: Path, url: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with requests.get(url, stream=True, timeout=HTTP_TIMEOUT) as r:
         r.raise_for_status()
-        with path.open("wb") as f:
+        tmp = path.with_suffix(path.suffix + ".part")
+        with tmp.open("wb") as f:
             for chunk in r.iter_content(chunk_size=1024 * 256):
                 if chunk:
                     f.write(chunk)
+        tmp.replace(path)
+
+
+def _is_file_ok(p: Path, min_bytes: int) -> bool:
+    try:
+        return p.exists() and p.is_file() and p.stat().st_size >= min_bytes
+    except Exception:
+        return False
+
+
+def _redownload_piper_voice(voice_id: str, model_dir: Path) -> Tuple[Path, Path]:
+    model_path, cfg_path = _resolve_piper_model_paths(voice_id, model_dir)
+    rel = _PIPER_VOICE_MAP.get(voice_id)
+    if not rel:
+        # If user passed a direct .onnx path, we cannot re-download it.
+        raise RuntimeError(
+            f"Cannot redownload unknown Piper voice '{voice_id}'. "
+            f"Add it to _PIPER_VOICE_MAP or pass a known voice id."
+        )
+
+    # Delete old (possibly corrupt) files
+    try:
+        if model_path.exists():
+            model_path.unlink()
+    except Exception:
+        pass
+    try:
+        if cfg_path.exists():
+            cfg_path.unlink()
+    except Exception:
+        pass
+
+    _download_to(model_path, f"{PIPER_HF_BASE}/{rel}.onnx")
+    _download_to(cfg_path, f"{PIPER_HF_BASE}/{rel}.onnx.json")
+    return model_path, cfg_path
 
 
 def _ensure_piper_voice(voice_id: str, model_dir: Path) -> Tuple[Path, Path]:
     model_path, cfg_path = _resolve_piper_model_paths(voice_id, model_dir)
 
-    if model_path.suffix.lower() == ".onnx" and model_path.exists():
-        if cfg_path.exists():
-            return model_path, cfg_path
-        inferred = model_path.stem
-        rel = _PIPER_VOICE_MAP.get(inferred)
-        if rel:
-            _download_to(cfg_path, f"{PIPER_HF_BASE}/{rel}.onnx.json")
-            return model_path, cfg_path
-        raise RuntimeError(f"Piper config missing: {cfg_path}. Place matching .onnx.json next to the .onnx file.")
-
-    if model_path.exists() and cfg_path.exists():
+    # If direct .onnx path was supplied, just validate config presence/size.
+    if model_path.suffix.lower() == ".onnx" and (model_path.is_absolute() or model_path.parent != model_dir):
+        if not _is_file_ok(model_path, MIN_PIPER_MODEL_BYTES):
+            raise RuntimeError(f"Piper model file looks invalid (too small/missing): {model_path}")
+        if not _is_file_ok(cfg_path, MIN_PIPER_CFG_BYTES):
+            raise RuntimeError(f"Piper config file missing/invalid: {cfg_path}")
         return model_path, cfg_path
 
+    # Validate existing cached model/config
+    if _is_file_ok(model_path, MIN_PIPER_MODEL_BYTES) and _is_file_ok(cfg_path, MIN_PIPER_CFG_BYTES):
+        return model_path, cfg_path
+
+    # If exists but too small => treat as corrupt and redownload
     rel = _PIPER_VOICE_MAP.get(voice_id)
     if not rel:
         raise RuntimeError(
             f"Unknown Piper voice_id '{voice_id}'. Add it to _PIPER_VOICE_MAP in tts_generate.py or pass a direct .onnx path."
         )
 
-    if not model_path.exists():
+    # Download missing or corrupt
+    if not _is_file_ok(model_path, MIN_PIPER_MODEL_BYTES):
         _download_to(model_path, f"{PIPER_HF_BASE}/{rel}.onnx")
-    if not cfg_path.exists():
+    if not _is_file_ok(cfg_path, MIN_PIPER_CFG_BYTES):
         _download_to(cfg_path, f"{PIPER_HF_BASE}/{rel}.onnx.json")
+
+    # Final validate; if still bad, force redownload once
+    if not _is_file_ok(model_path, MIN_PIPER_MODEL_BYTES) or not _is_file_ok(cfg_path, MIN_PIPER_CFG_BYTES):
+        model_path, cfg_path = _redownload_piper_voice(voice_id, model_dir)
+
+    if not _is_file_ok(model_path, MIN_PIPER_MODEL_BYTES):
+        raise RuntimeError(f"Piper model still invalid after download: {model_path} ({model_path.stat().st_size} bytes)")
+    if not _is_file_ok(cfg_path, MIN_PIPER_CFG_BYTES):
+        raise RuntimeError(f"Piper config still invalid after download: {cfg_path} ({cfg_path.stat().st_size} bytes)")
 
     return model_path, cfg_path
 
 
 def _piper_tts_wav_bytes(*, text: str, voice: str, model_dir: Path) -> bytes:
+    """
+    Uses piper CLI. If it fails, caller may trigger redownload+retry.
+    """
     model_path, cfg_path = _ensure_piper_voice(voice, model_dir)
     if not model_path.exists():
         raise RuntimeError(f"Piper model missing after ensure: {model_path}")
@@ -417,7 +472,11 @@ def _piper_tts_wav_bytes(*, text: str, voice: str, model_dir: Path) -> bytes:
             stderr=subprocess.PIPE,
         )
         if p.returncode != 0:
-            raise RuntimeError(f"Piper failed ({p.returncode}): {p.stderr.decode('utf-8', 'ignore')[:1200]}")
+            out = (p.stdout or b"").decode("utf-8", "ignore")
+            err = (p.stderr or b"").decode("utf-8", "ignore")
+            msg = (err.strip() or out.strip() or "")[:2000]
+            raise RuntimeError(f"Piper failed ({p.returncode}): {msg}")
+
         if not out_wav.exists() or out_wav.stat().st_size < 1000:
             raise RuntimeError("Piper produced empty WAV output")
         return out_wav.read_bytes()
@@ -572,10 +631,8 @@ def tts_chunks_to_mp3(
     chunks: Union[List[Dict[str, str]], List[TTSTurn]],
     mp3_path: Union[str, Path],
     *,
-    # New arg (your run_topic.py passes this)
-    provider: Optional[str] = None,
-    # Legacy arg (kept)
-    premium: Optional[bool] = True,
+    provider: Optional[str] = None,           # NEW: supports "piper"/"gemini"/"auto"
+    premium: Optional[bool] = True,           # legacy
     api_key: str = "",
     gemini_model: Optional[str] = None,
     voice_a: Optional[str] = None,
@@ -583,7 +640,6 @@ def tts_chunks_to_mp3(
     piper_voice_a: Optional[str] = None,
     piper_voice_b: Optional[str] = None,
     piper_model_dir: Optional[Union[str, Path]] = None,
-    # Swallow any unexpected kwargs from other scripts safely
     **_ignored_kwargs: Any,
 ) -> None:
     """
@@ -690,8 +746,6 @@ def _render_turn_to_wav(
     gemini_model: str,
     piper_model_dir: Path,
 ) -> bytes:
-    last_err: Optional[str] = None
-
     if engine == "gemini":
         try:
             return _gemini_tts_wav_bytes(
@@ -702,16 +756,36 @@ def _render_turn_to_wav(
                 language_code=DEFAULT_LANGUAGE_CODE,
             )
         except Exception as e:
-            last_err = str(e)
-            if FAIL_SOFT_ON_QUOTA and _is_quota_error(last_err):
+            msg = str(e)
+            if FAIL_SOFT_ON_QUOTA and _is_quota_error(msg):
+                _mark_quota_exceeded(msg)
                 fallback_voice = DEFAULT_PIPER_VOICE_A if voice == DEFAULT_GEMINI_VOICE_A else DEFAULT_PIPER_VOICE_B
-                return _piper_tts_wav_bytes(text=text, voice=fallback_voice, model_dir=piper_model_dir)
+                return _piper_with_retry(text=text, voice=fallback_voice, model_dir=piper_model_dir)
             raise
 
-    return _piper_tts_wav_bytes(text=text, voice=voice, model_dir=piper_model_dir)
+    # Piper path
+    return _piper_with_retry(text=text, voice=voice, model_dir=piper_model_dir)
 
 
-# Backward compatibility (older code)
+def _piper_with_retry(*, text: str, voice: str, model_dir: Path) -> bytes:
+    """
+    Key fix: if Piper fails (often due to partial/corrupt .onnx from artifacts),
+    we redownload voice files and retry once.
+    """
+    try:
+        return _piper_tts_wav_bytes(text=text, voice=voice, model_dir=model_dir)
+    except Exception as e1:
+        # Force redownload and retry once (only for known voice ids)
+        try:
+            _redownload_piper_voice(voice, model_dir)
+        except Exception:
+            # if voice isn't in map (custom file), just re-raise original
+            raise e1
+        # Retry after redownload
+        return _piper_tts_wav_bytes(text=text, voice=voice, model_dir=model_dir)
+
+
+# Backward compatibility helper
 def tts_to_mp3(script_text: str, mp3_path: Union[str, Path], api_key: str = "") -> None:
     chunks = script_to_tts_chunks(script_text)
     tts_chunks_to_mp3(chunks, mp3_path, api_key=api_key, provider="gemini")
