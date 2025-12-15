@@ -57,6 +57,12 @@ jobs:
         run: |
           pip install google-genai
 
+      - name: Collect sources into fresh/backlog
+        env:
+          TOPIC_ID: ${{ env.TOPIC_ID }}
+        run: |
+          python scripts/collect_sources.py
+
       - name: Run topic pipeline
         env:
           TOPIC_ID: ${{ matrix.topic }}
