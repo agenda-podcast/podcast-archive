@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 import requests
@@ -46,6 +46,10 @@ TRUST_TIER_3 = {
 }
 
 
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def domain_of(url: str) -> str:
     try:
         return (urlparse(url).netloc or "").lower()
@@ -64,16 +68,12 @@ def trust_tier(domain: str) -> int:
     return 9
 
 
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 def parse_dt_any(s: str) -> Optional[datetime]:
     s = (s or "").strip()
     if not s:
         return None
 
-    # RFC822 sometimes
+    # RFC822-ish
     try:
         from email.utils import parsedate_to_datetime
         dt = parsedate_to_datetime(s)
@@ -102,9 +102,6 @@ def clean_ws(s: str) -> str:
 
 
 def canonicalize_url(url: str) -> str:
-    """
-    Remove common tracking params; normalize scheme/host; keep path and useful params.
-    """
     url = (url or "").strip()
     if not url.startswith("http"):
         return url
@@ -112,11 +109,8 @@ def canonicalize_url(url: str) -> str:
     p = urlparse(url)
     scheme = p.scheme.lower()
     netloc = p.netloc.lower()
-
-    # Remove fragments
     fragment = ""
 
-    # Filter query params
     qs = []
     for k, v in parse_qsl(p.query, keep_blank_values=True):
         kl = k.lower()
@@ -135,6 +129,18 @@ def stable_id(title: str, url: str) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def pub_dt(it: Dict[str, Any]) -> datetime:
+    dt = parse_dt_any(str(it.get("published", "") or ""))
+    return dt if dt else datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def is_fresh(item: Dict[str, Any], fresh_after: datetime) -> bool:
+    dt = pub_dt(item)
+    if dt.year == 1970:
+        return False
+    return dt >= fresh_after
+
+
 @dataclass
 class SourceItem:
     title: str
@@ -143,7 +149,7 @@ class SourceItem:
     published: str
     lang: str
     tier: int
-    provider: str  # "google_news_rss" | "gdelt"
+    provider: str
     query: str
 
 
@@ -164,16 +170,11 @@ def to_dict(it: SourceItem) -> Dict[str, Any]:
 # -----------------------------
 # Collectors
 # -----------------------------
-def google_news_rss(query: str, hl: str, gl: str, ceid: str, timeout: int = 25) -> List[Dict[str, Any]]:
-    """
-    Google News RSS (no API key). Region/language via hl/gl/ceid.
-    """
-    # Example:
-    # https://news.google.com/rss/search?q=immigration%20freeze&hl=en-US&gl=US&ceid=US:en
+def google_news_rss(query: str, hl: str, gl: str, ceid: str) -> List[Dict[str, Any]]:
     q = requests.utils.quote(query, safe="")
     url = f"https://news.google.com/rss/search?q={q}&hl={hl}&gl={gl}&ceid={ceid}"
     feed = feedparser.parse(url)
-    out = []
+    out: List[Dict[str, Any]] = []
     for e in getattr(feed, "entries", []) or []:
         title = clean_ws(getattr(e, "title", "") or "")
         link = getattr(e, "link", "") or ""
@@ -182,15 +183,11 @@ def google_news_rss(query: str, hl: str, gl: str, ceid: str, timeout: int = 25) 
     return out
 
 
-def gdelt_doc_search(query: str, mode: str = "ArtList", max_records: int = 50, timeout: int = 30) -> List[Dict[str, Any]]:
-    """
-    GDELT 2 DOC API (no key): https://api.gdeltproject.org/api/v2/doc/doc
-    """
-    # ArtList is lightweight; you can switch to "timelinevolraw" etc later.
+def gdelt_doc_search(query: str, max_records: int = 50, timeout: int = 30) -> List[Dict[str, Any]]:
     url = "https://api.gdeltproject.org/api/v2/doc/doc"
     params = {
         "query": query,
-        "mode": mode,
+        "mode": "ArtList",
         "format": "json",
         "maxrecords": str(max_records),
         "sort": "HybridRel",
@@ -204,18 +201,17 @@ def gdelt_doc_search(query: str, mode: str = "ArtList", max_records: int = 50, t
         return []
 
     arts = data.get("articles") or []
-    out = []
+    out: List[Dict[str, Any]] = []
     for a in arts:
         title = clean_ws(str(a.get("title", "") or ""))
         link = str(a.get("url", "") or "")
-        published = str(a.get("seendate", "") or "")  # YYYYMMDDHHMMSS
-        out.append({"title": title, "url": link, "published": published})
+        seendate = str(a.get("seendate", "") or "")  # YYYYMMDDHHMMSS
+        out.append({"title": title, "url": link, "published": seendate})
     return out
 
 
 def parse_gdelt_seendate(seendate: str) -> str:
     s = (seendate or "").strip()
-    # Expected: YYYYMMDDHHMMSS
     if re.fullmatch(r"\d{14}", s):
         try:
             dt = datetime.strptime(s, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
@@ -248,71 +244,82 @@ def write_json(path: Path, obj: Any) -> None:
 
 def merge_dedupe(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen = set()
-    out = []
+    out: List[Dict[str, Any]] = []
     for it in items:
         url = canonicalize_url(str(it.get("url", "") or ""))
         title = clean_ws(str(it.get("title", "") or ""))
         if not url or not title:
             continue
-        sid = it.get("id") or stable_id(title, url)
+
+        sid = str(it.get("id") or stable_id(title, url))
         if sid in seen:
             continue
         seen.add(sid)
+
+        dom = str(it.get("domain") or domain_of(url))
         it["url"] = url
         it["title"] = title
         it["id"] = sid
+        it["domain"] = dom
+        it["tier"] = int(it.get("tier") or trust_tier(dom))
+
         out.append(it)
     return out
 
 
-def is_fresh(item: Dict[str, Any], fresh_after: datetime) -> bool:
-    pub = (item.get("published") or "").strip()
-    dt = parse_dt_any(pub)
-    if not dt:
-        # if missing date, treat as not fresh (so it accumulates backlog but doesn't pass gate)
-        return False
-    return dt >= fresh_after
+# -----------------------------
+# Topic selection (NO TOPIC_ID REQUIRED)
+# -----------------------------
+def discover_topic_ids() -> List[str]:
+    tid = (os.environ.get("TOPIC_ID") or "").strip()
+    if tid:
+        return [tid]
+
+    tids = (os.environ.get("TOPIC_IDS") or "").strip()
+    if tids:
+        parts = re.split(r"[,\s]+", tids)
+        return [p.strip() for p in parts if p.strip()]
+
+    topics_dir = Path("topics")
+    if not topics_dir.exists():
+        return []
+    files = sorted(topics_dir.glob("topic-*.json"))
+    return [f.stem for f in files]
+
+
+def load_topic(topic_id: str) -> Dict[str, Any]:
+    p = Path("topics") / f"{topic_id}.json"
+    if not p.exists():
+        raise RuntimeError(f"Missing topic config: {p}")
+    return json.loads(p.read_text(encoding="utf-8"))
 
 
 # -----------------------------
-# Main
+# Per-topic collect
 # -----------------------------
-def main() -> None:
-    topic_id = os.environ.get("TOPIC_ID", "").strip()
-    if not topic_id:
-        raise RuntimeError("TOPIC_ID is empty")
+def collect_for_topic(topic_id: str) -> Dict[str, Any]:
+    topic = load_topic(topic_id)
 
-    topics_path = Path("topics") / f"{topic_id}.json"
-    if not topics_path.exists():
-        raise RuntimeError(f"Missing topic config: {topics_path}")
-
-    topic = json.loads(topics_path.read_text(encoding="utf-8"))
-
-    # Config (topic-level defaults)
     min_fresh_sources = int(topic.get("min_fresh_sources", 20))
     freshness_hours = int(topic.get("freshness_hours", 24))
     max_results_per_query = int(topic.get("max_results_per_query", 50))
     backlog_max = int(topic.get("backlog_max", 2000))
+    fresh_cap = int(topic.get("fresh_cap", 500))
 
-    # Queries & languages
     queries = topic.get("queries") or []
     if isinstance(queries, str):
         queries = [queries]
     queries = [clean_ws(q) for q in queries if clean_ws(q)]
-
     if not queries:
-        # fallback to title
         title = clean_ws(str(topic.get("title", "") or ""))
         if not title:
-            raise RuntimeError("Topic has no queries and no title fallback")
+            raise RuntimeError(f"{topic_id}: no queries and no title fallback")
         queries = [title]
 
-    # Languages are used for Google News hl/gl/ceid only; GDELT is multilingual by nature.
     languages = topic.get("languages") or [{"hl": "en-US", "gl": "US", "ceid": "US:en", "lang": "en"}]
     if isinstance(languages, dict):
         languages = [languages]
 
-    # Paths
     data_dir = Path("data") / topic_id
     fresh_path = data_dir / "fresh.json"
     backlog_path = data_dir / "backlog.json"
@@ -325,7 +332,7 @@ def main() -> None:
 
     collected: List[Dict[str, Any]] = []
 
-    # ---- Collect from Google News RSS (per query x language) ----
+    # Google News RSS
     for q in queries:
         for lang_cfg in languages:
             hl = str(lang_cfg.get("hl", "en-US"))
@@ -349,21 +356,22 @@ def main() -> None:
                 dt = parse_dt_any(pub_raw)
                 pub = dt.isoformat().replace("+00:00", "Z") if dt else ""
 
-                item = SourceItem(
-                    title=title,
-                    url=url,
-                    domain=dom,
-                    published=pub,
-                    lang=lang,
-                    tier=trust_tier(dom),
-                    provider="google_news_rss",
-                    query=q,
+                collected.append(
+                    to_dict(SourceItem(
+                        title=title,
+                        url=url,
+                        domain=dom,
+                        published=pub,
+                        lang=lang,
+                        tier=trust_tier(dom),
+                        provider="google_news_rss",
+                        query=q,
+                    ))
                 )
-                collected.append(to_dict(item))
 
-            time.sleep(0.2)  # be polite
+            time.sleep(0.15)
 
-    # ---- Collect from GDELT (per query) ----
+    # GDELT
     for q in queries:
         try:
             rows = gdelt_doc_search(q, max_records=max_results_per_query)
@@ -379,70 +387,51 @@ def main() -> None:
             dom = domain_of(url)
             pub = parse_gdelt_seendate(str(r.get("published", "") or ""))
 
-            item = SourceItem(
-                title=title,
-                url=url,
-                domain=dom,
-                published=pub,
-                lang="multi",
-                tier=trust_tier(dom),
-                provider="gdelt",
-                query=q,
+            collected.append(
+                to_dict(SourceItem(
+                    title=title,
+                    url=url,
+                    domain=dom,
+                    published=pub,
+                    lang="multi",
+                    tier=trust_tier(dom),
+                    provider="gdelt",
+                    query=q,
+                ))
             )
-            collected.append(to_dict(item))
 
-        time.sleep(0.2)
+        time.sleep(0.15)
 
-    # ---- Merge + dedupe with existing backlog for accumulation ----
     merged_all = merge_dedupe(existing_fresh + existing_backlog + collected)
 
-    # ---- Split into fresh vs backlog using freshness window ----
     fresh_items = [it for it in merged_all if is_fresh(it, fresh_after)]
     backlog_items = [it for it in merged_all if it not in fresh_items]
 
-    # ---- Sort: fresher first; then trust tier ----
-    def sort_key(it: Dict[str, Any]) -> Tuple[int, int, str]:
-        # Lower tier is better; newer published is better (string compare of ISO is OK here)
-        tier = int(it.get("tier", 9))
-        pub = str(it.get("published", "") or "")
-        # reverse by pub later; keep stable
-        return (tier, 0, pub)
+    # Sort fresh: tier asc, published desc
+    fresh_items = sorted(
+        fresh_items,
+        key=lambda x: (int(x.get("tier", 9)), -int(pub_dt(x).timestamp())),
+        reverse=False,
+    )[:fresh_cap]
 
-    fresh_items.sort(key=lambda x: (int(x.get("tier", 9)), x.get("published", "")), reverse=False)
-    # make newest-first within each tier
-    fresh_items = sorted(fresh_items, key=lambda x: (int(x.get("tier", 9)), x.get("published", "")), reverse=False)
-
-    # To ensure newest-first overall while keeping tier preference, we can do:
-    # primary: tier asc, secondary: published desc
-    fresh_items = sorted(fresh_items, key=lambda x: (int(x.get("tier", 9)), -(int(hashlib.md5((x.get("published","") or "").encode()).hexdigest(),16) % (10**12))))
-    # The above line is intentionally deterministic but not ideal for true time ordering without parsing.
-    # Replace with a real datetime parse to sort desc:
-    def pub_dt(it: Dict[str, Any]) -> datetime:
-        dt = parse_dt_any(str(it.get("published", "") or ""))
-        return dt if dt else datetime(1970, 1, 1, tzinfo=timezone.utc)
-
-    fresh_items = sorted(fresh_items, key=lambda x: (int(x.get("tier", 9)), pub_dt(x)), reverse=False)
-    # Now reverse within same tier by pub_dt:
-    fresh_items = sorted(fresh_items, key=lambda x: (int(x.get("tier", 9)), -int(pub_dt(x).timestamp())), reverse=False)
-
-    # backlog: keep best tiers + newest-ish, capped
     backlog_items = merge_dedupe(backlog_items)
-    backlog_items = sorted(backlog_items, key=lambda x: (int(x.get("tier", 9)), -int(pub_dt(x).timestamp())), reverse=False)
-    backlog_items = backlog_items[:backlog_max]
+    backlog_items = sorted(
+        backlog_items,
+        key=lambda x: (int(x.get("tier", 9)), -int(pub_dt(x).timestamp())),
+        reverse=False,
+    )[:backlog_max]
 
-    # ---- Gate logic: only publish fresh.json if enough fresh sources ----
     if len(fresh_items) >= min_fresh_sources:
-        # Keep top N fresh (but still save backlog for long-term)
-        fresh_cap = int(topic.get("fresh_cap", 500))
-        fresh_items = fresh_items[:fresh_cap]
         write_json(fresh_path, fresh_items)
         write_json(backlog_path, backlog_items)
         status = "OK"
+        fresh_written = len(fresh_items)
     else:
-        # Not enough: keep backlog growing; write empty fresh.json for this day
+        # Accumulate only; keep fresh empty so downstream topic run can skip
         write_json(fresh_path, [])
         write_json(backlog_path, merge_dedupe(existing_backlog + collected)[:backlog_max])
         status = "SKIP"
+        fresh_written = 0
 
     snapshot = {
         "topic_id": topic_id,
@@ -451,18 +440,45 @@ def main() -> None:
         "freshness_hours": freshness_hours,
         "queries": queries,
         "collected_now": len(collected),
-        "fresh_now": len(fresh_items),
+        "fresh_written": fresh_written,
         "backlog_now": len(read_json_list(backlog_path)),
-        "fresh_written": (len(read_json_list(fresh_path))),
         "timestamp_utc": now_utc().isoformat().replace("+00:00", "Z"),
     }
     write_json(snapshot_path, snapshot)
 
     print(
         f"[{topic_id}] status={status} collected={len(collected)} "
-        f"fresh_written={snapshot['fresh_written']} backlog={snapshot['backlog_now']} "
+        f"fresh_written={fresh_written} backlog={snapshot['backlog_now']} "
         f"(min_fresh={min_fresh_sources}, window={freshness_hours}h)"
     )
+    return snapshot
+
+
+def main() -> None:
+    topic_ids = discover_topic_ids()
+    if not topic_ids:
+        raise RuntimeError("No topics found. Add topics/topic-*.json or set TOPIC_ID/TOPIC_IDS.")
+
+    results: List[Dict[str, Any]] = []
+    failed = 0
+
+    for tid in topic_ids:
+        try:
+            results.append(collect_for_topic(tid))
+        except Exception as e:
+            failed += 1
+            print(f"[{tid}] ERROR: {e}")
+
+    Path("data").mkdir(parents=True, exist_ok=True)
+    write_json(
+        Path("data") / "collect_run_summary.json",
+        {"results": results, "failed": failed, "timestamp_utc": now_utc().isoformat().replace("+00:00", "Z")},
+    )
+
+    if failed:
+        print(f"Collect completed with failures: {failed}")
+    else:
+        print("Collect completed successfully for all topics.")
 
 
 if __name__ == "__main__":
