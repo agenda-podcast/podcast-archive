@@ -1,0 +1,147 @@
+name: CI - smoke
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: "3.11"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install CLI tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl tar gzip unzip
+
+      - name: Download latest rhasspy/piper release and install piper
+        id: install_piper
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+import json, sys, urllib.request
+api = "https://api.github.com/repos/rhasspy/piper/releases/latest"
+print("Fetching:", api)
+with urllib.request.urlopen(api) as r:
+    data = json.load(r)
+assets = data.get("assets", [])
+candidates = []
+for a in assets:
+    name = a.get("name", "").lower()
+    url = a.get("browser_download_url")
+    if not url:
+        continue
+    if "linux" in name and ("amd64" in name or "x86_64" in name or "x86" in name):
+        candidates.append((name, url))
+if not candidates and assets:
+    candidates = [(a.get("name", ""), a.get("browser_download_url")) for a in assets if a.get("browser_download_url")]
+if not candidates:
+    print("No release asset found for piper; assets:", [a.get("name") for a in assets])
+    sys.exit(2)
+name, download_url = candidates[0]
+print("Selected asset:", name, download_url)
+import subprocess, os, shutil, tempfile
+tmpdir = tempfile.mkdtemp()
+archive = os.path.join(tmpdir, "asset")
+print("Downloading to", archive)
+subprocess.check_call(["curl", "-L", "-o", archive, download_url])
+def try_extract(archive_path, dest):
+    import tarfile, zipfile
+    if tarfile.is_tarfile(archive_path):
+        with tarfile.open(archive_path) as tf:
+            tf.extractall(dest)
+        return True
+    if zipfile.is_zipfile(archive_path):
+        with zipfile.ZipFile(archive_path) as zf:
+            zf.extractall(dest)
+        return True
+    return False
+extracted = try_extract(archive, tmpdir)
+piper_path = None
+if extracted:
+    for root, dirs, files in os.walk(tmpdir):
+        if "piper" in files:
+            candidate = os.path.join(root, "piper")
+            piper_path = candidate
+            break
+else:
+    cand = os.path.join(tmpdir, "piper.bin")
+    shutil.move(archive, cand)
+    os.chmod(cand, 0o755)
+    piper_path = cand
+if not piper_path:
+    for root, dirs, files in os.walk(tmpdir):
+        for f in files:
+            fp = os.path.join(root, f)
+            if os.path.isfile(fp) and os.access(fp, os.X_OK):
+                piper_path = fp
+                break
+        if piper_path:
+            break
+if not piper_path:
+    print("Failed to locate 'piper' executable in downloaded asset.")
+    sys.exit(3)
+dest = os.path.join(os.getcwd(), "tools")
+os.makedirs(dest, exist_ok=True)
+final = os.path.join(dest, "piper")
+shutil.copy(piper_path, final)
+os.chmod(final, 0o755)
+print("Installed piper to", final)
+print(final)
+PY
+
+      - name: Show installed piper
+        run: |
+          ls -l tools || true
+          file tools/piper || true
+        continue-on-error: true
+
+      - name: Set PIPER_BINARY for job
+        run: echo "PIPER_BINARY=./tools/piper" >> $GITHUB_ENV
+
+      - name: Install Python requirements (if present)
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "No requirements.txt found; skipping pip install -r requirements.txt"
+          fi
+
+      - name: Run smoke test (verify piper detection)
+        env:
+          PIPER_BINARY: ./tools/piper
+        run: |
+          python - <<'PY'
+import sys
+try:
+    from scripts.tts_generate import find_piper_binary
+    p = find_piper_binary()
+    print("Found piper at:", p)
+except Exception as e:
+    print("Smoke-check failed:", e, file=sys.stderr)
+    sys.exit(2)
+print("Smoke-check succeeded.")
+PY
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: |
+            tools
+            ./**/logs/**
