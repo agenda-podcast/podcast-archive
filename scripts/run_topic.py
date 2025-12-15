@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import time
 import traceback
 from datetime import datetime, timezone
@@ -411,6 +412,20 @@ def main() -> None:
             piper_model_dir=piper_model_dir,
         )
         summary["tts_engine"] = "gemini" if premium_tts else "piper"
+    except RuntimeError as e:
+        # Provide developer-friendly error for piper or TTS issues
+        error_msg = str(e)
+        summary["errors"].append({"stage": "tts", "error": error_msg, "traceback": traceback.format_exc()})
+        save_json(summary_path, summary)
+        
+        print("\n" + "=" * 80, file=sys.stderr)
+        print("ERROR: TTS generation failed", file=sys.stderr)
+        print("=" * 80, file=sys.stderr)
+        print(f"\n{error_msg}\n", file=sys.stderr)
+        print("=" * 80, file=sys.stderr)
+        
+        # Exit with non-zero code for CI to detect failure
+        sys.exit(1)
     except Exception as e:
         summary["errors"].append({"stage": "tts", "error": str(e), "traceback": traceback.format_exc()})
         save_json(summary_path, summary)
