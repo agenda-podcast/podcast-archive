@@ -1,4 +1,4 @@
-name: "Daily Overviews (Option A - single writer)"
+name: "Daily Overviews"
 
 on:
   schedule:
@@ -140,18 +140,16 @@ jobs:
             exit 0
           fi
 
-          COUNT=$(python - <<'PY'
-import os, json
-p = os.environ["FRESH"]
+          COUNT="$(python -c "import os,json; p=os.environ['FRESH']; 
 try:
-    d = json.load(open(p, "r", encoding="utf-8"))
-    print(len(d) if isinstance(d, list) else 0)
+  d=json.load(open(p,'r',encoding='utf-8')); 
+  print(len(d) if isinstance(d,list) else 0)
 except Exception:
-    print(0)
-PY
-)
+  print(0)
+" | tr -d '\r')"
 
           echo "fresh_count=$COUNT"
+
           if [ "$COUNT" -gt 0 ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
