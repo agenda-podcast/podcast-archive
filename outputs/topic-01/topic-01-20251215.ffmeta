@@ -1,0 +1,51 @@
+;FFMETADATA1
+[CHAPTER]
+TIMEBASE=1/1
+START=0
+END=1
+title=Opening & context
+[CHAPTER]
+TIMEBASE=1/1
+START=180
+END=181
+title=What happened
+[CHAPTER]
+TIMEBASE=1/1
+START=360
+END=361
+title=Key facts & timeline
+[CHAPTER]
+TIMEBASE=1/1
+START=540
+END=541
+title=Why it matters
+[CHAPTER]
+TIMEBASE=1/1
+START=720
+END=721
+title=Who is affected
+[CHAPTER]
+TIMEBASE=1/1
+START=900
+END=901
+title=Policy & legal angles
+[CHAPTER]
+TIMEBASE=1/1
+START=1080
+END=1081
+title=Economic & social impact
+[CHAPTER]
+TIMEBASE=1/1
+START=1260
+END=1261
+title=Signals & scenarios
+[CHAPTER]
+TIMEBASE=1/1
+START=1440
+END=1441
+title=Practical takeaways
+[CHAPTER]
+TIMEBASE=1/1
+START=1620
+END=1621
+title=Closing summary
