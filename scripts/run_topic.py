@@ -4,14 +4,13 @@
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import os
 import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 import requests
 
@@ -25,9 +24,6 @@ OUTPUTS_DIR = Path("outputs")
 GITHUB_API = "https://api.github.com"
 
 
-# -------------------------
-# Helpers
-# -------------------------
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -111,14 +107,11 @@ def dedupe_sources(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
-# -------------------------
-# GitHub release helpers
-# -------------------------
 def gh_headers(token: str) -> Dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "agenda-topic-runner/1.2",
+        "User-Agent": "agenda-topic-runner/1.0",
     }
 
 
@@ -151,7 +144,6 @@ def delete_asset(asset_api_url: str, token: str) -> None:
 def upload_asset(release: Dict[str, Any], token: str, file_path: Path) -> str:
     name = file_path.name
 
-    # idempotent upload: remove existing asset with same name
     for a in list_assets(release, token):
         if a.get("name") == name:
             delete_asset(a["url"], token)
@@ -169,9 +161,6 @@ def upload_asset(release: Dict[str, Any], token: str, file_path: Path) -> str:
     return r.json().get("browser_download_url", "")
 
 
-# -------------------------
-# Topic and data paths
-# -------------------------
 def load_topic(topic_id: str) -> Dict[str, Any]:
     p = TOPICS_DIR / f"{topic_id}.json"
     if not p.exists():
@@ -221,9 +210,6 @@ def pick_sources_for_script(topic: Dict[str, Any], fresh: List[Dict[str, Any]], 
     return combined[:max_items]
 
 
-# -------------------------
-# Chapters FFmetadata
-# -------------------------
 def write_ffmetadata(chapters: List[Dict[str, Any]], out_path: Path) -> None:
     lines: List[str] = []
     lines.append(";FFMETADATA1")
@@ -231,11 +217,10 @@ def write_ffmetadata(chapters: List[Dict[str, Any]], out_path: Path) -> None:
     for ch in chapters:
         if not isinstance(ch, dict):
             continue
-
         try:
             title = str(ch.get("title", "Segment")).strip()
-            start = int(float(ch.get("start_sec", 0) or 0))
-            end_val = ch.get("end_sec", None)
+            start = int(float(ch.get("start_sec", 0)))
+            end_val = ch.get("end_sec", start + 1)
             end = int(float(end_val)) if end_val is not None else start + 1
             if end <= start:
                 end = start + 1
@@ -252,60 +237,38 @@ def write_ffmetadata(chapters: List[Dict[str, Any]], out_path: Path) -> None:
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-# -------------------------
-# Script generator caller (signature-safe)
-# -------------------------
-def _call_script_generator(topic_id: str, topic: Dict[str, Any], picked: List[Dict[str, Any]], api_key: str, model: str) -> Any:
+def _call_script_generator(topic_id: str, topic: Dict[str, Any], picked: List[Dict[str, Any]]) -> Any:
     """
-    Your script_generate.generate_30min_script_and_chapters has changed signatures over time.
-    This wrapper adapts safely.
+    generate_30min_script_and_chapters has evolved multiple times.
+    Support these call styles:
 
-    Newer signature (common):
-      generate_30min_script_and_chapters(*, topic, sources, api_key, model, ...)
-
-    Older signature:
-      generate_30min_script_and_chapters(topic_id, topic, picked)
-      or generate_30min_script_and_chapters(topic=..., sources=...)
+    1) fn(topic=topic, sources=picked, api_key=..., model=...)
+    2) fn(topic=topic, sources=picked)
+    3) fn(topic_id, topic, picked, api_key=..., model=...)
+    4) fn(topic_id, topic, picked)
     """
     fn = generate_30min_script_and_chapters
-    sig = None
+
+    api_key = (os.getenv("GEMINI_SCRIPT_API_KEY") or os.getenv("GEMINI_API_KEY") or "").strip()
+    model = (os.getenv("GEMINI_SCRIPT_MODEL") or os.getenv("SCRIPT_MODEL") or topic.get("script_model") or "").strip() or None
+
+    # prefer keyword style
     try:
-        sig = inspect.signature(fn)
-    except Exception:
-        sig = None
-
-    # Try keyword-style first (preferred)
-    kw: Dict[str, Any] = {"topic": topic, "sources": picked}
-    if sig is not None:
-        params = sig.parameters
-        if "api_key" in params:
-            kw["api_key"] = api_key
-        if "model" in params:
-            kw["model"] = model
-        if "topic_id" in params:
-            kw["topic_id"] = topic_id
-        if "topicId" in params and "topic_id" not in kw:
-            kw["topicId"] = topic_id
-
-        # If the function is keyword-only heavy, this will succeed.
-        try:
-            return fn(**kw)
-        except TypeError:
-            pass
-
-    # Fallback: positional variants
-    try:
-        return fn(topic_id, topic, picked)
+        if api_key and model:
+            return fn(topic=topic, sources=picked, api_key=api_key, model=model)
+        return fn(topic=topic, sources=picked)
     except TypeError:
         pass
 
-    # Last attempt: minimal keywords
-    return fn(topic=topic, sources=picked)
+    # fallback positional
+    try:
+        if api_key and model:
+            return fn(topic_id, topic, picked, api_key=api_key, model=model)
+        return fn(topic_id, topic, picked)
+    except TypeError as e:
+        raise RuntimeError(f"Script generator signature mismatch: {e}")
 
 
-# -------------------------
-# Main pipeline
-# -------------------------
 def main() -> None:
     topic_id = (os.getenv("TOPIC_ID", "") or "").strip()
     repo = (os.getenv("REPO", "") or "").strip()
@@ -319,34 +282,32 @@ def main() -> None:
         raise RuntimeError("REPO is empty (expected github.repository)")
     if not gh_token:
         raise RuntimeError("GITHUB_TOKEN is empty")
-    if not gemini_api_key:
-        # Script generation requires Gemini regardless of premium_tts
-        raise RuntimeError("GEMINI_API_KEY is empty (required for script generation)")
     if not release_tag:
         release_tag = topic_id
 
     topic = load_topic(topic_id)
 
-    # Script generation model (Gemini) – always needed
-    script_model = (os.getenv("GEMINI_SCRIPT_MODEL", "") or "").strip() or (topic.get("gemini_model", "") or "").strip()
-    if not script_model:
-        script_model = "gemini-2.5-flash"
+    # Premium flag can be in topic JSON, but can be overridden by env
+    premium_env = os.getenv("PREMIUM_TTS", "").strip().lower()
+    if premium_env in ("0", "false", "no"):
+        premium_tts = False
+    elif premium_env in ("1", "true", "yes"):
+        premium_tts = True
+    else:
+        premium_tts = bool(topic.get("premium_tts", True))
 
-    # TTS provider decision (ONLY affects audio synthesis)
-    premium_tts = bool(topic.get("premium_tts", True))
+    provider_requested = "gemini" if premium_tts else "piper"
 
-    # Optional Gemini TTS config (only used when premium_tts=True)
-    gemini_tts_model_env = (os.getenv("GEMINI_TTS_MODEL", "") or "").strip()
-    gemini_tts_model_topic = (topic.get("gemini_tts_model", "") or "").strip()
-    gemini_tts_model = (gemini_tts_model_env or gemini_tts_model_topic) or None
+    gemini_model_env = (os.getenv("GEMINI_TTS_MODEL", "") or "").strip()
+    gemini_model_topic = (topic.get("gemini_tts_model", "") or "").strip()
+    gemini_model = (gemini_model_env or gemini_model_topic) or None
 
     voice_a = (os.getenv("VOICE_A", "") or "").strip() or None
     voice_b = (os.getenv("VOICE_B", "") or "").strip() or None
 
-    # Piper voices (only used when premium_tts=False)
     piper_voice_a = (os.getenv("PIPER_VOICE_A", "") or "").strip() or None
     piper_voice_b = (os.getenv("PIPER_VOICE_B", "") or "").strip() or None
-    piper_model_dir = (os.getenv("PIPER_MODEL_DIR", "assets/piper") or "assets/piper").strip()
+    piper_model_dir = (os.getenv("PIPER_MODEL_DIR", "assets/piper") or "").strip()
 
     fresh, backlog = load_sources_for_topic(topic_id)
 
@@ -372,10 +333,9 @@ def main() -> None:
         "topic_id": topic_id,
         "timestamp_utc": utc_now_iso(),
         "premium_tts": premium_tts,
-        "provider_requested": "gemini" if premium_tts else "piper",
-        "tts_engine": "gemini" if premium_tts else "piper",
-        "script_model": script_model,
-        "gemini_tts_model": gemini_tts_model,
+        "provider_requested": provider_requested,
+        "tts_engine": None,
+        "gemini_model": gemini_model,
         "voices": {
             "gemini": {"A": voice_a, "B": voice_b},
             "piper": {"A": piper_voice_a, "B": piper_voice_b},
@@ -389,7 +349,7 @@ def main() -> None:
         "errors": [],
     }
 
-    # Snapshot sources
+    # Snapshot sources for debug
     save_json(sources_path, {"fresh": fresh, "backlog": backlog})
 
     if len(fresh) < min_fresh:
@@ -405,18 +365,8 @@ def main() -> None:
     save_json(paths["picked"], picked)
     save_json(sources_path, {"picked": picked, "fresh": fresh, "backlog": backlog})
 
-    # -------------------------
-    # Generate script + chapters (Gemini – always)
-    # -------------------------
-    t0 = time.time()
-    try:
-        gen = _call_script_generator(topic_id, topic, picked, api_key=gemini_api_key, model=script_model)
-    except Exception as e:
-        summary["errors"].append({"stage": "script", "error": str(e), "traceback": traceback.format_exc()})
-        save_json(summary_path, summary)
-        raise
-
-    summary["script_seconds"] = round(time.time() - t0, 2)
+    # Generate script + chapters (Gemini is for script even if premium_tts=false)
+    gen = _call_script_generator(topic_id, topic, picked)
 
     script_text: str = ""
     chapters: List[Dict[str, Any]] = []
@@ -440,37 +390,35 @@ def main() -> None:
     save_json(chapters_path, chapters)
     write_ffmetadata(chapters, ffmeta_path)
 
-    # -------------------------
-    # TTS chunks → MP3 (Gemini only when premium_tts=True; else Piper)
-    # -------------------------
+    # Create TTS chunks
     tts_chunks = script_to_tts_chunks(script_text)
-    if not tts_chunks:
-        raise RuntimeError("No dialogue turns parsed from script. Ensure the script format includes dialogue turns.")
+    if not tts_chunks or len(tts_chunks) < 6:
+        raise RuntimeError("Dialogue parsing produced too few turns. Check script formatting.")
 
-    t1 = time.time()
+    # Run TTS
+    t0 = time.time()
     try:
         tts_chunks_to_mp3(
             tts_chunks,
             mp3_path,
             api_key=gemini_api_key,
             premium=premium_tts,
-            gemini_model=gemini_tts_model,
+            gemini_model=gemini_model,
             voice_a=voice_a,
             voice_b=voice_b,
             piper_voice_a=piper_voice_a,
             piper_voice_b=piper_voice_b,
             piper_model_dir=piper_model_dir,
         )
+        summary["tts_engine"] = "gemini" if premium_tts else "piper"
     except Exception as e:
         summary["errors"].append({"stage": "tts", "error": str(e), "traceback": traceback.format_exc()})
         save_json(summary_path, summary)
         raise
 
-    summary["tts_seconds"] = round(time.time() - t1, 2)
+    summary["tts_seconds"] = round(time.time() - t0, 2)
 
-    # -------------------------
-    # Video (best-effort)
-    # -------------------------
+    # Video render (best effort)
     disable_video = (os.getenv("DISABLE_VIDEO", "0").strip().lower() in ("1", "true", "yes", "y"))
     video_ok = False
 
@@ -478,18 +426,13 @@ def main() -> None:
         try:
             import video_render  # type: ignore
 
-            # Prefer a stable callable if present
-            render_fn = getattr(video_render, "render_background_video", None) or getattr(video_render, "render_waveform_video", None)
-            if not callable(render_fn):
-                raise RuntimeError("video_render has no usable render function")
-
             overlay = topic.get("video_overlay", {}) if isinstance(topic.get("video_overlay", {}), dict) else {}
             intro_text = str(topic.get("intro_text", "") or "").strip()
             outro_text = str(topic.get("outro_text", "") or "").strip()
 
-            # Attempt keyword call first (new API)
-            try:
-                render_fn(
+            # Prefer render_background_video, but keep compatibility
+            if hasattr(video_render, "render_background_video"):
+                video_render.render_background_video(
                     topic_id=topic_id,
                     topic=topic,
                     mp3_path=str(mp3_path),
@@ -501,13 +444,25 @@ def main() -> None:
                     outro_text=outro_text,
                     sources=picked,
                 )
-            except TypeError:
-                # Do NOT crash if signatures drift; mark as skipped
-                raise
+            elif hasattr(video_render, "render_waveform_video"):
+                # wrapper supports both styles
+                video_render.render_waveform_video(
+                    topic_id=topic_id,
+                    topic=topic,
+                    mp3_path=str(mp3_path),
+                    out_mp4=str(mp4_path),
+                    chapters=chapters,
+                    ffmeta_path=str(ffmeta_path),
+                    overlay=overlay,
+                    intro_text=intro_text,
+                    outro_text=outro_text,
+                    sources=picked,
+                )
+            else:
+                raise RuntimeError("video_render missing render_background_video/render_waveform_video")
 
-            if mp4_path.exists() and mp4_path.stat().st_size > 1000:
+            if mp4_path.exists() and mp4_path.stat().st_size > 50_000:
                 video_ok = True
-
         except Exception as e:
             summary["errors"].append({"stage": "video", "error": str(e), "traceback": traceback.format_exc()})
             video_ok = False
@@ -515,9 +470,7 @@ def main() -> None:
     summary["video_enabled"] = (not disable_video)
     summary["video_ok"] = video_ok
 
-    # -------------------------
-    # Upload to GitHub Release
-    # -------------------------
+    # Upload to Release
     release = ensure_release(repo, gh_token, release_tag)
     assets_uploaded: Dict[str, str] = {}
 
@@ -527,7 +480,6 @@ def main() -> None:
     if video_ok and mp4_path.exists() and mp4_path.stat().st_size > 1000:
         assets_uploaded["mp4"] = upload_asset(release, gh_token, mp4_path)
 
-    # Always upload text artifacts
     assets_uploaded["script"] = upload_asset(release, gh_token, script_path)
     assets_uploaded["chapters"] = upload_asset(release, gh_token, chapters_path)
     assets_uploaded["sources"] = upload_asset(release, gh_token, sources_path)
@@ -541,8 +493,8 @@ def main() -> None:
     )
 
     print(
-        f"[{topic_id}] OK. assets={list(assets_uploaded.keys())} "
-        f"provider_requested={summary['provider_requested']} tts_engine={summary['tts_engine']} video_ok={video_ok}",
+        f"[{topic_id}] OK. assets={list(assets_uploaded.keys())} provider_requested={provider_requested} "
+        f"tts_engine={summary['tts_engine']} video_ok={video_ok}",
         flush=True,
     )
 
