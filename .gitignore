@@ -19,4 +19,7 @@ venv/
 # Do not commit downloaded audio files into the repository.
 audio/
 
+# Ignore TTS cache files (generated during testing)
+outputs/_tts_cache/
+
 # Keep metadata and feed in the repo (do not ignore feed/rss.xml or data/episodes.json)
