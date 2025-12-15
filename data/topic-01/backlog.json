@@ -1659,5 +1659,16 @@
     "provider": "google_news_rss",
     "query": "administrative freeze immigration applications",
     "id": "59d7a43f8a26d1bcf01f5b3727092f1ba767d54ea01c8d6356739313ac2aa6d1"
+  },
+  {
+    "title": "Immigration - Fox News",
+    "url": "https://news.google.com/rss/articles/CBMiW0FVX3lxTE9JNjdIOUlIZzBUZEY2UU16eUphR205OElRUC1lQTJVdlhwSE0xcXJyMl9EUGlPaWcxVkEtRHhnek84WVlwM2ZqT0FJODQzSVRjd0tucExnM1EtcGs?oc=5",
+    "domain": "news.google.com",
+    "published": "2018-10-01T02:47:21Z",
+    "lang": "es",
+    "tier": 9,
+    "provider": "google_news_rss",
+    "query": "administrative freeze immigration applications",
+    "id": "ea810fb5d5fba36b1e162c9ab22b131b14ca2c557618400e571708c3273f5601"
   }
 ]
