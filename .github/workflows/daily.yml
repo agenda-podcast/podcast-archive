@@ -19,6 +19,7 @@ jobs:
   collect:
     name: Collect sources (all topics)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -45,6 +46,7 @@ jobs:
         with:
           name: collected-data
           path: data
+          if-no-files-found: error
 
   # ------------------------------------------------------------
   # 2) VOICES (PIPER MODELS) – NO PUSH
@@ -52,15 +54,25 @@ jobs:
   voices:
     name: Ensure TTS voices
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Install Piper
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Piper (and curl)
         run: |
           python -m pip install --upgrade pip
           pip install piper-tts
+          sudo apt-get update
+          sudo apt-get install -y curl
 
       - name: Download / update voices
         run: |
@@ -71,6 +83,7 @@ jobs:
         with:
           name: voices-assets
           path: assets/piper
+          if-no-files-found: error
 
   # ------------------------------------------------------------
   # 3) RUN TOPIC PIPELINE (NO PUSH)
@@ -79,6 +92,7 @@ jobs:
     name: Run topic pipeline
     needs: [collect, voices]
     runs-on: ubuntu-latest
+    timeout-minutes: 120
 
     strategy:
       fail-fast: false
@@ -91,6 +105,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download collected data
         uses: actions/download-artifact@v4
@@ -112,25 +128,36 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install deps (runtime)
         run: |
           python -m pip install --upgrade pip
           pip install requests feedparser python-dateutil
+          pip install piper-tts
+          pip install google-genai
 
-      - name: Gate by fresh.json
+      - name: Gate by fresh.json (robust)
         id: gate
         env:
           FRESH: data/${{ matrix.topic }}/fresh.json
         run: |
-          set -e
+          set -euo pipefail
 
           if [ ! -f "$FRESH" ]; then
+            echo "fresh.json missing: $FRESH"
             echo "should_run=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          COUNT=$(python -c "import json; d=json.load(open('$FRESH')); print(len(d) if isinstance(d,list) else 0)")
-
+          COUNT=$(python - <<'PY'
+import os, json
+p = os.environ["FRESH"]
+try:
+    d = json.load(open(p, "r", encoding="utf-8"))
+    print(len(d) if isinstance(d, list) else 0)
+except Exception:
+    print(0)
+PY
+)
           echo "fresh_count=$COUNT"
 
           if [ "$COUNT" -gt 0 ]; then
@@ -146,11 +173,10 @@ jobs:
           REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
+          PIPER_MODEL_DIR: assets/piper
           PODCAST_OWNER_NAME: "Agenda"
           PODCAST_OWNER_EMAIL: "deep.dive.podcast@unloca.com"
           RELEASE_TAG: ${{ matrix.topic }}
-
         run: |
           python scripts/run_topic.py
 
@@ -163,6 +189,7 @@ jobs:
             outputs
             feed
             data
+          if-no-files-found: warn
 
   # ------------------------------------------------------------
   # 4) FINALIZE (SINGLE WRITER, SINGLE PUSH)
@@ -171,6 +198,7 @@ jobs:
     name: Finalize & push
     needs: [collect, voices, run]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout (fresh)
@@ -179,35 +207,86 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
+      - name: Prepare artifacts dir
+        run: |
+          mkdir -p _artifacts/collected-data
+          mkdir -p _artifacts/voices-assets
+          mkdir -p _artifacts/outputs
+
       - name: Download collected data
         uses: actions/download-artifact@v4
         with:
           name: collected-data
-          path: data
+          path: _artifacts/collected-data
 
       - name: Download voices
         uses: actions/download-artifact@v4
         with:
           name: voices-assets
-          path: assets/piper
+          path: _artifacts/voices-assets
 
       - name: Download outputs (all topics)
         uses: actions/download-artifact@v4
         with:
           pattern: outputs-*
           merge-multiple: true
-          path: .
+          path: _artifacts/outputs
 
-      - name: Commit & push (single writer)
+      - name: Apply artifacts into working tree (controlled)
         run: |
+          set -euo pipefail
+
+          # Copy collected data
+          rsync -a --delete _artifacts/collected-data/ data/
+
+          # Copy voices
+          mkdir -p assets/piper
+          rsync -a --delete _artifacts/voices-assets/ assets/piper/
+
+          # Copy outputs/feed/data produced by run job(s)
+          # NOTE: outputs artifacts may include data/feed/outputs
+          # We apply in a safe order:
+          if [ -d "_artifacts/outputs/data" ]; then
+            rsync -a _artifacts/outputs/data/ data/
+          fi
+          if [ -d "_artifacts/outputs/feed" ]; then
+            mkdir -p feed
+            rsync -a _artifacts/outputs/feed/ feed/
+          fi
+          if [ -d "_artifacts/outputs/outputs" ]; then
+            mkdir -p outputs
+            rsync -a _artifacts/outputs/outputs/ outputs/
+          fi
+
+      - name: Commit & push (single writer, retry-safe)
+        run: |
+          set -euo pipefail
+
           git config user.name "agenda-bot"
           git config user.email "bot@github.com"
+
+          # Rebase first to incorporate any external changes
+          git fetch origin main
+          git pull --rebase origin main
 
           if [ -n "$(git status --porcelain)" ]; then
             git add data assets feed outputs
             git commit -m "chore: daily overviews"
-            git pull --rebase origin main
-            git push origin main
+
+            # Retry push in case main moved again between pull and push
+            for i in 1 2 3 4 5; do
+              if git push origin HEAD:main; then
+                echo "Push succeeded."
+                exit 0
+              fi
+              echo "Push failed, retry $i/5..."
+              git fetch origin main
+              git pull --rebase origin main
+              sleep $((i*5))
+            done
+
+            # Final attempt (fail hard)
+            git push origin HEAD:main
           else
             echo "Nothing to commit"
           fi
