@@ -35,7 +35,8 @@ jobs:
 
       - name: "Collect sources"
         run: |
-          python scripts/collect_sources.py
+          # run as module so package imports work reliably
+          python -m scripts.collect_sources
 
       - name: "Upload collected data"
         uses: actions/upload-artifact@v4
@@ -59,7 +60,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: "Install Piper"
+      - name: "Install Piper (python package for voice utilities)"
         run: |
           python -m pip install --upgrade pip
           pip install piper-tts
@@ -69,7 +70,7 @@ jobs:
           PIPER_MODEL_DIR: "assets/piper"
           PIPER_VOICES: "en_US-ryan-medium,en_US-amy-medium"
         run: |
-          python scripts/ensure_voices.py
+          python -m scripts.ensure_voices
 
       - name: "Upload voices"
         uses: actions/upload-artifact@v4
@@ -120,181 +121,99 @@ jobs:
       - name: "Install deps (runtime)"
         run: |
           python -m pip install --upgrade pip
-          pip install requests feedparser python-dateutil
+          # prefer repository requirements if present, else install common runtime deps
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install requests feedparser python-dateutil piper-tts
+          fi
 
       - name: "Install piper binary"
-        run: |
-          python .github/scripts/install_piper.py
-
-      - name: "Set PIPER_BINARY env"
-        run: echo "PIPER_BINARY=./tools/piper" >> $GITHUB_ENV
-
-      - name: "Gate by fresh.json"
-        id: gate
         env:
-          FRESH: "data/${{ matrix.topic }}/fresh.json"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # attempt to install the standalone piper binary used by scripts/tts_generate.py
+          if [ -f .github/scripts/install_piper.py ]; then
+            python .github/scripts/install_piper.py
+          else
+            echo "Warning: .github/scripts/install_piper.py not found; ensure piper binary is available in tools/"
+          fi
+          echo "PIPER_BINARY=./tools/piper" >> $GITHUB_ENV
+
+      - name: "Debug - environment & repo"
+        env:
+          PYTHONUNBUFFERED: 1
+        run: |
+          echo "=== PWD ==="
+          pwd
+          echo "=== python version ==="
+          python --version
+          echo "=== ls -la repo root ==="
+          ls -la
+          echo "=== ls -R scripts ==="
+          ls -la scripts || true
+          echo "=== Show assets/piper ==="
+          ls -la assets/piper || true
+          echo "=== Show tools ==="
+          ls -la tools || true
+          echo "=== env vars (filtered) ==="
+          env | grep -E 'PIPER|PYTHON|GITHUB' || true
+
+      - name: "Run topic pipeline (module mode)"
+        env:
+          PYTHONUNBUFFERED: 1
+          PIPER_BINARY: ${{ env.PIPER_BINARY }}
+          TOPIC: ${{ matrix.topic }}
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          # run as module so package imports (from scripts.*) resolve correctly
+          echo "Running topic pipeline for topic='${TOPIC}'"
+          python -m scripts.run_topic "${TOPIC}" 2>&1 | tee "logs/run_topic_${TOPIC}.log"
+          rc=${PIPESTATUS[0]}
+          echo "run_topic exited with code ${rc}"
+          if [ "${rc}" -ne 0 ]; then
+            echo "ERROR: scripts.run_topic failed with exit code ${rc}"
+            exit ${rc}
+          fi
+
+      - name: "Verify generated audio / video files"
         run: |
           set -euo pipefail
-
-          if [ ! -f "$FRESH" ]; then
-            echo "Fresh file missing: $FRESH"
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          python - <<'PY'
-          import json, os
-          p = os.environ["FRESH"]
-          try:
-              data = json.load(open(p, "r", encoding="utf-8"))
-              ok = isinstance(data, list) and len(data) > 0
-              count = (len(data) if isinstance(data, list) else 0)
-          except Exception:
-              ok = False
-              count = 0
-          print("fresh_ok=", ok)
-          print("fresh_count=", count)
-          PY
-
-          COUNT=$(python - <<'PY'
-          import json, os
-          p = os.environ["FRESH"]
-          try:
-              d = json.load(open(p, "r", encoding="utf-8"))
-              print(len(d) if isinstance(d, list) else 0)
-          except Exception:
-              print(0)
-          PY
-          )
-
-          if [ "${COUNT:-0}" -gt 0 ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          echo "Searching for generated audio/video files..."
+          find . -type f \( -iname "*.mp3" -o -iname "*.wav" -o -iname "*.m4a" -o -iname "*.aac" -o -iname "*.flac" -o -iname "*.ogg" -o -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.mov" \) -print > logs/generated_files.txt || true
+          wc -l logs/generated_files.txt || true
+          if [ ! -s logs/generated_files.txt ]; then
+            echo "ERROR: No audio or video files were generated."
+            echo "=== Logs (head) ==="
+            head -n 200 logs/run_topic_${{ matrix.topic }}.log || true
+            # fail the job so missing outputs are visible
+            exit 2
           else
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Generated files:"
+            sed -n '1,200p' logs/generated_files.txt
           fi
 
-      - name: "Run topic"
-        if: steps.gate.outputs.should_run == 'true'
-        env:
-          TOPIC_ID: "${{ matrix.topic }}"
-          REPO: "${{ github.repository }}"
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-          GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}"
-
-          # Piper location
-          PIPER_MODEL_DIR: "assets/piper"
-          PIPER_VOICE_A: "en_US-ryan-medium"
-          PIPER_VOICE_B: "en_US-amy-medium"
-
-          # Script model (Gemini is for script even if premium_tts=false)
-          GEMINI_SCRIPT_MODEL: "gemini-2.0-flash"
-
-          # Podcast metadata
-          PODCAST_OWNER_NAME: "Agenda"
-          PODCAST_OWNER_EMAIL: "deep.dive.podcast@unloca.com"
-
-          RELEASE_TAG: "${{ matrix.topic }}"
-        run: |
-          python scripts/run_topic.py
-
-      - name: "Upload outputs"
-        if: steps.gate.outputs.should_run == 'true'
+      - name: "Upload artifacts: generated outputs + logs"
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: "outputs-${{ matrix.topic }}"
+          name: "daily-overview-output-${{ matrix.topic }}"
           path: |
-            outputs
-            feed
-            data
-          if-no-files-found: warn
+            logs
+            assets
+            tools
+            ./**/logs/**
+            **/*.mp3
+            **/*.wav
+            **/*.mp4
+            **/*.m4a
+            **/*.mov
+            **/*.mkv
+          retention-days: 7
 
-  finalize:
-    name: "Finalize and push"
-    needs: [collect, voices, run]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: "Checkout (fresh)"
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
-
-      - name: "Prepare artifacts dir"
+      - name: "Fail if verification flagged missing output"
+        if: failure()
         run: |
-          mkdir -p _artifacts/collected-data
-          mkdir -p _artifacts/voices-assets
-          mkdir -p _artifacts/outputs
-
-      - name: "Download collected data"
-        uses: actions/download-artifact@v4
-        with:
-          name: "collected-data"
-          path: "_artifacts/collected-data"
-
-      - name: "Download voices"
-        uses: actions/download-artifact@v4
-        with:
-          name: "voices-assets"
-          path: "_artifacts/voices-assets"
-
-      - name: "Download outputs (all topics)"
-        uses: actions/download-artifact@v4
-        with:
-          pattern: "outputs-*"
-          merge-multiple: true
-          path: "_artifacts/outputs"
-
-      - name: "Sync to origin/main first"
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          git reset --hard origin/main
-
-      - name: "Apply artifacts into working tree"
-        run: |
-          set -euo pipefail
-
-          rsync -a --delete _artifacts/collected-data/ data/
-
-          mkdir -p assets/piper
-          rsync -a --delete _artifacts/voices-assets/ assets/piper/
-
-          if [ -d "_artifacts/outputs/data" ]; then
-            rsync -a _artifacts/outputs/data/ data/
-          fi
-          if [ -d "_artifacts/outputs/feed" ]; then
-            mkdir -p feed
-            rsync -a _artifacts/outputs/feed/ feed/
-          fi
-          if [ -d "_artifacts/outputs/outputs" ]; then
-            mkdir -p outputs
-            rsync -a _artifacts/outputs/outputs/ outputs/
-          fi
-
-      - name: "Commit and push (single writer, retry-safe)"
-        run: |
-          set -euo pipefail
-
-          git config user.name "agenda-bot"
-          git config user.email "bot@github.com"
-
-          if [ -n "$(git status --porcelain)" ]; then
-            git add data assets feed outputs
-            git commit -m "chore: daily overviews"
-
-            for i in 1 2 3 4 5; do
-              if git push origin HEAD:main; then
-                echo "Push succeeded."
-                exit 0
-              fi
-              echo "Push failed, retry $i/5..."
-              git fetch origin main
-              git rebase origin/main
-              sleep $((i*5))
-            done
-
-            git push origin HEAD:main
-          else
-            echo "Nothing to commit"
-          fi
+          echo "Pipeline failed or verification step detected missing outputs. See uploaded artifacts and logs."
+          exit 1
