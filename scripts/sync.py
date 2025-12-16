@@ -76,30 +76,47 @@ def source_key(entry) -> str:
     """
     Stable key to identify an episode from the SOURCE feed across runs.
     Prevents duplicates in our state.
+    
+    Uses sanitized identifiers that don't expose source URLs.
 
     Priority:
-    1) Enclosure URL (best) - stable for the same episode
-    2) id/guid/link
+    1) Extract numeric episode ID from enclosure URL
+    2) Extract numeric ID from id/guid/link fields
     3) hash(title|published)
     """
-    # 1) enclosure
+    # 1) Try to extract numeric ID from enclosure URL
     try:
         if entry.get("enclosures"):
             href = entry.enclosures[0].get("href") or ""
             if isinstance(href, str) and href.startswith("http"):
-                return "enclosure:" + href
+                # Extract episode-specific numeric ID from URL (usually 7-8 digits)
+                # Look for patterns like /episodes/18322949- or /18322949/
+                m = re.search(r"/episodes?/(\d{7,})", href)
+                if not m:
+                    # Try to find last long numeric segment before filename
+                    m = re.search(r"/(\d{7,})[-/]", href)
+                
+                if m:
+                    return f"episode:{m.group(1)}"
+                # Fallback: hash the URL to create stable key without exposing it
+                return "episode:" + hashlib.sha256(href.encode("utf-8")).hexdigest()[:16]
     except Exception:
         pass
 
-    # 2) id/guid/link
+    # 2) Try to extract numeric ID from id/guid/link
     for k in ("id", "guid", "link"):
         v = entry.get(k)
         if v:
-            return f"{k}:{v}"
+            # Extract numeric ID if present
+            m = re.search(r"(\d{5,})", str(v))
+            if m:
+                return f"episode:{m.group(1)}"
+            # Hash the value to avoid exposing source
+            return f"episode:" + hashlib.sha256(str(v).encode("utf-8")).hexdigest()[:16]
 
-    # 3) fallback hash
+    # 3) Fallback hash based on content
     raw = (entry.get("title", "") + "|" + entry.get("published", "")).encode("utf-8")
-    return "hash:" + hashlib.sha256(raw).hexdigest()
+    return "episode:" + hashlib.sha256(raw).hexdigest()[:16]
 
 
 def generate_guid(entry) -> str:
@@ -161,6 +178,22 @@ def delete_asset(token: str, asset_api_url: str) -> None:
     r = requests.delete(asset_api_url, headers=gh_headers(token), timeout=60)
     if r.status_code not in (204, 404):
         r.raise_for_status()
+
+def asset_exists(token: str, release: dict, filename: str, expected_size: int = None) -> tuple[bool, str | None]:
+    """
+    Check if an asset with the given filename already exists in the release.
+    Returns (exists, download_url) tuple.
+    If expected_size is provided, also validates the file size matches.
+    """
+    for a in list_assets(token, release):
+        if a.get("name") == filename:
+            # If size is provided, validate it matches
+            if expected_size is not None:
+                asset_size = a.get("size", 0)
+                if asset_size != expected_size:
+                    return False, None
+            return True, a.get("browser_download_url")
+    return False, None
 
 def upload_asset(token: str, release: dict, file_path: str) -> None:
     filename = os.path.basename(file_path)
@@ -296,6 +329,41 @@ def sort_datetime(ep: dict) -> datetime:
 # -----------------------------
 # State I/O (backward compatible)
 # -----------------------------
+def migrate_source_keys(episodes_map: dict) -> dict:
+    """
+    Migrate old source_keys that contain full URLs to sanitized keys.
+    This ensures backwards compatibility while removing provider URL exposure.
+    """
+    migrated = {}
+    for old_key, ep in episodes_map.items():
+        if not isinstance(ep, dict):
+            continue
+            
+        # If the key starts with "enclosure:" and contains a URL, sanitize it
+        if old_key.startswith("enclosure:") and "://" in old_key:
+            url = old_key.replace("enclosure:", "", 1)
+            # Extract episode-specific numeric ID from URL (usually 8 digits)
+            # Look for patterns like /episodes/18322949- or /18322949/
+            m = re.search(r"/episodes?/(\d{7,})", url)
+            if not m:
+                # Try to find last long numeric segment before filename
+                m = re.search(r"/(\d{7,})[-/]", url)
+            
+            if m:
+                new_key = f"episode:{m.group(1)}"
+            else:
+                # Hash the URL to create stable key
+                new_key = "episode:" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+            
+            # Update the source_key field in the episode data
+            ep["source_key"] = new_key
+            migrated[new_key] = ep
+        else:
+            # Keep as-is if already sanitized
+            migrated[old_key] = ep
+    
+    return migrated
+
 def load_state() -> dict:
     """
     Current state schema:
@@ -323,6 +391,8 @@ def load_state() -> dict:
     episodes = data.get("episodes")
 
     if isinstance(episodes, dict):
+        # Migrate old source_keys to sanitized format
+        episodes = migrate_source_keys(episodes)
         return {"episodes": episodes}
 
     # If older schema used a list, salvage as best possible
@@ -333,6 +403,7 @@ def load_state() -> dict:
                 k = ep.get("source_key") or ep.get("guid")
                 if k:
                     migrated[str(k)] = ep
+        migrated = migrate_source_keys(migrated)
         return {"episodes": migrated}
 
     return {"episodes": {}}
@@ -404,22 +475,54 @@ def main():
         pub_dt = parse_pubdate(entry)
         pub_rfc822 = format_datetime(pub_dt)
 
-        # If we already have GitHub audio URL stored for this episode, skip download/upload
+        # Determine expected filename
+        filename = safe_filename(f"{pub_dt.strftime('%Y%m%d')}-{title}")
+        filename = re.sub(r"\.mp3$", "", filename, flags=re.IGNORECASE) + ".mp3"
+        target_url = f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/{filename}"
+
+        # If we already have this episode in state with matching GitHub URL, reuse it
         if existing and isinstance(existing.get("audio_url"), str) and f"/releases/download/{RELEASE_TAG}/" in existing["audio_url"]:
+            # Check if the asset still exists in releases with matching size
+            existing_filename = existing["audio_url"].split("/")[-1]
+            existing_size = int(existing.get("length_bytes", 0))
+            exists, asset_url = asset_exists(GITHUB_TOKEN, release, existing_filename, existing_size)
+            
+            if exists:
+                episodes_map[skey] = {
+                    "source_key": skey,
+                    "guid": guid,
+                    "title": title,
+                    "pubDate_rfc822": pub_rfc822,
+                    "audio_url": existing["audio_url"],
+                    "length_bytes": existing_size,
+                    "description_html": entry.get("summary", ""),
+                }
+                continue
+
+        # Check if file already exists in GitHub releases (even if not in our state)
+        exists, asset_url = asset_exists(GITHUB_TOKEN, release, filename)
+        if exists and asset_url:
+            # Get file size from the release asset
+            for a in list_assets(GITHUB_TOKEN, release):
+                if a.get("name") == filename:
+                    length = a.get("size", 0)
+                    break
+            else:
+                length = 0
+            
             episodes_map[skey] = {
                 "source_key": skey,
                 "guid": guid,
                 "title": title,
                 "pubDate_rfc822": pub_rfc822,
-                "audio_url": existing["audio_url"],
-                "length_bytes": int(existing.get("length_bytes", 0)),
+                "audio_url": target_url,
+                "length_bytes": int(length),
                 "description_html": entry.get("summary", ""),
             }
+            print(f"Skipped download for '{title}': file already exists in releases")
             continue
 
         # Download and upload
-        filename = safe_filename(f"{pub_dt.strftime('%Y%m%d')}-{title}")
-        filename = re.sub(r"\.mp3$", "", filename, flags=re.IGNORECASE) + ".mp3"
         tmp_path = os.path.join(TMP_DIR, filename)
 
         try:
@@ -432,8 +535,6 @@ def main():
             continue
 
         upload_asset(GITHUB_TOKEN, release, tmp_path)
-
-        target_url = f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/{filename}"
 
         episodes_map[skey] = {
             "source_key": skey,
