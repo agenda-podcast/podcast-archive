@@ -6,31 +6,63 @@ All rights reserved.
 This repository and its code are owned by Agenda Podcast. Copying,
 redistribution, or usage without explicit written permission is prohibited.
 
-Overview
-- scripts/sync.py: sync script to import and sanitize a remote RSS feed, download enclosures, and generate data/episodes.json and feed/rss.xml.
-- .github/workflows/sync.yml: GitHub Actions workflow that runs hourly and on demand; uploads audio files to GitHub Releases and validates the feed.
-- audio/: downloaded MP3 assets (ignored from git, uploaded to Releases).
-- feed/rss.xml: sanitized feed (can be hosted on GitHub Pages).
-- data/episodes.json: structured channel + episodes metadata.
+## Overview
 
-Hosting the feed (GitHub Pages)
-1. Enable GitHub Pages for this repository:
-   - On GitHub go to Settings → Pages (or Settings → Pages & deploy).
-   - Set source to the default branch (main) and the root or /docs folder as desired.
-   - Save and note the published site URL (e.g. https://<owner>.github.io/<repo>/).
+This repository provides a simple RSS feed archiving and sanitization system:
 
-2. Set PUBLIC_URL repository secret to the feed's public URL:
-   - e.g. https://<owner>.github.io/<repo>/feed/rss.xml
-   - On GitHub: Settings → Secrets and variables → Actions → New repository secret
-     - Name: PUBLIC_URL
-     - Value: https://<owner>.github.io/<repo>/feed/rss.xml
+- **scripts/sync.py**: Imports and sanitizes a remote RSS feed (e.g., from Buzzsprout), downloads audio enclosures, and generates clean outputs
+- **.github/workflows/sync.yml**: GitHub Actions workflow that runs hourly and on demand
+- **feed/rss.xml**: Sanitized RSS feed (can be hosted on GitHub Pages)
+- **data/episodes.json**: Structured episode metadata
 
-3. Optionally set POSTER_URL secret to your hosted poster image URL.
+## How It Works
 
-Run locally
-- python scripts/sync.py --download --public-url "https://example.org/podcast" --poster "https://example.org/podcast/poster.jpg"
+1. Fetches episodes from the source RSS feed
+2. Downloads audio files to temporary storage
+3. Uploads audio files to GitHub Releases for permanent hosting
+4. Generates a sanitized RSS feed with rewritten audio URLs
+5. Commits the updated feed and metadata
 
-Notes
-- The workflow uploads downloaded audio to timestamped GitHub Releases (auto-archive-YYYYMMDDHHMMSS).
-- The workflow includes a validate job that checks feed/rss.xml is well-formed, does not contain "buzzsprout", and that the channel title matches data/episodes.json (or EXPECTED_CHANNEL_TITLE if provided as a secret).
+## Setup
+
+### Required Secrets
+
+Configure these in GitHub: Settings → Secrets and variables → Actions
+
+- **RSS**: Source RSS feed URL (required)
+- **PODCAST_TITLE**: Custom podcast title (optional, defaults to "Agenda")
+- **PODCAST_LINK**: Podcast website URL (optional)
+- **PODCAST_DESCRIPTION**: Feed description (optional)
+- **PODCAST_IMAGE**: Podcast artwork URL (optional)
+- **ITUNES_CATEGORY**: iTunes category (optional, defaults to "News")
+- **ITUNES_SUBCATEGORY**: iTunes subcategory (optional)
+
+### GitHub Pages Hosting
+
+1. Enable GitHub Pages:
+   - Go to Settings → Pages
+   - Set source to main branch, root directory
+   - Note your published URL: `https://<owner>.github.io/<repo>/`
+
+2. Your feed will be available at: `https://<owner>.github.io/<repo>/feed/rss.xml`
+
+## Local Development
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run sync (requires environment variables)
+export RSS="https://feeds.buzzsprout.com/..."
+export REPO="owner/repo"
+export GITHUB_TOKEN="your_token"
+python scripts/sync.py
+```
+
+## Notes
+
+- Audio files are uploaded to GitHub Releases (tag: `audio-archive`)
+- The workflow runs hourly via cron schedule
+- All references to the source feed provider (e.g., "buzzsprout") are removed from output
+- Episode GUIDs remain stable across runs to prevent duplicates
 ```
