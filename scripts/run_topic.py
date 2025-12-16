@@ -22,7 +22,7 @@ if __name__ == "__main__" and (__package__ is None or __package__ == ""):
         sys.path.insert(0, repo_root)
 
 # rest of your existing imports
-from scripts.collect_sources import merge_dedupe, pub_dt, read_json_list, stable_id
+from scripts.collect_sources import discover_topic_ids, merge_dedupe, pub_dt, read_json_list, stable_id
 from scripts.feed_build import load_state, save_state, update_topic_feed
 from scripts.github_release import ensure_release_and_upload
 from scripts.script_generate import generate_30min_script_and_chapters
@@ -320,8 +320,6 @@ def run_single_topic(topic_id: str) -> None:
 
 def main() -> None:
     """Main entry point that discovers topics and runs the pipeline for each."""
-    from scripts.collect_sources import discover_topic_ids
-    
     topic_ids = discover_topic_ids()
     
     if not topic_ids:
@@ -339,7 +337,7 @@ def main() -> None:
             run_single_topic(topic_id)
         except Exception as e:
             print(f"[{topic_id}] ERROR: {e}", file=sys.stderr)
-            traceback.print_exc()
+            traceback.print_exc(file=sys.stderr)
             failed += 1
     
     if failed:
