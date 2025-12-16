@@ -1,5 +1,8 @@
+# RSS feed parsing and XML generation
 feedparser==6.0.11
-PyYAML==6.0.2
+
+# HTTP requests for downloading audio files and GitHub API
 requests==2.32.3
+
+# Date/time parsing for episode publication dates
 python-dateutil==2.9.0.post0
-google-genai==1.28.0
