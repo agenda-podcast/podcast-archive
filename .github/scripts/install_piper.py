@@ -121,17 +121,23 @@ def main() -> None:
     tools_dir = Path.cwd() / "tools"
     tools_dir.mkdir(exist_ok=True)
     
-    # Copy all files from the piper directory to maintain shared library dependencies
-    print(f"Copying all files from {piper_dir} to {tools_dir}")
+    # Copy all files and subdirectories from the piper directory to maintain shared library dependencies
+    print(f"Copying all contents from {piper_dir} to {tools_dir}")
     for item in os.listdir(piper_dir):
         src = os.path.join(piper_dir, item)
         dst = tools_dir / item
         if os.path.isfile(src):
             shutil.copy2(src, dst)
-            print(f"  Copied: {item}")
+            print(f"  Copied file: {item}")
             # Make sure executables remain executable
             if os.access(src, os.X_OK):
                 os.chmod(dst, 0o755)
+        elif os.path.isdir(src):
+            # Copy subdirectories recursively
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.copytree(src, dst)
+            print(f"  Copied directory: {item}")
     
     final_path = tools_dir / "piper"
     if not final_path.exists():
