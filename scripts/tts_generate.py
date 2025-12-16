@@ -172,7 +172,7 @@ def _ensure_silence_wav(path: Path, seconds: float = DEFAULT_GAP_SECONDS, sample
         return path
 
     n_frames = int(sample_rate * max(seconds, 0.0))
-    with wave.open(path, "w") as wf:
+    with wave.open(str(path), "w") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)  # 16-bit
         wf.setframerate(sample_rate)
