@@ -86,8 +86,9 @@ def source_key(entry) -> str:
     """
     # 1) Try to extract numeric ID from enclosure URL
     try:
-        if entry.get("enclosures"):
-            href = entry["enclosures"][0].get("href") or ""
+        enclosures = entry.get("enclosures")
+        if enclosures and len(enclosures) > 0:
+            href = enclosures[0].get("href") or ""
             if isinstance(href, str) and href.startswith("http"):
                 # Extract episode-specific numeric ID from URL (usually 7-8 digits)
                 # Look for patterns like /episodes/18322949- or /18322949/
@@ -107,8 +108,8 @@ def source_key(entry) -> str:
     for k in ("id", "guid", "link"):
         v = entry.get(k)
         if v:
-            # Extract numeric ID if present
-            m = re.search(r"(\d{5,})", str(v))
+            # Extract numeric ID if present (7+ digits for episode IDs)
+            m = re.search(r"(\d{7,})", str(v))
             if m:
                 return f"episode:{m.group(1)}"
             # Hash the value to avoid exposing source
@@ -129,8 +130,8 @@ def generate_guid(entry) -> str:
     """
     raw = str(entry.get("id") or entry.get("guid") or entry.get("link") or "")
 
-    # Extract a long numeric token if present (RSS episode id)
-    m = re.search(r"(\d{5,})", raw)
+    # Extract a long numeric token if present (RSS episode id, 7+ digits)
+    m = re.search(r"(\d{7,})", raw)
     if m:
         return f"agenda-{m.group(1)}"
 
@@ -179,21 +180,21 @@ def delete_asset(token: str, asset_api_url: str) -> None:
     if r.status_code not in (204, 404):
         r.raise_for_status()
 
-def asset_exists(token: str, release: dict, filename: str, expected_size: int = None) -> tuple[bool, str | None]:
+def asset_exists(token: str, release: dict, filename: str, expected_size: int = None) -> tuple[bool, str | None, int]:
     """
     Check if an asset with the given filename already exists in the release.
-    Returns (exists, download_url) tuple.
+    Returns (exists, download_url, size) tuple.
     If expected_size is provided, also validates the file size matches.
     """
     for a in list_assets(token, release):
         if a.get("name") == filename:
+            asset_size = a.get("size", 0)
             # If size is provided, validate it matches
             if expected_size is not None:
-                asset_size = a.get("size", 0)
                 if asset_size != expected_size:
-                    return False, None
-            return True, a.get("browser_download_url")
-    return False, None
+                    return False, None, 0
+            return True, a.get("browser_download_url"), asset_size
+    return False, None, 0
 
 def upload_asset(token: str, release: dict, file_path: str) -> None:
     filename = os.path.basename(file_path)
@@ -485,7 +486,7 @@ def main():
             # Check if the asset still exists in releases with matching size
             existing_filename = existing["audio_url"].split("/")[-1]
             existing_size = int(existing.get("length_bytes", 0))
-            exists, asset_url = asset_exists(GITHUB_TOKEN, release, existing_filename, existing_size)
+            exists, asset_url, _ = asset_exists(GITHUB_TOKEN, release, existing_filename, existing_size)
             
             if exists:
                 episodes_map[skey] = {
@@ -500,23 +501,15 @@ def main():
                 continue
 
         # Check if file already exists in GitHub releases (even if not in our state)
-        exists, asset_url = asset_exists(GITHUB_TOKEN, release, filename)
+        exists, asset_url, asset_size = asset_exists(GITHUB_TOKEN, release, filename)
         if exists and asset_url:
-            # Get file size from the release asset
-            for a in list_assets(GITHUB_TOKEN, release):
-                if a.get("name") == filename:
-                    length = a.get("size", 0)
-                    break
-            else:
-                length = 0
-            
             episodes_map[skey] = {
                 "source_key": skey,
                 "guid": guid,
                 "title": title,
                 "pubDate_rfc822": pub_rfc822,
                 "audio_url": target_url,
-                "length_bytes": int(length),
+                "length_bytes": int(asset_size),
                 "description_html": entry.get("summary", ""),
             }
             print(f"Skipped download for '{title}': file already exists in releases")
