@@ -105,10 +105,10 @@ def main() -> None:
     # Try to extract if it's an archive
     extracted = try_extract_archive(archive_path, tmpdir)
     
-    # Locate piper executable
-    piper_path = find_piper_executable(tmpdir, archive_path, extracted)
+    # Locate piper executable and its directory
+    piper_path, piper_dir = find_piper_executable(tmpdir, archive_path, extracted)
     
-    if not piper_path:
+    if not piper_path or not piper_dir:
         print("ERROR: Failed to locate 'piper' executable in downloaded asset.", file=sys.stderr)
         print(f"Contents of {tmpdir}:")
         for root, dirs, files in os.walk(tmpdir):
@@ -116,13 +116,33 @@ def main() -> None:
                 print(f"  {os.path.join(root, f)}")
         sys.exit(4)
 
-    # Install to tools/piper
+    # Install to tools/ directory
+    # Copy ALL files from piper directory (including shared libraries) to tools/
     tools_dir = Path.cwd() / "tools"
     tools_dir.mkdir(exist_ok=True)
     
+    # Copy all files and subdirectories from the piper directory to maintain shared library dependencies
+    print(f"Copying all contents from {piper_dir} to {tools_dir}")
+    for item in os.listdir(piper_dir):
+        src = os.path.join(piper_dir, item)
+        dst = tools_dir / item
+        if os.path.isfile(src):
+            shutil.copy2(src, dst)
+            print(f"  Copied file: {item}")
+            # Make sure executables remain executable
+            if os.access(src, os.X_OK):
+                os.chmod(dst, 0o755)
+        elif os.path.isdir(src):
+            # Copy subdirectories recursively
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.copytree(src, dst)
+            print(f"  Copied directory: {item}")
+    
     final_path = tools_dir / "piper"
-    shutil.copy(piper_path, final_path)
-    os.chmod(final_path, 0o755)
+    if not final_path.exists():
+        print(f"ERROR: piper binary not found at {final_path} after installation", file=sys.stderr)
+        sys.exit(5)
     
     print(f"SUCCESS: Installed piper to {final_path}")
     print(f"Piper location: {final_path.absolute()}")
@@ -163,10 +183,13 @@ def try_extract_archive(archive_path: str, dest_dir: str) -> bool:
     return False
 
 
-def find_piper_executable(tmpdir: str, archive_path: str, was_extracted: bool) -> str | None:
+def find_piper_executable(tmpdir: str, archive_path: str, was_extracted: bool) -> tuple[str, str] | tuple[None, None]:
     """
     Search for the piper executable in the extracted files or treat the
     downloaded file as the binary itself.
+    
+    Returns:
+        tuple of (piper_executable_path, directory_containing_piper) or (None, None) if not found
     """
     if was_extracted:
         # Search for a file named 'piper'
@@ -174,7 +197,7 @@ def find_piper_executable(tmpdir: str, archive_path: str, was_extracted: bool) -
             if "piper" in files:
                 candidate = os.path.join(root, "piper")
                 print(f"Found piper executable: {candidate}")
-                return candidate
+                return candidate, root
         
         # If no file named 'piper', look for any executable file
         for root, dirs, files in os.walk(tmpdir):
@@ -182,16 +205,16 @@ def find_piper_executable(tmpdir: str, archive_path: str, was_extracted: bool) -
                 filepath = os.path.join(root, filename)
                 if os.path.isfile(filepath) and os.access(filepath, os.X_OK):
                     print(f"Found executable file (fallback): {filepath}")
-                    return filepath
+                    return filepath, root
     else:
         # Treat the downloaded file as the binary itself
         print("Archive not extracted, treating downloaded file as piper binary")
         candidate = os.path.join(tmpdir, "piper.bin")
         shutil.move(archive_path, candidate)
         os.chmod(candidate, 0o755)
-        return candidate
+        return candidate, tmpdir
 
-    return None
+    return None, None
 
 
 if __name__ == "__main__":
