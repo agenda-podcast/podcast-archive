@@ -108,7 +108,7 @@ def main() -> None:
     # Locate piper executable and its directory
     piper_path, piper_dir = find_piper_executable(tmpdir, archive_path, extracted)
     
-    if not piper_path:
+    if not piper_path or not piper_dir:
         print("ERROR: Failed to locate 'piper' executable in downloaded asset.", file=sys.stderr)
         print(f"Contents of {tmpdir}:")
         for root, dirs, files in os.walk(tmpdir):

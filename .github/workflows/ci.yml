@@ -54,7 +54,8 @@ jobs:
 
       - name: Run smoke test (verify piper detection)
         env:
-          PIPER_BINARY: ./tools/piper
+          LD_LIBRARY_PATH: ${{ github.workspace }}/tools
+          PIPER_BINARY: ${{ github.workspace }}/tools/piper
         run: |
           python - <<'PY'
           import sys
