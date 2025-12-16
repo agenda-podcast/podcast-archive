@@ -152,9 +152,7 @@ def _require_gemini_key(topic_id: str, api_key: str) -> str:
     return api_key
 
 
-def _validate_outputs(topic_id: str, mp3_path: Path, mp4_path: Path, *, video_enabled: bool) -> None:
-    audio_ok = mp3_path.exists() and mp3_path.stat().st_size > 0
-    video_ok = (not video_enabled) or (mp4_path.exists() and mp4_path.stat().st_size > 0)
+def _validate_outputs(topic_id: str, *, audio_ok: bool, video_ok: bool, video_enabled: bool) -> None:
     problems = []
     if not audio_ok:
         problems.append("audio file is missing or empty")
@@ -332,7 +330,7 @@ def run_single_topic(topic_id: str) -> None:
 
         stage = "validation"
         _log(topic_id, "Validating generated outputs")
-        _validate_outputs(topic_id, mp3_path, mp4_path, video_enabled=video_enabled)
+        _validate_outputs(topic_id, audio_ok=audio_ok, video_ok=video_file_ok, video_enabled=video_enabled)
 
     except Exception as e:
         errors.append({"stage": stage, "error": str(e), "traceback": traceback.format_exc()})
