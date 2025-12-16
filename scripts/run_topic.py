@@ -166,6 +166,8 @@ def main() -> None:
     skipped = False
     skip_reason = ""
     video_ok = False
+    provider_requested = None  # Initialize variable with a default value
+    # Rest of the function code
     provider_used = None  # Initialize here
 
     if not fresh:
