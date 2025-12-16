@@ -136,6 +136,39 @@ def _safe_json_dump(path: Path, obj: Any) -> None:
 
 
 def main() -> None:
+    def run_single_topic(topic_id: str) -> None:
+    """Run the pipeline for a single topic."""
+    # Move all the existing main() logic here, using topic_id parameter
+    # instead of reading from os.getenv("TOPIC_ID")
+    ... 
+
+    def main() -> None:
+    # Import the discover function from collect_sources
+    from scripts.collect_sources import discover_topic_ids
+    
+    topic_ids = discover_topic_ids()
+    
+    if not topic_ids: 
+        print("No topics found. Set TOPIC_ID, TOPIC_IDS, or add topics/topic-*.json files.", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"Running topic pipeline for topics: {topic_ids}")
+    
+    failed = 0
+    for topic_id in topic_ids:
+        try:
+            print(f"Running topic pipeline for topic='{topic_id}'")
+            run_single_topic(topic_id)
+        except Exception as e: 
+            print(f"[{topic_id}] ERROR: {e}", file=sys. stderr)
+            failed += 1
+    
+    if failed: 
+        sys.exit(1)
+
+
+if __name__ == "__main__": 
+    main()
     topic_id = os.getenv("TOPIC_ID", "").strip()
     if not topic_id:
         print("TOPIC_ID is required", file=sys.stderr)
