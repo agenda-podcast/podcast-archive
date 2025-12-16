@@ -22,7 +22,7 @@ if __name__ == "__main__" and (__package__ is None or __package__ == ""):
         sys.path.insert(0, repo_root)
 
 # rest of your existing imports
-from scripts.collect_sources import merge_dedupe, pub_dt, read_json_list, stable_id
+from scripts.collect_sources import discover_topic_ids, merge_dedupe, pub_dt, read_json_list, stable_id
 from scripts.feed_build import load_state, save_state, update_topic_feed
 from scripts.github_release import ensure_release_and_upload
 from scripts.script_generate import generate_30min_script_and_chapters
@@ -135,44 +135,11 @@ def _safe_json_dump(path: Path, obj: Any) -> None:
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def main() -> None:
-    def run_single_topic(topic_id: str) -> None:
+def run_single_topic(topic_id: str) -> None:
     """Run the pipeline for a single topic."""
-    # Move all the existing main() logic here, using topic_id parameter
-    # instead of reading from os.getenv("TOPIC_ID")
-    ... 
-
-    def main() -> None:
-    # Import the discover function from collect_sources
-    from scripts.collect_sources import discover_topic_ids
-    
-    topic_ids = discover_topic_ids()
-    
-    if not topic_ids: 
-        print("No topics found. Set TOPIC_ID, TOPIC_IDS, or add topics/topic-*.json files.", file=sys.stderr)
-        sys.exit(1)
-    
-    print(f"Running topic pipeline for topics: {topic_ids}")
-    
-    failed = 0
-    for topic_id in topic_ids:
-        try:
-            print(f"Running topic pipeline for topic='{topic_id}'")
-            run_single_topic(topic_id)
-        except Exception as e: 
-            print(f"[{topic_id}] ERROR: {e}", file=sys. stderr)
-            failed += 1
-    
-    if failed: 
-        sys.exit(1)
-
-
-if __name__ == "__main__": 
-    main()
-    topic_id = os.getenv("TOPIC_ID", "").strip()
+    topic_id = topic_id.strip()
     if not topic_id:
-        print("TOPIC_ID is required", file=sys.stderr)
-        sys.exit(1)
+        raise ValueError("topic_id cannot be empty")
 
     topic = _load_topic(topic_id)
     data_dir = Path("data") / topic_id
@@ -199,9 +166,9 @@ if __name__ == "__main__":
     skipped = False
     skip_reason = ""
     video_ok = False
-    provider_requested = None  # Initialize variable with a default value
-    # Rest of the function code
-    provider_used = None  # Initialize here
+    provider_requested = None
+    provider_used = None
+    piper_model_dir = os.getenv("PIPER_MODEL_DIR") or str(topic.get("piper_model_dir") or "assets/piper")
 
     if not fresh:
         skipped = True
@@ -220,7 +187,6 @@ if __name__ == "__main__":
         gemini_model = os.getenv("GEMINI_SCRIPT_MODEL", "").strip() or str(topic.get("gemini_model", "gemini-2.0-flash"))
         gemini_tts_model = os.getenv("GEMINI_TTS_MODEL", "").strip() or str(topic.get("gemini_tts_model", "")) or None
         audio_sample_rate = int(str(topic.get("audio_sample_rate") or os.getenv("AUDIO_SAMPLE_RATE") or 0) or 0) or None
-        piper_model_dir = os.getenv("PIPER_MODEL_DIR") or str(topic.get("piper_model_dir") or "assets/piper")
 
         script_out = generate_30min_script_and_chapters(
             topic=topic,
@@ -327,7 +293,7 @@ if __name__ == "__main__":
         "topic_id": topic_id,
         "timestamp_utc": _utc_now_iso(),
         "premium_tts": bool(topic.get("premium_tts")),
-        "provider_requested": None,
+        "provider_requested": provider_requested,
         "tts_engine": provider_used,
         "gemini_model": os.getenv("GEMINI_SCRIPT_MODEL", "").strip() or topic.get("gemini_model"),
         "voices": {
@@ -350,6 +316,35 @@ if __name__ == "__main__":
         print(f"[{topic_id}] skipped: {skip_reason}", file=sys.stderr)
     else:
         print(f"[{topic_id}] done. mp3={mp3_path} video_ok={video_ok}")
+
+
+def main() -> None:
+    """Main entry point that discovers topics and runs the pipeline for each."""
+    topic_ids = discover_topic_ids()
+    
+    if not topic_ids:
+        print("No topics found. Set TOPIC_ID, TOPIC_IDS, or add topics/topic-*.json files.", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"Running topic pipeline for topics: {topic_ids}")
+    
+    failed = 0
+    for topic_id in topic_ids:
+        try:
+            print(f"\n{'='*60}")
+            print(f"Running topic pipeline for topic='{topic_id}'")
+            print(f"{'='*60}\n")
+            run_single_topic(topic_id)
+        except Exception as e:
+            print(f"[{topic_id}] ERROR: {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            failed += 1
+    
+    if failed:
+        print(f"\n{failed} topic(s) failed", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"\nAll {len(topic_ids)} topic(s) completed successfully")
 
 
 if __name__ == "__main__":

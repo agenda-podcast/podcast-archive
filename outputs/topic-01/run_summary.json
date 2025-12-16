@@ -1,31 +1,31 @@
 {
   "topic_id": "topic-01",
-  "timestamp_utc": "2025-12-15T23:41:05.704204Z",
+  "timestamp_utc": "2025-12-16T02:25:46.303284Z",
   "premium_tts": false,
-  "provider_requested": "piper",
+  "provider_requested": null,
   "tts_engine": null,
-  "gemini_model": "gemini-2.0-flash",
+  "gemini_model": "gemini-2.5-flash",
   "voices": {
     "gemini": {
       "A": null,
       "B": null
     },
     "piper": {
-      "A": "en_US-ryan-medium",
-      "B": "en_US-amy-medium"
+      "A": null,
+      "B": null
     }
   },
   "piper_model_dir": "assets/piper",
   "fresh_count": 112,
   "backlog_count": 163,
   "skipped": true,
-  "skip_reason": "'PosixPath' object has no attribute 'write'",
+  "skip_reason": "GEMINI_API_KEY is empty (needed for script generation).",
   "assets": {},
   "errors": [
     {
       "stage": "pipeline",
-      "error": "'PosixPath' object has no attribute 'write'",
-      "traceback": "Traceback (most recent call last):\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/tts_generate.py\", line 179, in _ensure_silence_wav\n    wf.writeframes(b\"\\x00\\x00\" * n_frames)\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 558, in writeframes\n    self.writeframesraw(data)\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 547, in writeframesraw\n    self._ensure_header_written(len(data))\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 588, in _ensure_header_written\n    self._write_header(datasize)\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 592, in _write_header\n    self._file.write(b'RIFF')\n    ^^^^^^^^^^^^^^^^\nAttributeError: 'PosixPath' object has no attribute 'write'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/run_topic.py\", line 207, in main\n    mp3_out, provider_used = tts_chunks_to_mp3(\n                             ^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/tts_generate.py\", line 276, in tts_chunks_to_mp3\n    silence_wav = _ensure_silence_wav(cache_dir / f\"silence_{ms_gap}ms_{sr}hz.wav\", seconds=gap_seconds, sample_rate=sr)\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/tts_generate.py\", line 175, in _ensure_silence_wav\n    with wave.open(path, \"w\") as wf:\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 453, in __exit__\n    self.close()\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 565, in close\n    self._ensure_header_written(0)\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 588, in _ensure_header_written\n    self._write_header(datasize)\n  File \"/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/wave.py\", line 592, in _write_header\n    self._file.write(b'RIFF')\n    ^^^^^^^^^^^^^^^^\nAttributeError: 'PosixPath' object has no attribute 'write'\n"
+      "error": "GEMINI_API_KEY is empty (needed for script generation).",
+      "traceback": "Traceback (most recent call last):\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/run_topic.py\", line 191, in run_single_topic\n    script_out = generate_30min_script_and_chapters(\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/script_generate.py\", line 145, in generate_30min_script_and_chapters\n    text = _gemini_generate_text(api_key=api_key, model=model, prompt=prompt, max_tokens=8192)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/podcast-archive/podcast-archive/scripts/script_generate.py\", line 42, in _gemini_generate_text\n    raise RuntimeError(\"GEMINI_API_KEY is empty (needed for script generation).\")\nRuntimeError: GEMINI_API_KEY is empty (needed for script generation).\n"
     }
   ],
   "video_enabled": true,
