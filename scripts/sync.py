@@ -87,7 +87,7 @@ def source_key(entry) -> str:
     # 1) Try to extract numeric ID from enclosure URL
     try:
         if entry.get("enclosures"):
-            href = entry.enclosures[0].get("href") or ""
+            href = entry["enclosures"][0].get("href") or ""
             if isinstance(href, str) and href.startswith("http"):
                 # Extract episode-specific numeric ID from URL (usually 7-8 digits)
                 # Look for patterns like /episodes/18322949- or /18322949/

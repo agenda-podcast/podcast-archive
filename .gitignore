@@ -19,4 +19,13 @@ venv/
 # Temporary download directory used during sync
 audio_tmp/
 
+# Backup files
+*.backup
+*.bak
+*~
+
+# Test files
+test_*.py
+*_test.py
+
 # Keep metadata and feed in the repo (do not ignore feed/rss.xml or data/episodes.json)
