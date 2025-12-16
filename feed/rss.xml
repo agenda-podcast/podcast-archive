@@ -8,16 +8,9 @@
     <link>https://agenda-podcast.github.io/podcast-archive/</link>
     <language>en-us</language>
     <copyright>© 2025 Agenda</copyright>
-    <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
-    <lastBuildDate>Tue, 16 Dec 2025 03:53:20 +0000</lastBuildDate>
+    <description><![CDATA["Agenda" is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day's biggest headlines — without the noise, hype, or spin.We explain what's happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, "Agenda" keeps you informed and ahead of the curve.]]></description>
+    <lastBuildDate>Tue, 16 Dec 2025 04:34:05 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
-<itunes:owner>
-
-<itunes:name>Agenda</itunes:name>
-
-<itunes:email>deep.dive.podcast@unloca.com</itunes:email>
-
-</itunes:owner>
     <itunes:type>episodic</itunes:type>
     <itunes:explicit>false</itunes:explicit>
     <itunes:image href="https://agenda-podcast.github.io/podcast-archive/poster.jpg"/>
@@ -47,6 +40,15 @@
       <pubDate>Fri, 05 Dec 2025 05:00:00 +0000</pubDate>
       <description><![CDATA[This episode focuses on the highly contested regulatory territory of large foundation models, primarily developed by U.S. technology leaders, examining the unique obligations, compliance challenges, and industry resistance.]]></description>
       <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20251205-Episode_2_The_General-Purpose_AI_GPAI_Battleground_and_Innovation_Conflict.mp3" length="23857760" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Episode 1: The U.S. Domestic AI Regulatory War and Federal Preemption</title>
+      <itunes:title>Episode 1: The U.S. Domestic AI Regulatory War and Federal Preemption</itunes:title>
+      <guid isPermaLink="false">agenda-18322949</guid>
+      <pubDate>Sun, 01 Dec 2025 05:00:00 +0000</pubDate>
+      <description><![CDATA[This episode explores the intensifying conflict between state and federal AI regulation in the United States, examining the push for federal preemption and its implications for the broader AI governance landscape.]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20251201-Episode_1_The_U.S._Domestic_AI_Regulatory_War_and_Federal_Preemption.mp3" length="7266056" type="audio/mpeg"/>
       <itunes:explicit>false</itunes:explicit>
     </item>
   </channel>
