@@ -147,10 +147,10 @@ jobs:
           
       - name: Run topic pipeline
         env:
-          LD_LIBRARY_PATH: ${{ github. workspace }}/tools
-          PIPER_BINARY:  ${{ github.workspace }}/tools/piper
+          LD_LIBRARY_PATH: ${{ github.workspace }}/tools
+          PIPER_BINARY: ${{ github.workspace }}/tools/piper
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run:  |
+        run: |
           python -m scripts.run_topic
 
       - name: "Debug - environment & repo"
