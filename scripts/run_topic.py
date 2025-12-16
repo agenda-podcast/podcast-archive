@@ -135,6 +135,33 @@ def _safe_json_dump(path: Path, obj: Any) -> None:
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _log(topic_id: str, message: str) -> None:
+    stamp = _utc_now_iso()
+    prefix = f"[{topic_id}]"
+    print(f"{prefix} {stamp} | {message}", flush=True)
+
+
+def _require_gemini_key(topic_id: str, api_key: str) -> str:
+    if not api_key:
+        raise RuntimeError(
+            f"GEMINI_API_KEY is empty for {topic_id}. "
+            "Set the GEMINI_API_KEY secret/environment variable for script generation."
+        )
+    masked = f"{len(api_key)}-chars"
+    _log(topic_id, f"GEMINI_API_KEY detected (masked length={masked}).")
+    return api_key
+
+
+def _validate_outputs(topic_id: str, *, audio_ok: bool, video_ok: bool, video_enabled: bool) -> None:
+    problems = []
+    if not audio_ok:
+        problems.append("audio file is missing or empty")
+    if video_enabled and not video_ok:
+        problems.append("video file is missing or empty")
+    if problems:
+        raise RuntimeError(f"Output validation failed: {', '.join(problems)}.")
+
+
 def run_single_topic(topic_id: str) -> None:
     """Run the pipeline for a single topic."""
     topic_id = topic_id.strip()
@@ -166,10 +193,16 @@ def run_single_topic(topic_id: str) -> None:
     skipped = False
     skip_reason = ""
     video_ok = False
+    audio_ok = False
+    video_file_ok = False
     provider_requested = None
     provider_used = None
     piper_model_dir = os.getenv("PIPER_MODEL_DIR") or str(topic.get("piper_model_dir") or "assets/piper")
+    stage = "init"
+    pipeline_exc: Exception | None = None
 
+    _log(topic_id, "Starting topic run")
+    _log(topic_id, f"Data dir={data_dir} Out dir={out_dir}")
     if not fresh:
         skipped = True
         skip_reason = "fresh.json is empty; gating triggered."
@@ -180,14 +213,23 @@ def run_single_topic(topic_id: str) -> None:
         picked = _pick_sources(topic_id, topic, fresh, backlog)
 
     try:
+        stage = "gate"
         if skipped:
             raise RuntimeError(skip_reason)
 
-        gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        stage = "config"
+        gemini_api_key = _require_gemini_key(topic_id, os.getenv("GEMINI_API_KEY", "").strip())
         gemini_model = os.getenv("GEMINI_SCRIPT_MODEL", "").strip() or str(topic.get("gemini_model", "gemini-2.0-flash"))
         gemini_tts_model = os.getenv("GEMINI_TTS_MODEL", "").strip() or str(topic.get("gemini_tts_model", "")) or None
         audio_sample_rate = int(str(topic.get("audio_sample_rate") or os.getenv("AUDIO_SAMPLE_RATE") or 0) or 0) or None
+        _log(
+            topic_id,
+            f"Config: gemini_model={gemini_model} gemini_tts_model={gemini_tts_model or 'default'} "
+            f"piper_model_dir={piper_model_dir} audio_sample_rate={audio_sample_rate or 'default'}",
+        )
 
+        stage = "script"
+        _log(topic_id, "Generating script and chapters with Gemini")
         script_out = generate_30min_script_and_chapters(
             topic=topic,
             sources=picked,
@@ -196,6 +238,7 @@ def run_single_topic(topic_id: str) -> None:
         )
         script_text = str(script_out.get("script") or "").strip()
         chapters = script_out.get("chapters") if isinstance(script_out.get("chapters"), list) else []
+        _log(topic_id, f"Script generated: {len(script_text.splitlines())} lines, {len(chapters)} chapters")
 
         script_path.write_text(script_text, encoding="utf-8")
         _safe_json_dump(chapters_path, chapters)
@@ -205,6 +248,8 @@ def run_single_topic(topic_id: str) -> None:
 
         chunks = _script_to_chunks(script_text)
         provider_requested = "gemini" if topic.get("premium_tts") else "piper"
+        stage = "tts"
+        _log(topic_id, f"Generating TTS audio via provider={provider_requested}")
         mp3_out, provider_used = tts_chunks_to_mp3(
             chunks=chunks,
             mp3_path=str(mp3_path),
@@ -219,26 +264,32 @@ def run_single_topic(topic_id: str) -> None:
             piper_model_dir=piper_model_dir,
             sample_rate=audio_sample_rate,
         )
+        audio_ok = Path(mp3_out).exists() and Path(mp3_out).stat().st_size > 0
+        _log(topic_id, f"TTS complete. provider_used={provider_used} audio_ok={audio_ok}")
 
         video_enabled = bool(topic.get("video_enabled", True))
         if video_enabled:
-            try:
-                render_waveform_video(
-                    topic_id=topic_id,
-                    topic=topic,
-                    mp3_path=mp3_out,
-                    out_mp4=str(mp4_path),
-                    chapters=chapters,
-                    ffmeta_path=str(ffmeta_path),
-                    overlay=topic.get("video_overlay", {}),
-                    intro_text=str(topic.get("intro_text", "")),
-                    outro_text=str(topic.get("outro_text", "")),
-                    sources=picked,
-                )
-                video_ok = True
-            except Exception as e:
-                video_ok = False
-                errors.append({"stage": "video", "error": str(e), "traceback": traceback.format_exc()})
+            stage = "video"
+            _log(topic_id, "Rendering waveform video")
+            render_waveform_video(
+                topic_id=topic_id,
+                topic=topic,
+                mp3_path=mp3_out,
+                out_mp4=str(mp4_path),
+                chapters=chapters,
+                ffmeta_path=str(ffmeta_path),
+                overlay=topic.get("video_overlay", {}),
+                intro_text=str(topic.get("intro_text", "")),
+                outro_text=str(topic.get("outro_text", "")),
+                sources=picked,
+            )
+            video_ok = True
+            video_file_ok = mp4_path.exists() and mp4_path.stat().st_size > 0
+            _log(topic_id, f"Video render complete. video_file_ok={video_file_ok}")
+        else:
+            video_ok = False
+            video_file_ok = False
+            _log(topic_id, "Video rendering disabled for this topic")
 
         repo = os.getenv("REPO", "").strip()
         token = os.getenv("GITHUB_TOKEN", "").strip()
@@ -247,10 +298,14 @@ def run_single_topic(topic_id: str) -> None:
         if video_ok and mp4_path.exists():
             upload_files.append(mp4_path)
         if repo and token:
+            stage = "release"
+            _log(topic_id, f"Uploading assets to release tag={release_tag}")
             assets = ensure_release_and_upload(repo, token, release_tag, upload_files)
 
         # Feed update (best-effort)
         try:
+            stage = "feed"
+            _log(topic_id, "Updating feed")
             state = load_state(topic_id)
             episode = {
                 "title": f"{topic.get('title', topic_id)} — Daily Overview ({stamp})",
@@ -273,10 +328,15 @@ def run_single_topic(topic_id: str) -> None:
         except Exception as e:
             errors.append({"stage": "feed", "error": str(e), "traceback": traceback.format_exc()})
 
+        stage = "validation"
+        _log(topic_id, "Validating generated outputs")
+        _validate_outputs(topic_id, audio_ok=audio_ok, video_ok=video_file_ok, video_enabled=video_enabled)
+
     except Exception as e:
-        errors.append({"stage": "pipeline", "error": str(e), "traceback": traceback.format_exc()})
+        errors.append({"stage": stage, "error": str(e), "traceback": traceback.format_exc()})
         skipped = True
         skip_reason = skip_reason or str(e)
+        pipeline_exc = e
 
     latest = {
         "topic_id": topic_id,
@@ -301,6 +361,7 @@ def run_single_topic(topic_id: str) -> None:
             "piper": {"A": os.getenv("PIPER_VOICE_A"), "B": os.getenv("PIPER_VOICE_B")},
         },
         "piper_model_dir": piper_model_dir,
+        "audio_ok": audio_ok,
         "fresh_count": len(fresh),
         "backlog_count": len(backlog),
         "skipped": skipped,
@@ -309,13 +370,18 @@ def run_single_topic(topic_id: str) -> None:
         "errors": errors,
         "video_enabled": bool(topic.get("video_enabled", True)),
         "video_ok": video_ok,
+        "video_file_ok": video_file_ok,
     }
     _safe_json_dump(run_summary_path, run_summary)
+
+    if pipeline_exc:
+        _log(topic_id, f"FAILED at stage={stage}: {pipeline_exc}")
+        raise pipeline_exc
 
     if skipped and not assets:
         print(f"[{topic_id}] skipped: {skip_reason}", file=sys.stderr)
     else:
-        print(f"[{topic_id}] done. mp3={mp3_path} video_ok={video_ok}")
+        _log(topic_id, f"Completed. mp3={mp3_path} video_ok={video_ok} audio_ok={audio_ok}")
 
 
 def main() -> None:
