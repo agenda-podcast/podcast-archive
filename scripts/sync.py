@@ -281,6 +281,19 @@ def build_rss(episodes_sorted: list) -> str:
 """
 
 # -----------------------------
+# Episode sorting
+# -----------------------------
+def sort_datetime(ep: dict) -> datetime:
+    """
+    Extract and parse the publication date from an episode for sorting.
+    Returns the parsed datetime or epoch if parsing fails.
+    """
+    try:
+        return dtparser.parse(ep.get("pubDate_rfc822", "1970-01-01T00:00:00Z"))
+    except Exception:
+        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+# -----------------------------
 # State I/O (backward compatible)
 # -----------------------------
 def load_state() -> dict:
@@ -354,14 +367,7 @@ def main():
     if not src.entries:
         # Even if SOURCE RSS has no entries, preserve existing episodes
         episodes = list(episodes_map.values())
-        
-        def _sort_dt(ep):
-            try:
-                return dtparser.parse(ep.get("pubDate_rfc822", "1970-01-01T00:00:00Z"))
-            except Exception:
-                return datetime(1970, 1, 1, tzinfo=timezone.utc)
-        
-        episodes.sort(key=_sort_dt, reverse=True)
+        episodes.sort(key=sort_datetime, reverse=True)
         
         save_state(state)
         with open(RSS_OUT, "w", encoding="utf-8") as f:
@@ -448,14 +454,7 @@ def main():
 
     # Sort episodes newest-first for RSS output
     episodes = list(episodes_map.values())
-
-    def _sort_dt(ep):
-        try:
-            return dtparser.parse(ep.get("pubDate_rfc822", "1970-01-01T00:00:00Z"))
-        except Exception:
-            return datetime(1970, 1, 1, tzinfo=timezone.utc)
-
-    episodes.sort(key=_sort_dt, reverse=True)
+    episodes.sort(key=sort_datetime, reverse=True)
 
     # Persist state and RSS
     state["episodes"] = episodes_map
