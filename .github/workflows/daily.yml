@@ -164,6 +164,7 @@ jobs:
           PYTHONUNBUFFERED: 1
           PIPER_BINARY: ${{ env.PIPER_BINARY }}
           TOPIC: ${{ matrix.topic }}
+          TOPIC_ID: ${{ matrix.topic }}
         run: |
           set -o pipefail
           mkdir -p logs
