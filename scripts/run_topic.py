@@ -294,7 +294,7 @@ def main() -> None:
         "topic_id": topic_id,
         "timestamp_utc": _utc_now_iso(),
         "premium_tts": bool(topic.get("premium_tts")),
-        "provider_requested": provider_requested,
+        "provider_requested": None,
         "tts_engine": provider_used,
         "gemini_model": os.getenv("GEMINI_SCRIPT_MODEL", "").strip() or topic.get("gemini_model"),
         "voices": {
