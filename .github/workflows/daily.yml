@@ -140,6 +140,11 @@ jobs:
           fi
           echo "PIPER_BINARY=./tools/piper" >> $GITHUB_ENV
 
+      - name: Install Piper dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libespeak-ng1
+
       - name: "Debug - environment & repo"
         env:
           PYTHONUNBUFFERED: 1
