@@ -165,6 +165,7 @@ jobs:
           PIPER_BINARY: ${{ env.PIPER_BINARY }}
           TOPIC: ${{ matrix.topic }}
           TOPIC_ID: ${{ matrix.topic }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           set -o pipefail
           mkdir -p logs
