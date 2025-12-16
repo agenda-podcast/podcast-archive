@@ -56,7 +56,7 @@ jobs:
         env:
           PIPER_BINARY: ./tools/piper
         run: |
-          python - <<'PY'
+          python - <<PY
 import sys
 try:
     from scripts.tts_generate import find_piper_binary
