@@ -140,10 +140,17 @@ jobs:
           fi
           echo "PIPER_BINARY=./tools/piper" >> $GITHUB_ENV
 
-      - name: Install Piper dependencies
-        run: |
+      - name: Install system dependencies
+        run:  |
           sudo apt-get update
           sudo apt-get install -y libespeak-ng1
+          
+      - name: Run topic pipeline
+        env:
+          LD_LIBRARY_PATH: ${{ github. workspace }}/tools
+          PIPER_BINARY:  ${{ github.workspace }}/tools/piper
+        run:  |
+          python -m scripts.run_topic
 
       - name: "Debug - environment & repo"
         env:
@@ -202,7 +209,7 @@ jobs:
           fi
 
       - name: "Upload artifacts: generated outputs + logs"
-        if: always()
+        if: alays()
         uses: actions/upload-artifact@v4
         with:
           name: "daily-overview-output-${{ matrix.topic }}"
