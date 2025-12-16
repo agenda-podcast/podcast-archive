@@ -339,24 +339,34 @@ def main():
     if not GITHUB_TOKEN:
         raise RuntimeError("GITHUB_TOKEN is empty (should be secrets.GITHUB_TOKEN).")
 
-    # Always write skeleton outputs first so workflow can commit on fresh repo
-    save_state({"episodes": {}})
-    with open(RSS_OUT, "w", encoding="utf-8") as f:
-        f.write(build_rss([]))
-
+    # Load existing state first (preserve all archived episodes)
     state = load_state()
     episodes_map = state.get("episodes", {})
     if not isinstance(episodes_map, dict):
         episodes_map = {}
         state["episodes"] = episodes_map
+    
+    # Store the count of existing episodes before processing
+    existing_episode_count = len(episodes_map)
 
     # Parse SOURCE feed
     src = feedparser.parse(RSS)
     if not src.entries:
+        # Even if SOURCE RSS has no entries, preserve existing episodes
+        episodes = list(episodes_map.values())
+        
+        def _sort_dt(ep):
+            try:
+                return dtparser.parse(ep.get("pubDate_rfc822", "1970-01-01T00:00:00Z"))
+            except Exception:
+                return datetime(1970, 1, 1, tzinfo=timezone.utc)
+        
+        episodes.sort(key=_sort_dt, reverse=True)
+        
         save_state(state)
         with open(RSS_OUT, "w", encoding="utf-8") as f:
-            f.write(build_rss([]))
-        print("OK. SOURCE RSS has no entries. Wrote skeleton outputs.")
+            f.write(build_rss(episodes))
+        print(f"OK. SOURCE RSS has no entries. Preserved {len(episodes_map)} existing episodes.")
         return
 
     release = ensure_release(REPO, GITHUB_TOKEN, RELEASE_TAG)
@@ -461,8 +471,11 @@ def main():
         f.write(rss_xml)
 
     print(
-        f"OK. New archived: {new_count}. Total episodes in state: {len(episodes_map)}. "
-        f"Skipped non-http enclosures: {skipped_no_http}. Download errors: {skipped_download_errors}."
+        f"OK. New archived: {new_count}. "
+        f"Existing episodes preserved: {existing_episode_count}. "
+        f"Total episodes in state: {len(episodes_map)}. "
+        f"Skipped non-http enclosures: {skipped_no_http}. "
+        f"Download errors: {skipped_download_errors}."
     )
 
 if __name__ == "__main__":
