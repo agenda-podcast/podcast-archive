@@ -1,8 +1,8 @@
 name: Sync Podcast
-run karavan
+
 on:
-  schedule:
-    - cron: "0 * * * *"   # hourly UTC
+  # schedule:
+    # - cron: "0 * * * *"   # hourly UTC
   workflow_dispatch:
 
 permissions:
