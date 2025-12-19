@@ -1,5 +1,5 @@
 name: Sync Podcast
-
+run karavan
 on:
   schedule:
     - cron: "0 * * * *"   # hourly UTC
