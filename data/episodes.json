@@ -35,6 +35,15 @@
       "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20251205-Episode_2_The_General-Purpose_AI_GPAI_Battleground_and_Innovation_Conflict.mp3",
       "length_bytes": 23857760,
       "description_html": "This episode focuses on the highly contested regulatory territory of large foundation models, primarily developed by U.S. technology leaders, examining the unique obligations, compliance challenges, and industry resistance."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18591274-2026-winter-storm-infrastructure-damage-widespread-power-outages-and-over-100-fatalities.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18591274-2026-winter-storm-infrastructure-damage-widespread-power-outages-and-over-100-fatalities.mp3",
+      "guid": "agenda-18591274",
+      "title": "2026 Winter Storm: infrastructure damage, widespread power outages, and over 100 fatalities",
+      "pubDate_rfc822": "Thu, 29 Jan 2026 17:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-2026_Winter_Storm_infrastructure_damage_widespread_power_outages_and_over_100_fatalities.mp3",
+      "length_bytes": 20618709,
+      "description_html": "We discuss the 2025–2026 North American winter, a season defined by a weak La Niña pattern and frequent extreme weather events. Major storms throughout late 2025 and early 2026 caused significant infrastructure damage, widespread power outages, and over 100 fatalities across the United States and Canada. Reports highlight the economic consequences of these disasters, with total costs estimated to exceed billions of dollars due to supply chain disruptions and record-breaking snowfall and ice. ..."
     }
   }
 }

@@ -9,7 +9,7 @@
     <language>en-us</language>
     <copyright>© 2026 Agenda</copyright>
     <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
-    <lastBuildDate>Thu, 29 Jan 2026 17:29:37 +0000</lastBuildDate>
+    <lastBuildDate>Thu, 29 Jan 2026 17:34:39 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
 <itunes:owner>
 
@@ -22,6 +22,15 @@
     <itunes:explicit>false</itunes:explicit>
     <itunes:image href="https://agenda-podcast.github.io/podcast-archive/poster.jpg"/>
     <itunes:category text="News"><itunes:category text="Politics"/></itunes:category>
+    <item>
+      <title>2026 Winter Storm: infrastructure damage, widespread power outages, and over 100 fatalities</title>
+      <itunes:title>2026 Winter Storm: infrastructure damage, widespread power outages, and over 100 fatalities</itunes:title>
+      <guid isPermaLink="false">agenda-18591274</guid>
+      <pubDate>Thu, 29 Jan 2026 17:00:00 +0000</pubDate>
+      <description><![CDATA[We discuss the 2025–2026 North American winter, a season defined by a weak La Niña pattern and frequent extreme weather events. Major storms throughout late 2025 and early 2026 caused significant infrastructure damage, widespread power outages, and over 100 fatalities across the United States and Canada. Reports highlight the economic consequences of these disasters, with total costs estimated to exceed billions of dollars due to supply chain disruptions and record-breaking snowfall and ice. ...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-2026_Winter_Storm_infrastructure_damage_widespread_power_outages_and_over_100_fatalities.mp3" length="20618709" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
     <item>
       <title>Episode 4: Litigation Risks, IP Conflicts, and Global Security Threats</title>
       <itunes:title>Episode 4: Litigation Risks, IP Conflicts, and Global Security Threats</itunes:title>
