@@ -44,6 +44,24 @@
       "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-2026_Winter_Storm_infrastructure_damage_widespread_power_outages_and_over_100_fatalities.mp3",
       "length_bytes": 20618709,
       "description_html": "We discuss the 2025–2026 North American winter, a season defined by a weak La Niña pattern and frequent extreme weather events. Major storms throughout late 2025 and early 2026 caused significant infrastructure damage, widespread power outages, and over 100 fatalities across the United States and Canada. Reports highlight the economic consequences of these disasters, with total costs estimated to exceed billions of dollars due to supply chain disruptions and record-breaking snowfall and ice. ..."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18592126-us-big-cities-why-record-safety-feels-like-danger.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18592126-us-big-cities-why-record-safety-feels-like-danger.mp3",
+      "guid": "agenda-18592126",
+      "title": "US big Cities: Why Record Safety Feels Like Danger",
+      "pubDate_rfc822": "Thu, 29 Jan 2026 19:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-US_big_Cities_Why_Record_Safety_Feels_Like_Danger.mp3",
+      "length_bytes": 22075633,
+      "description_html": "As of early 2026, the United States is experiencing a historic decline in violent crime, particularly homicide, though specific challenges regarding youth violence and drug offenses persist. The following overview details the current situation based on data through the end of 2025. Why don't we feel the changes?"
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18592072-why-nyc-rejected-record-safety-for-socialism.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18592072-why-nyc-rejected-record-safety-for-socialism.mp3",
+      "guid": "agenda-18592072",
+      "title": "Why NYC Rejected Record Safety for Socialism",
+      "pubDate_rfc822": "Thu, 29 Jan 2026 19:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-Why_NYC_Rejected_Record_Safety_for_Socialism.mp3",
+      "length_bytes": 20025844,
+      "description_html": "In 2025 New York City elections, highlighting the historic victory of Zohran Mamdani, the city's first democratic socialist Muslim mayor. His progressive platform focuses on freezing rents for stabilized tenants and reforming public safety by creating a new Department of Community Safety. While incumbent Eric Adams defended his record on crime reduction and housing during his final months in office, the transition to the Mamdani administration has sparked debate over the future of the NYPD. W..."
     }
   }
 }

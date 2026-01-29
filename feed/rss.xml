@@ -9,7 +9,7 @@
     <language>en-us</language>
     <copyright>© 2026 Agenda</copyright>
     <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
-    <lastBuildDate>Thu, 29 Jan 2026 19:57:48 +0000</lastBuildDate>
+    <lastBuildDate>Thu, 29 Jan 2026 20:49:44 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
 <itunes:owner>
 
@@ -23,11 +23,29 @@
     <itunes:image href="https://agenda-podcast.github.io/podcast-archive/poster.jpg"/>
     <itunes:category text="News"><itunes:category text="Politics"/></itunes:category>
     <item>
+      <title>US big Cities: Why Record Safety Feels Like Danger</title>
+      <itunes:title>US big Cities: Why Record Safety Feels Like Danger</itunes:title>
+      <guid isPermaLink="false">agenda-18592126</guid>
+      <pubDate>Thu, 29 Jan 2026 19:00:00 +0000</pubDate>
+      <description><![CDATA[As of early 2026, the United States is experiencing a historic decline in violent crime, particularly homicide, though specific challenges regarding youth violence and drug offenses persist. The following overview details the current situation based on data through the end of 2025. Why don't we feel the changes?]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-US_big_Cities_Why_Record_Safety_Feels_Like_Danger.mp3" length="22075633" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Why NYC Rejected Record Safety for Socialism</title>
+      <itunes:title>Why NYC Rejected Record Safety for Socialism</itunes:title>
+      <guid isPermaLink="false">agenda-18592072</guid>
+      <pubDate>Thu, 29 Jan 2026 19:00:00 +0000</pubDate>
+      <description><![CDATA[In 2025 New York City elections, highlighting the historic victory of Zohran Mamdani, the city's first democratic socialist Muslim mayor. His progressive platform focuses on freezing rents for stabilized tenants and reforming public safety by creating a new Department of Community Safety. While incumbent Eric Adams defended his record on crime reduction and housing during his final months in office, the transition to the Mamdani administration has sparked debate over the future of the NYPD. W...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-Why_NYC_Rejected_Record_Safety_for_Socialism.mp3" length="20025844" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
       <title>2026 Winter Storm: infrastructure damage, widespread power outages, and over 100 fatalities</title>
       <itunes:title>2026 Winter Storm: infrastructure damage, widespread power outages, and over 100 fatalities</itunes:title>
       <guid isPermaLink="false">agenda-18591274</guid>
       <pubDate>Thu, 29 Jan 2026 17:00:00 +0000</pubDate>
-      <description><![CDATA[We discuss the 2025–2026 North American winter, a season defined by a weak La Niña pattern and frequent extreme weather events. Major storms throughout late 2025 and early 2026 caused significant infrastructure damage, widespread power outages, and over 100 fatalities across the United States and Canada. Reports highlight the economic consequences of these disasters, with total costs estimated to exceed billions of dollars due to supply chain disruptions and record-breaking snowfall and ice.]]></description>
+      <description><![CDATA[We discuss the 2025–2026 North American winter, a season defined by a weak La Niña pattern and frequent extreme weather events. Major storms throughout late 2025 and early 2026 caused significant infrastructure damage, widespread power outages, and over 100 fatalities across the United States and Canada. Reports highlight the economic consequences of these disasters, with total costs estimated to exceed billions of dollars due to supply chain disruptions and record-breaking snowfall and ice. ...]]></description>
       <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-2026_Winter_Storm_infrastructure_damage_widespread_power_outages_and_over_100_fatalities.mp3" length="20618709" type="audio/mpeg"/>
       <itunes:explicit>false</itunes:explicit>
     </item>
