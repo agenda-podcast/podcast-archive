@@ -9,7 +9,7 @@
     <language>en-us</language>
     <copyright>© 2026 Agenda</copyright>
     <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
-    <lastBuildDate>Thu, 29 Jan 2026 23:45:44 +0000</lastBuildDate>
+    <lastBuildDate>Thu, 29 Jan 2026 23:59:43 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
 <itunes:owner>
 
@@ -22,6 +22,15 @@
     <itunes:explicit>false</itunes:explicit>
     <itunes:image href="https://agenda-podcast.github.io/podcast-archive/poster.jpg"/>
     <itunes:category text="News"><itunes:category text="Politics"/></itunes:category>
+    <item>
+      <title>Cooking the Books on NYC Crime: Arrest Avoidance as Statistical Strategy</title>
+      <itunes:title>Cooking the Books on NYC Crime: Arrest Avoidance as Statistical Strategy</itunes:title>
+      <guid isPermaLink="false">agenda-18593227</guid>
+      <pubDate>Thu, 29 Jan 2026 23:00:00 +0000</pubDate>
+      <description><![CDATA[The phenomenon of "arrest avoidance" to protect statistics. In high-stakes precincts, officers may be discouraged from making arrests that could lead to a spike in reported crime or that would require extensive "bag of shit" paperwork and supervision. The "fake reports" and "lack of reports" described by the rank-and-file are not merely administrative errors; they are the output of a system designed to prioritize the appearance of public safety over the reality of justice. The "impotence" of ...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-Cooking_the_Books_on_NYC_Crime_Arrest_Avoidance_as_Statistical_Strategy.mp3" length="19834998" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
     <item>
       <title>Failure of Legalization and the Rise of Disorder</title>
       <itunes:title>Failure of Legalization and the Rise of Disorder</itunes:title>
