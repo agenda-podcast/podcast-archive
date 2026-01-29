@@ -62,6 +62,24 @@
       "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-Why_NYC_Rejected_Record_Safety_for_Socialism.mp3",
       "length_bytes": 20025844,
       "description_html": "In 2025 New York City elections, highlighting the historic victory of Zohran Mamdani, the city's first democratic socialist Muslim mayor. His progressive platform focuses on freezing rents for stabilized tenants and reforming public safety by creating a new Department of Community Safety. While incumbent Eric Adams defended his record on crime reduction and housing during his final months in office, the transition to the Mamdani administration has sparked debate over the future of the NYPD. W..."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18592980-failure-of-legalization-and-the-rise-of-disorder.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18592980-failure-of-legalization-and-the-rise-of-disorder.mp3",
+      "guid": "agenda-18592980",
+      "title": "Failure of Legalization and the Rise of Disorder",
+      "pubDate_rfc822": "Thu, 29 Jan 2026 22:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-Failure_of_Legalization_and_the_Rise_of_Disorder.mp3",
+      "length_bytes": 21317660,
+      "description_html": "The push for legalization has resulted in a chaotic landscape where illegal operators thrive at the expense of public safety. Under the Democratic leadership, the city has been forced to shut down over 1,300 illegal smoke shops that were unlawfully selling cannabis, often targeting children. Despite these efforts, drug offenses remain a stubborn outlier in crime statistics; while other categories reportedly declined, drug offenses actually increased by 7% in 2025. This \"atmosphere of anything..."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18592614-new-york-city-market-of-bodies-prostitution-crisis.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18592614-new-york-city-market-of-bodies-prostitution-crisis.mp3",
+      "guid": "agenda-18592614",
+      "title": "New York City: Market of Bodies. Prostitution crisis.",
+      "pubDate_rfc822": "Thu, 29 Jan 2026 21:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-New_York_City_Market_of_Bodies._Prostitution_crisis..mp3",
+      "length_bytes": 24752667,
+      "description_html": "For many newly arrived migrants, sex work is not a choice of profession but a \"mechanism of survival\" necessitated by the high cost of urban living and the inadequacies of the city's shelter system. This phenomenon, often termed \"survival sex,\" has led to \"corner fights\" between established sex workers and newcomers as territory on Roosevelt Avenue becomes increasingly overcrowded. Organizations like Colectivo report that the stress of the migration journey, combined with the lack of social s..."
     }
   }
 }
