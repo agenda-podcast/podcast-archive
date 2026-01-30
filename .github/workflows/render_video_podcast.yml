@@ -55,6 +55,7 @@ jobs:
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           DRY="${{ inputs.dry_run }}"
@@ -87,12 +88,18 @@ jobs:
           VIDEO_NAME="video podcast"
           MAN_TAG="video-podcast-manifests"
           MAN_NAME="video podcast manifests"
+          CLIPS_TAG="video-podcast-clips"
+          CLIPS_NAME="video podcast clips"
 
           if ! gh release view "${VIDEO_TAG}" >/dev/null 2>&1; then
             gh release create "${VIDEO_TAG}" --title "${VIDEO_NAME}" --notes "Auto-generated video episodes." --latest=false
           fi
           if ! gh release view "${MAN_TAG}" >/dev/null 2>&1; then
             gh release create "${MAN_TAG}" --title "${MAN_NAME}" --notes "Auto-generated episode manifests." --latest=false
+          fi
+
+          if ! gh release view "${CLIPS_TAG}" >/dev/null 2>&1; then
+            gh release create "${CLIPS_TAG}" --title "${CLIPS_NAME}" --notes "Cached 15s clip packages (no audio) for reuse." --latest=false
           fi
 
           if ls -1 work/video-podcast/videos/*.mp4 >/dev/null 2>&1; then
@@ -105,6 +112,12 @@ jobs:
             gh release upload "${MAN_TAG}" work/video-podcast/manifests/*.json --clobber
           else
             echo "No manifests found to upload."
+          fi
+
+          if ls -1 work/video-podcast/clips/*.zip >/dev/null 2>&1; then
+            gh release upload "${CLIPS_TAG}" work/video-podcast/clips/*.zip --clobber
+          else
+            echo "No clip zips found to upload."
           fi
 
       - name: Upload build artifacts

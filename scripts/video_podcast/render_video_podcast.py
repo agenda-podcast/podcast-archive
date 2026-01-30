@@ -9,18 +9,16 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .ffmpeg_ops import ffmpeg_concat_and_encode, ffmpeg_make_clip, ffmpeg_mux_audio
+from .clips_cache import CLIP_SEC, ensure_clips
+from .ffmpeg_ops import ffmpeg_concat_and_encode, ffmpeg_mux_audio
 from .model import Episode, parse_episodes
 from .repo_state import choose_todo, load_state, save_state, write_status_csv, write_video_rss
-from .sources import search_assets, text_queries
-from .util import ffprobe_duration_sec, now_iso, rand_for_guid, safe_slug, sha256_file, download, save_json
+from .util import ffprobe_duration_sec, now_iso, safe_slug, sha256_file, download, load_json, save_json
 
-
-CLIP_SEC = 15.0
-MIN_ASSET_SEC = 16.0
 
 DEFAULT_VIDEO_TAG = "video-podcast"
 DEFAULT_MANIFEST_TAG = "video-podcast-manifests"
+DEFAULT_CLIPS_TAG = "video-podcast-clips"
 
 
 def render_episode(
@@ -31,9 +29,9 @@ def render_episode(
     tmp_dir: Path,
     pexels_key: str,
     pixabay_key: str,
+    clips_tag: str,
     dry_run: bool,
 ) -> Tuple[Optional[str], Optional[str]]:
-    rng = rand_for_guid(ep.guid)
     pub_dt = parsedate_to_datetime(ep.pub_rfc822) if ep.pub_rfc822 else None
     date_prefix = pub_dt.strftime("%Y%m%d") if pub_dt else "00000000"
     base = "%s-%s-%s" % (date_prefix, ep.guid, safe_slug(ep.title))
@@ -52,63 +50,31 @@ def render_episode(
     audio_dur = ffprobe_duration_sec(audio_path)
     need = int((audio_dur + (CLIP_SEC - 0.001)) // CLIP_SEC)
 
-    queries = text_queries(ep.title, ep.description, max_q=12)
-    assets = search_assets(pexels_key, pixabay_key, queries)
-    if not assets:
-        raise RuntimeError("no candidate assets found")
+    clips_info = ensure_clips(
+        guid=ep.guid,
+        title=ep.title,
+        desc_html=ep.description,
+        repo=repo,
+        clips_tag=clips_tag,
+        tmp_dir=tmp_dir,
+        need=need,
+        pexels_key=pexels_key,
+        pixabay_key=pixabay_key,
+    )
 
-    raw_dir = work / "raw"
-    clips_dir = work / "clips"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    clips_dir.mkdir(parents=True, exist_ok=True)
+    clips_ordered_dir = clips_info["clips_dir"]
+    clips_meta_path = clips_info["clips_meta_path"]
+    clip_zip_asset = clips_info["clips_zip_asset"]
+    clips_sha = clips_info["clips_sha256"]
+    reused = bool(clips_info["reused"])
+    generated = bool(clips_info["generated"])
 
-    picks = list(assets)
-    rng.shuffle(picks)
-
-    clips: List[Path] = []
-    prov: List[Dict[str, Any]] = []
-    pick_i = 0
-    clip_i = 0
-
-    while len(clips) < need and pick_i < len(picks) * 3:
-        a = picks[pick_i % len(picks)]
-        pick_i += 1
-        asset_key = "%s-%s" % (a["source"], a["asset_id"])
-        src_path = raw_dir / ("%s.mp4" % asset_key)
-
-        try:
-            if not src_path.exists():
-                download(a["download_url"], src_path)
-            dur = ffprobe_duration_sec(src_path)
-            if dur < MIN_ASSET_SEC:
-                continue
-            max_start = max(0.0, dur - CLIP_SEC)
-            start = rng.uniform(0.0, max_start) if max_start > 0 else 0.0
-
-            clip_path = clips_dir / ("clip_%04d.mp4" % clip_i)
-            ffmpeg_make_clip(src_path, clip_path, start, CLIP_SEC)
-
-            clips.append(clip_path)
-            prov.append({
-                "clip_index": clip_i,
-                "source": a["source"],
-                "asset_id": a["asset_id"],
-                "author": a.get("author") or "",
-                "page_url": a.get("page_url") or "",
-                "download_url": a.get("download_url") or "",
-                "license_url": a.get("license_url") or "",
-                "start_sec": round(start, 3),
-                "duration_sec": round(CLIP_SEC, 3),
-            })
-            clip_i += 1
-        except Exception:
-            continue
-
-    if len(clips) < 1:
-        raise RuntimeError("no usable clips produced")
+    ordered = sorted(clips_ordered_dir.glob("clip_*.mp4"))
+    if len(ordered) < need:
+        raise RuntimeError("missing ordered clips")
 
     silent_video = work / "video_silent.mp4"
-    ffmpeg_concat_and_encode(clips, silent_video)
+    ffmpeg_concat_and_encode(ordered[:need], silent_video)
 
     final_video = work / "video.mp4"
     ffmpeg_mux_audio(silent_video, audio_path, final_video)
@@ -120,6 +86,18 @@ def render_episode(
     manifest_out = out_manifests_dir / manifest_asset
 
     shutil.copyfile(final_video, video_out)
+
+    out_clips_dir = out_videos_dir.parent / "clips"
+    out_clips_dir.mkdir(parents=True, exist_ok=True)
+    if generated:
+        shutil.copyfile(clips_info["clips_zip_path"], out_clips_dir / clip_zip_asset)
+
+    clip_meta_loaded: Any = {}
+    if clips_meta_path.exists():
+        try:
+            clip_meta_loaded = load_json(clips_meta_path)
+        except Exception:
+            clip_meta_loaded = {}
 
     manifest = {
         "guid": ep.guid,
@@ -135,8 +113,12 @@ def render_episode(
         "video_sha256": sha256_file(video_out),
         "audio_duration_sec": round(audio_dur, 3),
         "clip_sec": CLIP_SEC,
-        "clips_count": len(clips),
-        "provenance": prov,
+        "clips_count": need,
+        "clips_tag": clips_tag,
+        "clips_asset_name": clip_zip_asset,
+        "clips_sha256": clips_sha,
+        "clips_reused": bool(reused),
+        "clips_meta": clip_meta_loaded,
         "license_notes": {
             "pexels": "https://www.pexels.com/license/",
             "pixabay": "https://pixabay.com/service/license/",
@@ -160,6 +142,7 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--video-tag", default=DEFAULT_VIDEO_TAG)
     ap.add_argument("--manifest-tag", default=DEFAULT_MANIFEST_TAG)
+    ap.add_argument("--clips-tag", default=DEFAULT_CLIPS_TAG)
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -177,8 +160,7 @@ def main() -> int:
     pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
     pixabay_key = os.environ.get("PIXABAY_API_KEY", "").strip()
     if not args.dry_run and (not pexels_key or not pixabay_key):
-        print("PEXELS_API_KEY and PIXABAY_API_KEY must be set in environment.", file=sys.stderr)
-        return 2
+        print("[warn] API keys are missing. Rendering will work only if clips are reused from Releases.")
 
     episodes = parse_episodes(episodes_json)
     state = load_state(state_path)
@@ -207,6 +189,7 @@ def main() -> int:
                 tmp_dir=tmp_dir,
                 pexels_key=pexels_key,
                 pixabay_key=pixabay_key,
+                clips_tag=args.clips_tag,
                 dry_run=args.dry_run,
             )
             if not args.dry_run and video_asset and manifest_asset:
@@ -216,6 +199,8 @@ def main() -> int:
                     "manifest_tag": args.manifest_tag,
                     "video_asset_name": video_asset,
                     "manifest_asset_name": manifest_asset,
+                    "clips_tag": args.clips_tag,
+                    "clips_asset_name": "clips_%s.zip" % ep.guid,
                 }
                 save_state(state_path, state)
                 print("[ok] guid=%s video=%s manifest=%s" % (ep.guid, video_asset, manifest_asset))

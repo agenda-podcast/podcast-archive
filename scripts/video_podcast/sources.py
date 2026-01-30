@@ -4,7 +4,141 @@ import time
 import urllib.parse
 from typing import Any, Dict, List, Tuple
 
-from .util import USER_AGENT, http_get_json
+from .util import USER_AGENT, http_get_json, strip_html
+
+
+TIER_1 = "tier1"
+TIER_2 = "tier2"
+TIER_3 = "tier3"
+
+
+def build_query_plan(title: str, desc_html: str, max_per_tier: int = 8) -> Dict[str, List[str]]:
+    """Build a 3-tier query plan.
+
+    Tier 1: visual entities and concrete nouns.
+    Tier 2: topic-to-visual mapping phrases.
+    Tier 3: generic fillers (used only if Tier 1 and Tier 2 clips are insufficient).
+    """
+    import re
+
+    title = (title or "").strip()
+    desc = strip_html(desc_html or "")
+    raw = ("%s %s" % (title, desc)).strip()
+    lower = raw.lower()
+    lower = re.sub(r"http[s]?://\S+", " ", lower)
+    lower = re.sub(r"[^a-z0-9\s]", " ", lower)
+    words = [w for w in lower.split() if len(w) >= 3]
+
+    stop = set([
+        "the", "and", "for", "with", "from", "this", "that", "into", "over", "under",
+        "your", "their", "they", "them", "were", "been", "also", "more", "most",
+        "about", "will", "what", "when", "where", "which", "than", "then",
+    ])
+    abstract = set([
+        "issue", "issues", "today", "analysis", "overview", "implications", "conflict",
+        "debate", "discussion", "changes", "impact", "effects", "policy", "policies",
+        "governance", "strategy", "strategic", "history", "historic",
+    ])
+
+    freq: Dict[str, int] = {}
+    for w in words:
+        if w in stop or w in abstract:
+            continue
+        freq[w] = freq.get(w, 0) + 1
+
+    ranked = sorted(freq.items(), key=lambda x: (-x[1], x[0]))
+
+    tier1: List[str] = []
+    tier2: List[str] = []
+
+    entity_map: List[Tuple[str, List[str]]] = [
+        ("new york", ["new york city", "manhattan skyline", "nyc subway", "times square"]),
+        ("nyc", ["new york city", "manhattan skyline", "nyc street"]),
+        ("washington", ["washington dc", "us capitol", "white house"]),
+        ("capitol", ["us capitol", "congress"]),
+        ("congress", ["congress", "senate", "house of representatives"]),
+        ("supreme", ["supreme court", "courtroom"]),
+        ("court", ["courtroom", "judge", "lawyer"]),
+        ("europe", ["european union", "brussels", "european parliament"]),
+        ("eu", ["european union", "brussels"]),
+        ("canada", ["canada winter", "snow storm"]),
+        ("storm", ["winter storm", "snow", "ice storm", "power outage"]),
+        ("snow", ["snow storm", "blizzard", "snow plow"]),
+        ("power", ["power outage", "electric grid", "power lines"]),
+        ("crime", ["police lights", "city street at night", "courtroom"]),
+        ("prostitution", ["city street at night", "neon lights", "downtown street"]),
+        ("ai", ["data center", "servers", "computer chip", "robot"]),
+        ("chips", ["computer chip", "semiconductor"]),
+        ("security", ["cybersecurity", "data center", "surveillance camera"]),
+        ("litigation", ["lawyer", "courtroom", "legal documents"]),
+        ("regulation", ["government building", "legal documents", "courtroom"]),
+        ("regulatory", ["government building", "legal documents", "courtroom"]),
+        ("preemption", ["supreme court", "constitution", "government building"]),
+        ("constitution", ["constitution", "supreme court"]),
+        ("infrastructure", ["bridge", "power lines", "construction"]),
+    ]
+
+    for needle, qs in entity_map:
+        if needle in lower:
+            for q in qs:
+                if q not in tier1:
+                    tier1.append(q)
+                if len(tier1) >= max_per_tier:
+                    break
+        if len(tier1) >= max_per_tier:
+            break
+
+    visual_nouns = [
+        "court", "courthouse", "judge", "lawyer", "capitol", "congress", "senate",
+        "white", "house", "police", "city", "storm", "snow", "blizzard", "data",
+        "center", "server", "robot", "chip", "cybersecurity", "protest",
+    ]
+    for w, _ in ranked:
+        if w in stop or w in abstract:
+            continue
+        if w in visual_nouns and w not in tier1:
+            tier1.append(w)
+        if len(tier1) >= max_per_tier:
+            break
+
+    topic_map: List[Tuple[str, List[str]]] = [
+        ("ai act", ["european union building", "compliance", "legal documents"]),
+        ("federal", ["government building", "capitol building"]),
+        ("state", ["state capitol", "government building"]),
+        ("governance", ["government building", "legal documents"]),
+        ("preemption", ["supreme court", "constitution"]),
+        ("gpai", ["artificial intelligence", "data center"]),
+        ("foundation model", ["artificial intelligence", "servers"]),
+        ("liability", ["courtroom", "lawyer"]),
+        ("intellectual property", ["patent", "legal documents"]),
+        ("supply chain", ["shipping containers", "warehouse"]),
+        ("outages", ["power outage", "electric grid"]),
+        ("fatalities", ["ambulance", "hospital"]),
+    ]
+
+    for needle, qs in topic_map:
+        if needle in lower:
+            for q in qs:
+                if q not in tier2 and q not in tier1:
+                    tier2.append(q)
+                if len(tier2) >= max_per_tier:
+                    break
+        if len(tier2) >= max_per_tier:
+            break
+
+    if title and title not in tier1 and len(tier1) < max_per_tier:
+        tier1.insert(0, title)
+
+    tier3 = [
+        "technology",
+        "city skyline",
+        "business meeting",
+        "computer",
+        "news studio",
+        "street traffic",
+    ][:max_per_tier]
+
+    return {TIER_1: tier1[:max_per_tier], TIER_2: tier2[:max_per_tier], TIER_3: tier3[:max_per_tier]}
 
 
 def text_queries(title: str, desc: str, max_q: int = 12) -> List[str]:
@@ -33,6 +167,29 @@ def text_queries(title: str, desc: str, max_q: int = 12) -> List[str]:
         if len(qs) >= max_q:
             break
     return qs[:max_q]
+
+
+def search_assets_by_tier(pexels_key: str, pixabay_key: str, query_plan: Dict[str, List[str]]) -> Dict[str, List[Dict[str, Any]]]:
+    out: Dict[str, List[Dict[str, Any]]] = {TIER_1: [], TIER_2: [], TIER_3: []}
+    for tier in [TIER_1, TIER_2, TIER_3]:
+        queries = query_plan.get(tier) or []
+        assets: List[Dict[str, Any]] = []
+        for q in queries:
+            time.sleep(0.2)
+            try:
+                assets += pexels_search(pexels_key, q, per_page=10)
+            except Exception:
+                pass
+            time.sleep(0.2)
+            try:
+                assets += pixabay_search(pixabay_key, q, per_page=15)
+            except Exception:
+                pass
+        assets = dedupe_assets(assets)
+        for a in assets:
+            a["tier"] = tier
+        out[tier] = assets
+    return out
 
 
 def pexels_search(api_key: str, q: str, per_page: int = 12) -> List[Dict[str, Any]]:
