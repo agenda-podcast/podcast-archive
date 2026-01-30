@@ -20,3 +20,6 @@ venv/
 audio_tmp/
 
 # Keep metadata and feed in the repo (do not ignore feed/rss.xml or data/episodes.json)
+
+# Video render outputs (kept out of repo)
+work/

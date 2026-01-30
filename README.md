@@ -66,3 +66,76 @@ python scripts/sync.py
 - All references to the source feed provider (e.g., "buzzsprout") are removed from output
 - Episode GUIDs remain stable across runs to prevent duplicates
 ```
+
+## Video Podcast Renderer (B-roll + RSS audio)
+
+This repo can render 16:9 video episodes by mixing stock B-roll (Pexels + Pixabay) with the episode audio,
+then publish MP4s and per-episode manifests to GitHub Releases.
+
+### Inputs
+- Items source: `data/episodes.json` (full episode list, produced by `scripts/sync.py`)
+- Per-episode audio URL: `audio_url` inside `data/episodes.json`
+
+### State and outputs in the repo
+- Render state and status: `data/video-data/`
+  - `state.json`: processed GUIDs (used to render only new episodes)
+  - `status.csv`: full list with PENDING/RENDERED
+- Video RSS feed: `rss/video-rss/video_podcast.xml`
+  - Enclosure URLs point to release assets under tag `video-podcast`.
+
+### GitHub Actions workflow (manual)
+Workflow: `.github/workflows/render_video_podcast.yml` (workflow_dispatch)
+
+It uses the repository secrets (no Actions environment).
+
+Required repository secrets:
+- `PEXELS_API_KEY`
+- `PIXABAY_API_KEY`
+
+Releases used:
+- Tag `video-podcast`, title `video podcast` (MP4 assets)
+- Tag `video-podcast-manifests`, title `video podcast manifests` (manifest JSON assets)
+
+Note: Git tags cannot contain spaces, so the release tags use hyphens.
+
+### How it works
+- Renders only episodes whose `guid` is not yet present in `data/video-data/state.json`
+- Each episode:
+  - downloads audio
+  - searches for related stock videos
+  - cuts random 15s clips (deterministic per guid)
+  - concatenates clips to match audio duration
+  - muxes audio into the final MP4
+  - writes a per-episode manifest JSON listing clip provenance
+
+### YouTube upload
+The workflow can optionally upload rendered MP4s to YouTube.
+
+#### Required secrets in repository secrets
+- `YOUTUBE_CLIENT_ID`
+- `YOUTUBE_CLIENT_SECRET`
+- `YOUTUBE_REFRESH_TOKEN`
+
+#### Get a refresh token (one-time, on your laptop)
+1) Create a Google Cloud project and enable the YouTube Data API.
+2) Create OAuth client credentials and copy the client id and client secret.
+3) Install dependencies locally:
+
+```bash
+pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
+```
+
+4) Run the helper to get a refresh token:
+
+```bash
+python -m scripts.video_podcast.youtube_oauth_local \
+  --client-id "YOUR_CLIENT_ID" \
+  --client-secret "YOUR_CLIENT_SECRET" \
+  --out youtube_refresh_token.json
+```
+
+5) Add the refresh token to repository secrets as `YOUTUBE_REFRESH_TOKEN`.
+
+#### Run upload in Actions
+In the manual workflow `Render Video Podcast`, set `upload_to_youtube` to `true`.
+The workflow will upload any rendered episodes that do not yet have a YouTube video id stored in `data/video-data/state.json`.

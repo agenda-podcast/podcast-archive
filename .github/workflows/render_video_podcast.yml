@@ -1,0 +1,144 @@
+name: Render Video Podcast
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_items:
+        description: "Max NEW episodes to render (0 = no limit)"
+        required: true
+        default: "2"
+      dry_run:
+        description: "If true, do not render, only print plan and write status/rss"
+        required: true
+        default: "false"
+      force_guid:
+        description: "If set, process only this guid (even if already processed)"
+        required: false
+        default: ""
+      upload_to_youtube:
+        description: "If true, upload rendered videos to YouTube via OAuth (requires repository secrets)"
+        required: true
+        default: "false"
+      youtube_privacy:
+        description: "YouTube privacyStatus: private|unlisted|public"
+        required: true
+        default: "private"
+      youtube_category_id:
+        description: "YouTube categoryId (25 = News & Politics)"
+        required: true
+        default: "25"
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install YouTube upload dependencies
+        if: ${{ inputs.upload_to_youtube == 'true' && inputs.dry_run != 'true' }}
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install \
+            google-api-python-client==2.161.0 \
+            google-auth==2.37.0 \
+            google-auth-oauthlib==1.2.1 \
+            google-auth-httplib2==0.2.0
+
+      - name: Render new videos
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+        run: |
+          set -euo pipefail
+          DRY="${{ inputs.dry_run }}"
+          EXTRA=""
+          if [ "${DRY}" = "true" ]; then
+            EXTRA="--dry-run"
+          fi
+          python -m scripts.video_podcast.render_video_podcast \
+            --repo-root . \
+            --max-items "${{ inputs.max_items }}" \
+            --force-guid "${{ inputs.force_guid }}" \
+            ${EXTRA}
+
+      - name: Upload to YouTube
+        if: ${{ inputs.upload_to_youtube == 'true' && inputs.dry_run != 'true' }}
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -m scripts.video_podcast.youtube_upload \
+            --repo-root . \
+            --privacy-status "${{ inputs.youtube_privacy }}" \
+            --category-id "${{ inputs.youtube_category_id }}"
+
+      - name: Commit rss and state
+        run: |
+          set -euo pipefail
+          git status --porcelain
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add data/video-data rss/video-rss
+            git commit -m "video: update rss and render state"
+            git push
+          else
+            echo "No repo changes to commit."
+          fi
+
+      - name: Publish to GitHub Releases
+        if: ${{ inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VIDEO_TAG="video-podcast"
+          VIDEO_NAME="video podcast"
+          MAN_TAG="video-podcast-manifests"
+          MAN_NAME="video podcast manifests"
+
+          if ! gh release view "${VIDEO_TAG}" >/dev/null 2>&1; then
+            gh release create "${VIDEO_TAG}" --title "${VIDEO_NAME}" --notes "Auto-generated video episodes." --latest=false
+          fi
+          if ! gh release view "${MAN_TAG}" >/dev/null 2>&1; then
+            gh release create "${MAN_TAG}" --title "${MAN_NAME}" --notes "Auto-generated episode manifests." --latest=false
+          fi
+
+          if ls -1 work/video-podcast/videos/*.mp4 >/dev/null 2>&1; then
+            gh release upload "${VIDEO_TAG}" work/video-podcast/videos/*.mp4 --clobber
+          else
+            echo "No videos found to upload."
+          fi
+
+          if ls -1 work/video-podcast/manifests/*.json >/dev/null 2>&1; then
+            gh release upload "${MAN_TAG}" work/video-podcast/manifests/*.json --clobber
+          else
+            echo "No manifests found to upload."
+          fi
+
+      - name: Upload build artifacts
+        if: ${{ inputs.dry_run != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-podcast-artifacts
+          path: work/video-podcast
+          if-no-files-found: warn
