@@ -23,6 +23,3 @@ audio_tmp/
 
 # Video render outputs (kept out of repo)
 work/
-
-# Local OAuth token output (do not commit)
-youtube_refresh_token.json

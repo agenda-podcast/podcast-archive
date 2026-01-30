@@ -9,16 +9,27 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .clips_cache import CLIP_SEC, ensure_clips
-from .ffmpeg_ops import ffmpeg_concat_and_encode, ffmpeg_mux_audio
+from .ffmpeg_ops import ffmpeg_concat_and_encode, ffmpeg_make_clip, ffmpeg_mux_audio
 from .model import Episode, parse_episodes
 from .repo_state import choose_todo, load_state, save_state, write_status_csv, write_video_rss
-from .util import ffprobe_duration_sec, now_iso, safe_slug, sha256_file, download, load_json, save_json
+from .releases import try_download_any
+from .sources import apply_sensitive_query_policy, search_assets, text_queries
+from .util import ffprobe_duration_sec, now_iso, rand_for_guid, safe_slug, sha256_file, download, save_json
 
+
+CLIP_SEC = 15.0
+MIN_ASSET_SEC = 16.0
 
 DEFAULT_VIDEO_TAG = "video-podcast"
 DEFAULT_MANIFEST_TAG = "video-podcast-manifests"
 DEFAULT_CLIPS_TAG = "video-podcast-clips"
+
+
+def _list_ordered_clips(dir_path: Path) -> List[Path]:
+    if not dir_path.exists() or not dir_path.is_dir():
+        return []
+    items = sorted([p for p in dir_path.iterdir() if p.is_file() and p.suffix.lower() == ".mp4"])
+    return items
 
 
 def render_episode(
@@ -26,23 +37,39 @@ def render_episode(
     repo: str,
     out_videos_dir: Path,
     out_manifests_dir: Path,
-    tmp_dir: Path,
+    out_clips_root: Path,
+    out_clips_cache_dir: Path,
+    run_root: Path,
     pexels_key: str,
     pixabay_key: str,
+    gh_token: str,
     clips_tag: str,
     dry_run: bool,
 ) -> Tuple[Optional[str], Optional[str]]:
+    rng = rand_for_guid(ep.guid)
     pub_dt = parsedate_to_datetime(ep.pub_rfc822) if ep.pub_rfc822 else None
     date_prefix = pub_dt.strftime("%Y%m%d") if pub_dt else "00000000"
     base = "%s-%s-%s" % (date_prefix, ep.guid, safe_slug(ep.title))
     video_asset = "%s.mp4" % base
     manifest_asset = "%s.json" % base
+    clips_silent_asset = "%s-clips-silent.mp4" % base
+    clips_meta_asset = "%s-clips-meta.json" % base
 
     if dry_run:
         return video_asset, manifest_asset
 
-    work = tmp_dir / ep.guid
+    work = run_root / ep.guid
     work.mkdir(parents=True, exist_ok=True)
+
+    out_clips_dir = out_clips_root / ep.guid
+
+    # Cleanup legacy outputs from earlier versions (zips or meta files under clips dir).
+    if out_clips_dir.exists() and out_clips_dir.is_dir():
+        for p in out_clips_dir.glob("*.zip"):
+            try:
+                p.unlink()
+            except Exception:
+                pass
 
     audio_path = work / "audio.mp3"
     download(ep.audio_url, audio_path)
@@ -50,31 +77,128 @@ def render_episode(
     audio_dur = ffprobe_duration_sec(audio_path)
     need = int((audio_dur + (CLIP_SEC - 0.001)) // CLIP_SEC)
 
-    clips_info = ensure_clips(
-        guid=ep.guid,
-        title=ep.title,
-        desc_html=ep.description,
-        repo=repo,
-        clips_tag=clips_tag,
-        tmp_dir=tmp_dir,
-        need=need,
-        pexels_key=pexels_key,
-        pixabay_key=pixabay_key,
-    )
+    query_policy: Dict[str, Any] = {
+        "sensitive_detected": False,
+        "matched_terms": [],
+        "queries_original": [],
+        "queries_filtered": [],
+        "queries_dropped": [],
+        "proxy_queries_added": [],
+        "location_prefix": "",
+    }
 
-    clips_ordered_dir = clips_info["clips_dir"]
-    clips_meta_path = clips_info["clips_meta_path"]
-    clip_zip_asset = clips_info["clips_zip_asset"]
-    clips_sha = clips_info["clips_sha256"]
-    reused = bool(clips_info["reused"])
-    generated = bool(clips_info["generated"])
-
-    ordered = sorted(clips_ordered_dir.glob("clip_*.mp4"))
-    if len(ordered) < need:
-        raise RuntimeError("missing ordered clips")
-
+    used_clip_cache = False
+    used_clip_cache_asset = ""
     silent_video = work / "video_silent.mp4"
-    ffmpeg_concat_and_encode(ordered[:need], silent_video)
+
+    # Reuse pre-rendered silent clips timeline if it exists in Releases.
+    if gh_token and clips_tag:
+        ok, picked = try_download_any(
+            repo=repo,
+            tag=clips_tag,
+            candidates=(clips_silent_asset,),
+            dst=silent_video,
+            token=gh_token,
+        )
+        if ok:
+            used_clip_cache = True
+            used_clip_cache_asset = picked
+
+    # Reuse already-built local clips if present (useful for local runs).
+    local_clips = _list_ordered_clips(out_clips_dir)
+
+    prov: List[Dict[str, Any]] = []
+    clips: List[Path] = []
+
+    if not used_clip_cache:
+        if local_clips and len(local_clips) >= 1:
+            clips = local_clips
+        else:
+            out_clips_dir.mkdir(parents=True, exist_ok=True)
+            queries_orig = text_queries(ep.title, ep.description, max_q=12)
+            queries, query_policy = apply_sensitive_query_policy(ep.title, ep.description, queries_orig, max_q=12)
+            assets = search_assets(pexels_key, pixabay_key, queries)
+            if not assets:
+                raise RuntimeError("no candidate assets found")
+
+            raw_dir = work / "raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+
+            picks = list(assets)
+            rng.shuffle(picks)
+
+            pick_i = 0
+            clip_i = 1
+
+            while len(clips) < need and pick_i < len(picks) * 3:
+                a = picks[pick_i % len(picks)]
+                pick_i += 1
+                asset_key = "%s-%s" % (a["source"], a["asset_id"])
+                src_path = raw_dir / ("%s.mp4" % asset_key)
+
+                try:
+                    if not src_path.exists():
+                        download(a["download_url"], src_path)
+                    dur = ffprobe_duration_sec(src_path)
+                    if dur < MIN_ASSET_SEC:
+                        continue
+                    max_start = max(0.0, dur - CLIP_SEC)
+                    start = rng.uniform(0.0, max_start) if max_start > 0 else 0.0
+
+                    clip_name = "main_%04d.mp4" % clip_i
+                    clip_path = out_clips_dir / clip_name
+                    ffmpeg_make_clip(src_path, clip_path, start, CLIP_SEC)
+
+                    clips.append(clip_path)
+                    prov.append({
+                        "clip_index": clip_i,
+                        "clip_name": clip_name,
+                        "source": a["source"],
+                        "asset_id": a["asset_id"],
+                        "author": a.get("author") or "",
+                        "page_url": a.get("page_url") or "",
+                        "download_url": a.get("download_url") or "",
+                        "license_url": a.get("license_url") or "",
+                        "start_sec": round(start, 3),
+                        "duration_sec": round(CLIP_SEC, 3),
+                    })
+                    clip_i += 1
+                except Exception:
+                    continue
+
+            # Never persist raw downloads.
+            try:
+                if raw_dir.exists():
+                    shutil.rmtree(raw_dir)
+            except Exception:
+                pass
+
+        if len(clips) < 1:
+            raise RuntimeError("no usable clips produced")
+
+        ffmpeg_concat_and_encode(clips, silent_video)
+
+        # Persist clip-cache artifacts for Releases. Do not place zips into clips.
+        out_clips_cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_mp4 = out_clips_cache_dir / clips_silent_asset
+        shutil.copyfile(silent_video, cache_mp4)
+        cache_meta = {
+            "guid": ep.guid,
+            "title": ep.title,
+            "rendered_at": now_iso(),
+            "clips_tag": clips_tag,
+            "clips_silent_asset_name": clips_silent_asset,
+            "clips_meta_asset_name": clips_meta_asset,
+            "clips_dir": str(out_clips_dir),
+            "clip_sec": CLIP_SEC,
+            "clips_count": len(clips),
+            "query_policy": query_policy,
+            "provenance": prov,
+        }
+        save_json(out_clips_cache_dir / clips_meta_asset, cache_meta)
+    else:
+        # For cache-based renders, report expected clip count.
+        clips = local_clips
 
     final_video = work / "video.mp4"
     ffmpeg_mux_audio(silent_video, audio_path, final_video)
@@ -86,18 +210,6 @@ def render_episode(
     manifest_out = out_manifests_dir / manifest_asset
 
     shutil.copyfile(final_video, video_out)
-
-    out_clips_dir = out_videos_dir.parent / "clips"
-    out_clips_dir.mkdir(parents=True, exist_ok=True)
-    if generated:
-        shutil.copyfile(clips_info["clips_zip_path"], out_clips_dir / clip_zip_asset)
-
-    clip_meta_loaded: Any = {}
-    if clips_meta_path.exists():
-        try:
-            clip_meta_loaded = load_json(clips_meta_path)
-        except Exception:
-            clip_meta_loaded = {}
 
     manifest = {
         "guid": ep.guid,
@@ -113,18 +225,27 @@ def render_episode(
         "video_sha256": sha256_file(video_out),
         "audio_duration_sec": round(audio_dur, 3),
         "clip_sec": CLIP_SEC,
-        "clips_count": need,
+        "clips_count": len(clips) if len(clips) > 0 else int(need),
         "clips_tag": clips_tag,
-        "clips_asset_name": clip_zip_asset,
-        "clips_sha256": clips_sha,
-        "clips_reused": bool(reused),
-        "clips_meta": clip_meta_loaded,
+        "clips_silent_asset_name": clips_silent_asset,
+        "clips_meta_asset_name": clips_meta_asset,
+        "used_clip_cache": used_clip_cache,
+        "used_clip_cache_asset_name": used_clip_cache_asset,
+        "query_policy": query_policy,
+        "provenance": prov,
         "license_notes": {
             "pexels": "https://www.pexels.com/license/",
             "pixabay": "https://pixabay.com/service/license/",
         },
     }
     save_json(manifest_out, manifest)
+
+    # Never keep per-run temp.
+    try:
+        if work.exists():
+            shutil.rmtree(work)
+    except Exception:
+        pass
 
     return video_asset, manifest_asset
 
@@ -159,8 +280,10 @@ def main() -> int:
 
     pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
     pixabay_key = os.environ.get("PIXABAY_API_KEY", "").strip()
+    gh_token = os.environ.get("GH_TOKEN", "").strip() or os.environ.get("GITHUB_TOKEN", "").strip()
     if not args.dry_run and (not pexels_key or not pixabay_key):
-        print("[warn] API keys are missing. Rendering will work only if clips are reused from Releases.")
+        print("PEXELS_API_KEY and PIXABAY_API_KEY must be set in environment.", file=sys.stderr)
+        return 2
 
     episodes = parse_episodes(episodes_json)
     state = load_state(state_path)
@@ -170,8 +293,10 @@ def main() -> int:
 
     out_videos = out_dir / "videos"
     out_manifests = out_dir / "manifests"
-    tmp_dir = out_dir / "tmp"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
+    out_clips_root = out_dir / "clips"
+    out_clips_cache_dir = out_dir / "clips_cache"
+    run_root = out_dir / "_run"
+    run_root.mkdir(parents=True, exist_ok=True)
 
     processed = state.get("processed")
     if not isinstance(processed, dict):
@@ -186,9 +311,12 @@ def main() -> int:
                 repo=repo,
                 out_videos_dir=out_videos,
                 out_manifests_dir=out_manifests,
-                tmp_dir=tmp_dir,
+                out_clips_root=out_clips_root,
+                out_clips_cache_dir=out_clips_cache_dir,
+                run_root=run_root,
                 pexels_key=pexels_key,
                 pixabay_key=pixabay_key,
+                gh_token=gh_token,
                 clips_tag=args.clips_tag,
                 dry_run=args.dry_run,
             )
@@ -197,10 +325,9 @@ def main() -> int:
                     "processed_at": now_iso(),
                     "video_tag": args.video_tag,
                     "manifest_tag": args.manifest_tag,
+                    "clips_tag": args.clips_tag,
                     "video_asset_name": video_asset,
                     "manifest_asset_name": manifest_asset,
-                    "clips_tag": args.clips_tag,
-                    "clips_asset_name": "clips_%s.zip" % ep.guid,
                 }
                 save_state(state_path, state)
                 print("[ok] guid=%s video=%s manifest=%s" % (ep.guid, video_asset, manifest_asset))
@@ -209,6 +336,13 @@ def main() -> int:
 
     write_status_csv(status_csv, episodes, state)
     write_video_rss(rss_path, repo, args.video_tag, episodes, state)
+
+    # Ensure no per-run temp remains.
+    try:
+        if run_root.exists():
+            shutil.rmtree(run_root)
+    except Exception:
+        pass
 
     print("[done] out_dir=%s" % str(out_dir))
     return 0

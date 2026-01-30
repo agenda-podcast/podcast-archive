@@ -4,26 +4,5 @@
 <title>Video Podcast</title>
 <description>Rendered video episodes (B-roll + RSS audio)</description>
 <link>https://github.com/agenda-podcast/podcast-archive</link>
-<item>
-<guid>agenda-18322949</guid>
-<title>Episode 1: The U.S. Domestic AI Regulatory War and Federal Preemption</title>
-<description>This episode explores the intensifying conflict between state and federal AI regulation in the United States, examining the push for federal preemption and its implications for the broader AI governance landscape.</description>
-<pubDate>Sun, 01 Dec 2025 05:00:00 +0000</pubDate>
-<enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/video-podcast/20251201-agenda-18322949-episode-1-the-u-s-domestic-ai-regulatory-war-and-federal-preemption.mp4" type="video/mp4" />
-</item>
-<item>
-<guid>agenda-18349868</guid>
-<title>Episode 2: The General-Purpose AI (GPAI) Battleground and Innovation Conflict</title>
-<description>This episode focuses on the highly contested regulatory territory of large foundation models, primarily developed by U.S. technology leaders, examining the unique obligations, compliance challenges, and industry resistance.</description>
-<pubDate>Fri, 05 Dec 2025 05:00:00 +0000</pubDate>
-<enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/video-podcast/20251205-agenda-18349868-episode-2-the-general-purpose-ai-gpai-battleground-and-innovation-conflict.mp4" type="video/mp4" />
-</item>
-<item>
-<guid>agenda-18592614</guid>
-<title>New York City: Market of Bodies. Prostitution crisis.</title>
-<description>For many newly arrived migrants, sex work is not a choice of profession but a &quot;mechanism of survival&quot; necessitated by the high cost of urban living and the inadequacies of the city&apos;s shelter system. This phenomenon, often termed &quot;survival sex,&quot; has led to &quot;corner fights&quot; between established sex workers and newcomers as territory on Roosevelt Avenue becomes increasingly overcrowded. Organizations like Colectivo report that the stress of the migration journey, combined with the lack of social s...</description>
-<pubDate>Thu, 29 Jan 2026 21:00:00 +0000</pubDate>
-<enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/video-podcast/20260129-agenda-18592614-new-york-city-market-of-bodies-prostitution-crisis.mp4" type="video/mp4" />
-</item>
 </channel>
 </rss>

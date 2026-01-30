@@ -4,141 +4,172 @@ import time
 import urllib.parse
 from typing import Any, Dict, List, Tuple
 
-from .util import USER_AGENT, http_get_json, strip_html
+from .util import USER_AGENT, http_get_json
 
 
-TIER_1 = "tier1"
-TIER_2 = "tier2"
-TIER_3 = "tier3"
+_SENSITIVE_TERMS = [
+    "prostitution",
+    "porn",
+    "pornography",
+    "sex",
+    "sexual",
+    "escort",
+    "brothel",
+    "nude",
+    "nudity",
+    "fetish",
+    "trafficking",
+    "onlyfans",
+]
 
 
-def build_query_plan(title: str, desc_html: str, max_per_tier: int = 8) -> Dict[str, List[str]]:
-    """Build a 3-tier query plan.
+_SENSITIVE_PROXY_QUERIES = {
+    "prostitution": [
+        "city streets at night",
+        "police patrol car lights",
+        "courthouse steps",
+        "social services office",
+        "public safety community outreach",
+        "subway station at night",
+        "city skyline night",
+        "interview microphone street",
+    ],
+    "trafficking": [
+        "police investigation",
+        "courthouse steps",
+        "community outreach",
+        "public safety",
+    ],
+    "sex": [
+        "city streets at night",
+        "courthouse steps",
+        "public safety",
+    ],
+    "porn": [
+        "computer screen blur",
+        "internet safety",
+        "data privacy",
+    ],
+    "nude": [
+        "city skyline",
+        "street interview",
+    ],
+}
 
-    Tier 1: visual entities and concrete nouns.
-    Tier 2: topic-to-visual mapping phrases.
-    Tier 3: generic fillers (used only if Tier 1 and Tier 2 clips are insufficient).
+
+def _normalize_spaces(s: str) -> str:
+    return " ".join((s or "").strip().split())
+
+
+def _contains_term(hay: str, term: str) -> bool:
+    hay_l = (hay or "").lower()
+    term_l = (term or "").lower()
+    if not term_l:
+        return False
+    return term_l in hay_l
+
+
+def _detect_sensitive_terms(title: str, desc: str) -> List[str]:
+    text = "%s %s" % (title or "", desc or "")
+    found: List[str] = []
+    for t in _SENSITIVE_TERMS:
+        if _contains_term(text, t):
+            found.append(t)
+    return sorted(set(found))
+
+
+def _location_prefix(title: str, desc: str) -> str:
+    text = ("%s %s" % (title or "", desc or "")).lower()
+    if "new york" in text or "nyc" in text:
+        return "new york city"
+    if "los angeles" in text or "la " in text:
+        return "los angeles"
+    if "washington dc" in text or "capitol" in text:
+        return "washington dc"
+    return ""
+
+
+def apply_sensitive_query_policy(
+    title: str,
+    desc: str,
+    queries: List[str],
+    max_q: int = 12,
+) -> Tuple[List[str], Dict[str, Any]]:
+    """Filter unsafe search tokens and add safe proxy queries.
+
+    This only affects Pexels/Pixabay search queries. It does not change
+    episode metadata.
     """
     import re
 
-    title = (title or "").strip()
-    desc = strip_html(desc_html or "")
-    raw = ("%s %s" % (title, desc)).strip()
-    lower = raw.lower()
-    lower = re.sub(r"http[s]?://\S+", " ", lower)
-    lower = re.sub(r"[^a-z0-9\s]", " ", lower)
-    words = [w for w in lower.split() if len(w) >= 3]
+    orig = [q for q in (queries or []) if (q or "").strip()]
+    found = _detect_sensitive_terms(title, desc)
+    prefix = _location_prefix(title, desc)
 
-    stop = set([
-        "the", "and", "for", "with", "from", "this", "that", "into", "over", "under",
-        "your", "their", "they", "them", "were", "been", "also", "more", "most",
-        "about", "will", "what", "when", "where", "which", "than", "then",
-    ])
-    abstract = set([
-        "issue", "issues", "today", "analysis", "overview", "implications", "conflict",
-        "debate", "discussion", "changes", "impact", "effects", "policy", "policies",
-        "governance", "strategy", "strategic", "history", "historic",
-    ])
+    filtered: List[str] = []
+    dropped: List[str] = []
 
-    freq: Dict[str, int] = {}
-    for w in words:
-        if w in stop or w in abstract:
+    for q in orig:
+        qq = " %s " % (q or "")
+        qq_l = qq.lower()
+        changed = False
+        for t in found:
+            if t in qq_l:
+                # Remove as whole word when possible.
+                qq = re.sub(r"\b" + re.escape(t) + r"\b", " ", qq, flags=re.IGNORECASE)
+                changed = True
+        qq = _normalize_spaces(qq)
+        if not qq:
+            dropped.append(q)
             continue
-        freq[w] = freq.get(w, 0) + 1
-
-    ranked = sorted(freq.items(), key=lambda x: (-x[1], x[0]))
-
-    tier1: List[str] = []
-    tier2: List[str] = []
-
-    entity_map: List[Tuple[str, List[str]]] = [
-        ("new york", ["new york city", "manhattan skyline", "nyc subway", "times square"]),
-        ("nyc", ["new york city", "manhattan skyline", "nyc street"]),
-        ("washington", ["washington dc", "us capitol", "white house"]),
-        ("capitol", ["us capitol", "congress"]),
-        ("congress", ["congress", "senate", "house of representatives"]),
-        ("supreme", ["supreme court", "courtroom"]),
-        ("court", ["courtroom", "judge", "lawyer"]),
-        ("europe", ["european union", "brussels", "european parliament"]),
-        ("eu", ["european union", "brussels"]),
-        ("canada", ["canada winter", "snow storm"]),
-        ("storm", ["winter storm", "snow", "ice storm", "power outage"]),
-        ("snow", ["snow storm", "blizzard", "snow plow"]),
-        ("power", ["power outage", "electric grid", "power lines"]),
-        ("crime", ["police lights", "city street at night", "courtroom"]),
-        ("prostitution", ["city street at night", "neon lights", "downtown street"]),
-        ("ai", ["data center", "servers", "computer chip", "robot"]),
-        ("chips", ["computer chip", "semiconductor"]),
-        ("security", ["cybersecurity", "data center", "surveillance camera"]),
-        ("litigation", ["lawyer", "courtroom", "legal documents"]),
-        ("regulation", ["government building", "legal documents", "courtroom"]),
-        ("regulatory", ["government building", "legal documents", "courtroom"]),
-        ("preemption", ["supreme court", "constitution", "government building"]),
-        ("constitution", ["constitution", "supreme court"]),
-        ("infrastructure", ["bridge", "power lines", "construction"]),
-    ]
-
-    for needle, qs in entity_map:
-        if needle in lower:
-            for q in qs:
-                if q not in tier1:
-                    tier1.append(q)
-                if len(tier1) >= max_per_tier:
-                    break
-        if len(tier1) >= max_per_tier:
-            break
-
-    visual_nouns = [
-        "court", "courthouse", "judge", "lawyer", "capitol", "congress", "senate",
-        "white", "house", "police", "city", "storm", "snow", "blizzard", "data",
-        "center", "server", "robot", "chip", "cybersecurity", "protest",
-    ]
-    for w, _ in ranked:
-        if w in stop or w in abstract:
+        # If query became too generic after removal, keep it only if it is not just a single token.
+        if changed and len(qq.split()) < 2:
+            dropped.append(q)
             continue
-        if w in visual_nouns and w not in tier1:
-            tier1.append(w)
-        if len(tier1) >= max_per_tier:
+        if qq not in filtered:
+            filtered.append(qq)
+
+    proxies: List[str] = []
+    if found:
+        proxy_raw: List[str] = []
+        for t in found:
+            proxy_raw += _SENSITIVE_PROXY_QUERIES.get(t, [])
+        # Deduplicate while keeping order.
+        seen = set()
+        for p in proxy_raw:
+            pp = _normalize_spaces(p)
+            if not pp:
+                continue
+            if prefix:
+                pp = _normalize_spaces("%s %s" % (prefix, pp))
+            if pp.lower() in seen:
+                continue
+            seen.add(pp.lower())
+            proxies.append(pp)
+
+    # Combine. Prefer filtered originals, then proxies.
+    combined: List[str] = []
+    for q in filtered:
+        combined.append(q)
+        if len(combined) >= max_q:
             break
+    if len(combined) < max_q:
+        for p in proxies:
+            if p not in combined:
+                combined.append(p)
+            if len(combined) >= max_q:
+                break
 
-    topic_map: List[Tuple[str, List[str]]] = [
-        ("ai act", ["european union building", "compliance", "legal documents"]),
-        ("federal", ["government building", "capitol building"]),
-        ("state", ["state capitol", "government building"]),
-        ("governance", ["government building", "legal documents"]),
-        ("preemption", ["supreme court", "constitution"]),
-        ("gpai", ["artificial intelligence", "data center"]),
-        ("foundation model", ["artificial intelligence", "servers"]),
-        ("liability", ["courtroom", "lawyer"]),
-        ("intellectual property", ["patent", "legal documents"]),
-        ("supply chain", ["shipping containers", "warehouse"]),
-        ("outages", ["power outage", "electric grid"]),
-        ("fatalities", ["ambulance", "hospital"]),
-    ]
-
-    for needle, qs in topic_map:
-        if needle in lower:
-            for q in qs:
-                if q not in tier2 and q not in tier1:
-                    tier2.append(q)
-                if len(tier2) >= max_per_tier:
-                    break
-        if len(tier2) >= max_per_tier:
-            break
-
-    if title and title not in tier1 and len(tier1) < max_per_tier:
-        tier1.insert(0, title)
-
-    tier3 = [
-        "technology",
-        "city skyline",
-        "business meeting",
-        "computer",
-        "news studio",
-        "street traffic",
-    ][:max_per_tier]
-
-    return {TIER_1: tier1[:max_per_tier], TIER_2: tier2[:max_per_tier], TIER_3: tier3[:max_per_tier]}
+    policy = {
+        "sensitive_detected": bool(found),
+        "matched_terms": found,
+        "location_prefix": prefix,
+        "queries_original": orig,
+        "queries_filtered": combined,
+        "queries_dropped": dropped,
+        "proxy_queries_added": proxies,
+    }
+    return combined, policy
 
 
 def text_queries(title: str, desc: str, max_q: int = 12) -> List[str]:
@@ -167,29 +198,6 @@ def text_queries(title: str, desc: str, max_q: int = 12) -> List[str]:
         if len(qs) >= max_q:
             break
     return qs[:max_q]
-
-
-def search_assets_by_tier(pexels_key: str, pixabay_key: str, query_plan: Dict[str, List[str]]) -> Dict[str, List[Dict[str, Any]]]:
-    out: Dict[str, List[Dict[str, Any]]] = {TIER_1: [], TIER_2: [], TIER_3: []}
-    for tier in [TIER_1, TIER_2, TIER_3]:
-        queries = query_plan.get(tier) or []
-        assets: List[Dict[str, Any]] = []
-        for q in queries:
-            time.sleep(0.2)
-            try:
-                assets += pexels_search(pexels_key, q, per_page=10)
-            except Exception:
-                pass
-            time.sleep(0.2)
-            try:
-                assets += pixabay_search(pixabay_key, q, per_page=15)
-            except Exception:
-                pass
-        assets = dedupe_assets(assets)
-        for a in assets:
-            a["tier"] = tier
-        out[tier] = assets
-    return out
 
 
 def pexels_search(api_key: str, q: str, per_page: int = 12) -> List[Dict[str, Any]]:

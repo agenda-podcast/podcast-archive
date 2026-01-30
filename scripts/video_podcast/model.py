@@ -21,7 +21,7 @@ def parse_episodes(episodes_json: Path) -> List[Episode]:
     j = load_json(episodes_json)
     raw = j.get("episodes")
     if not isinstance(raw, dict):
-        raise ValueError("episodes.json must contain key 'episodes'")
+        raise ValueError("episodes.json must contain {'episodes':{...}}")
     out: List[Episode] = []
     for _, v in raw.items():
         if not isinstance(v, dict):

@@ -58,9 +58,14 @@ def http_get_json(url: str, headers: Dict[str, str], timeout_sec: int = 30) -> D
     return json.loads(raw)
 
 
-def download(url: str, dst: Path, timeout_sec: int = 90) -> None:
+def download(url: str, dst: Path, timeout_sec: int = 90, headers: Dict[str, str] = None) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT}, method="GET")
+    h = {"User-Agent": USER_AGENT}
+    if headers:
+        for k, v in headers.items():
+            if k and v:
+                h[str(k)] = str(v)
+    req = urllib.request.Request(url, headers=h, method="GET")
     with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
         with open(dst, "wb") as f:
             shutil.copyfileobj(resp, f)
