@@ -4,5 +4,12 @@
 <title>Video Podcast</title>
 <description>Rendered video episodes (B-roll + RSS audio)</description>
 <link>https://github.com/agenda-podcast/podcast-archive</link>
+<item>
+<guid>agenda-18322949</guid>
+<title>Episode 1: The U.S. Domestic AI Regulatory War and Federal Preemption</title>
+<description>This episode explores the intensifying conflict between state and federal AI regulation in the United States, examining the push for federal preemption and its implications for the broader AI governance landscape.</description>
+<pubDate>Sun, 01 Dec 2025 05:00:00 +0000</pubDate>
+<enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/video-podcast/20251201-agenda-18322949-episode-1-the-u-s-domestic-ai-regulatory-war-and-federal-preemption.mp4" type="video/mp4" />
+</item>
 </channel>
 </rss>
