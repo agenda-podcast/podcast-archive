@@ -9,7 +9,7 @@
     <language>en-us</language>
     <copyright>© 2026 Agenda</copyright>
     <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
-    <lastBuildDate>Fri, 30 Jan 2026 02:04:25 +0000</lastBuildDate>
+    <lastBuildDate>Fri, 30 Jan 2026 02:17:47 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
 <itunes:owner>
 
@@ -38,6 +38,24 @@
       <pubDate>Thu, 29 Jan 2026 22:00:00 +0000</pubDate>
       <description><![CDATA[The push for legalization has resulted in a chaotic landscape where illegal operators thrive at the expense of public safety. Under the Democratic leadership, the city has been forced to shut down over 1,300 illegal smoke shops that were unlawfully selling cannabis, often targeting children. Despite these efforts, drug offenses remain a stubborn outlier in crime statistics; while other categories reportedly declined, drug offenses actually increased by 7% in 2025. This "atmosphere of anything...]]></description>
       <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-Failure_of_Legalization_and_the_Rise_of_Disorder.mp3" length="21317660" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>New York City: Market of Bodies. Prostitution crisis.</title>
+      <itunes:title>New York City: Market of Bodies. Prostitution crisis.</itunes:title>
+      <guid isPermaLink="false">agenda-18593477</guid>
+      <pubDate>Thu, 29 Jan 2026 22:00:00 +0000</pubDate>
+      <description><![CDATA[For many newly arrived migrants, sex work is not a choice of profession but a "mechanism of survival" necessitated by the high cost of urban living and the inadequacies of the city's shelter system. This phenomenon, often termed "survival sex," has led to "corner fights" between established sex workers and newcomers as territory on Roosevelt Avenue becomes increasingly overcrowded. Organizations like Colectivo report that the stress of the migration journey, combined with the lack of social s...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-New_York_City_Market_of_Bodies._Prostitution_crisis..mp3" length="24752667" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>New York City: Market of Bodies. Prostitution crisis.</title>
+      <itunes:title>New York City: Market of Bodies. Prostitution crisis.</itunes:title>
+      <guid isPermaLink="false">agenda-18592614</guid>
+      <pubDate>Thu, 29 Jan 2026 21:00:00 +0000</pubDate>
+      <description><![CDATA[For many newly arrived migrants, sex work is not a choice of profession but a "mechanism of survival" necessitated by the high cost of urban living and the inadequacies of the city's shelter system. This phenomenon, often termed "survival sex," has led to "corner fights" between established sex workers and newcomers as territory on Roosevelt Avenue becomes increasingly overcrowded. Organizations like Colectivo report that the stress of the migration journey, combined with the lack of social s...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-New_York_City_Market_of_Bodies._Prostitution_crisis..mp3" length="24752667" type="audio/mpeg"/>
       <itunes:explicit>false</itunes:explicit>
     </item>
     <item>
