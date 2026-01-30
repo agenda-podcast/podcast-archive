@@ -15,8 +15,17 @@
       "processed_at": "2026-01-30T19:29:54Z",
       "video_asset_name": "20251205-agenda-18349868-episode-2-the-general-purpose-ai-gpai-battleground-and-innovation-conflict.mp4",
       "video_tag": "video-podcast"
+    },
+    "agenda-18592614": {
+      "clips_asset_name": "clips_agenda-18592614.zip",
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "20260129-agenda-18592614-new-york-city-market-of-bodies-prostitution-crisis.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-01-30T20:34:47Z",
+      "video_asset_name": "20260129-agenda-18592614-new-york-city-market-of-bodies-prostitution-crisis.mp4",
+      "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-01-30T19:29:54Z",
+  "updated_at": "2026-01-30T20:34:47Z",
   "version": 1
 }
