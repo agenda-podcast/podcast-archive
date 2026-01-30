@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import List
+from typing import List, Optional
 
 
 def youtube_scopes() -> List[str]:
@@ -34,3 +34,24 @@ def build_credentials():
         scopes=youtube_scopes(),
     )
     return creds
+
+
+def refresh_credentials_or_fail() -> Optional[str]:
+    """Return an error code string if refresh fails, else None."""
+    # Imported lazily so the repo can run without YouTube deps unless enabled.
+    from google.auth.exceptions import RefreshError
+    from google.auth.transport.requests import Request
+
+    creds = build_credentials()
+    try:
+        creds.refresh(Request())
+        return None
+    except RefreshError as e:
+        msg = str(e)
+        if "deleted_client" in msg:
+            return "deleted_client"
+        if "invalid_client" in msg:
+            return "invalid_client"
+        if "invalid_grant" in msg:
+            return "invalid_grant"
+        return "refresh_error"

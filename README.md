@@ -86,6 +86,10 @@ then publish MP4s and per-episode manifests to GitHub Releases.
 ### GitHub Actions workflow (manual)
 Workflow: `.github/workflows/render_video_podcast.yml` (workflow_dispatch)
 
+Note: The render workflow publishes MP4s/manifests to GitHub Releases and uploads an Actions artifact BEFORE attempting the optional YouTube upload step.
+This ensures that even if YouTube upload fails (OAuth issues), the rendered outputs are not lost.
+If YouTube upload fails, fix OAuth secrets and then run `.github/workflows/upload_video_podcast_from_release.yml` to upload already-rendered videos from Releases without re-rendering.
+
 It uses the repository secrets (no Actions environment).
 
 Required repository secrets:

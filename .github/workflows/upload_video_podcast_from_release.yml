@@ -1,0 +1,105 @@
+name: Upload Rendered Video Podcast From Releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_tag:
+        description: "GitHub Release tag that holds MP4 assets"
+        required: true
+        default: "video-podcast"
+      manifest_tag:
+        description: "GitHub Release tag that holds manifest JSON assets"
+        required: true
+        default: "video-podcast-manifests"
+      max_items:
+        description: "Max items to upload in this run (0 = no limit)"
+        required: true
+        default: "1"
+      force_guid:
+        description: "If set, upload only this guid (even if already uploaded)"
+        required: false
+        default: ""
+      youtube_privacy:
+        description: "YouTube privacyStatus: private|unlisted|public"
+        required: true
+        default: "private"
+      youtube_category_id:
+        description: "YouTube categoryId (25 = News & Politics)"
+        required: true
+        default: "25"
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install YouTube upload dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install \
+            google-api-python-client==2.161.0 \
+            google-auth==2.37.0 \
+            google-auth-oauthlib==1.2.1 \
+            google-auth-httplib2==0.2.0
+
+      - name: Download rendered assets from GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p work/video-podcast/videos
+          mkdir -p work/video-podcast/manifests
+
+          echo "Downloading videos from release tag: ${{ inputs.video_tag }}"
+          gh release download "${{ inputs.video_tag }}" --pattern "*.mp4" --dir work/video-podcast/videos
+
+          echo "Downloading manifests from release tag: ${{ inputs.manifest_tag }}"
+          gh release download "${{ inputs.manifest_tag }}" --pattern "*.json" --dir work/video-podcast/manifests
+
+          echo "Downloaded files:"
+          ls -la work/video-podcast/videos || true
+          ls -la work/video-podcast/manifests || true
+
+      - name: Upload to YouTube
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          EXTRA=""
+          if [ -n "${{ inputs.force_guid }}" ]; then
+            EXTRA="--force-guid ${{ inputs.force_guid }}"
+          fi
+          python -m scripts.video_podcast.youtube_upload \
+            --repo-root . \
+            --privacy-status "${{ inputs.youtube_privacy }}" \
+            --category-id "${{ inputs.youtube_category_id }}" \
+            --max-items "${{ inputs.max_items }}" \
+            ${EXTRA}
+
+      - name: Commit rss and state
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add data/video-data rss/video-rss
+            git commit -m "video: update youtube upload state"
+            git push
+          else
+            echo "No repo changes to commit."
+          fi

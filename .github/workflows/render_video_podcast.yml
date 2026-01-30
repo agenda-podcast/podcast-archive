@@ -46,20 +46,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install ffmpeg
+        if: ${{ inputs.dry_run != 'true' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-
-      - name: Install YouTube upload dependencies
-        if: ${{ inputs.upload_to_youtube == 'true' && inputs.dry_run != 'true' }}
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install \
-            google-api-python-client==2.161.0 \
-            google-auth==2.37.0 \
-            google-auth-oauthlib==1.2.1 \
-            google-auth-httplib2==0.2.0
 
       - name: Render new videos
         env:
@@ -72,29 +62,11 @@ jobs:
           if [ "${DRY}" = "true" ]; then
             EXTRA="--dry-run"
           fi
-          python -m scripts.video_podcast.render_video_podcast \
-            --repo-root . \
-            --max-items "${{ inputs.max_items }}" \
-            --force-guid "${{ inputs.force_guid }}" \
-            ${EXTRA}
+          python -m scripts.video_podcast.render_video_podcast             --repo-root .             --max-items "${{ inputs.max_items }}"             --force-guid "${{ inputs.force_guid }}"             ${EXTRA}
 
-      - name: Upload to YouTube
-        if: ${{ inputs.upload_to_youtube == 'true' && inputs.dry_run != 'true' }}
-        env:
-          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
-          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+      - name: Commit render state and rss
         run: |
           set -euo pipefail
-          python -m scripts.video_podcast.youtube_upload \
-            --repo-root . \
-            --privacy-status "${{ inputs.youtube_privacy }}" \
-            --category-id "${{ inputs.youtube_category_id }}"
-
-      - name: Commit rss and state
-        run: |
-          set -euo pipefail
-          git status --porcelain
           if [ -n "$(git status --porcelain)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -142,3 +114,35 @@ jobs:
           name: video-podcast-artifacts
           path: work/video-podcast
           if-no-files-found: warn
+
+      - name: Install YouTube upload dependencies
+        if: ${{ inputs.upload_to_youtube == 'true' && inputs.dry_run != 'true' }}
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install             google-api-python-client==2.161.0             google-auth==2.37.0             google-auth-oauthlib==1.2.1             google-auth-httplib2==0.2.0
+
+      - name: Upload to YouTube
+        if: ${{ inputs.upload_to_youtube == 'true' && inputs.dry_run != 'true' }}
+        continue-on-error: true
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -m scripts.video_podcast.youtube_upload             --repo-root .             --privacy-status "${{ inputs.youtube_privacy }}"             --category-id "${{ inputs.youtube_category_id }}"
+
+      - name: Commit YouTube ids and rss
+        if: ${{ inputs.upload_to_youtube == 'true' && inputs.dry_run != 'true' }}
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add data/video-data rss/video-rss
+            git commit -m "video: record youtube uploads"
+            git push
+          else
+            echo "No repo changes to commit."
+          fi

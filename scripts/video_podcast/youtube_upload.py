@@ -12,7 +12,7 @@ from .model import Episode, parse_episodes
 from .repo_state import load_state, save_state, write_status_csv, write_video_rss
 from .sources import text_queries
 from .util import now_iso, load_json, save_json
-from .youtube_auth import build_credentials
+from .youtube_auth import build_credentials, refresh_credentials_or_fail
 
 
 def _youtube_url(video_id: str) -> str:
@@ -73,6 +73,10 @@ def _build_service() -> Any:
     # Imported lazily so the repo can run without YouTube deps unless enabled.
     from googleapiclient.discovery import build
 
+    err = refresh_credentials_or_fail()
+    if err:
+        raise RuntimeError("YouTube OAuth refresh failed: %s" % err)
+
     creds = build_credentials()
     return build("youtube", "v3", credentials=creds)
 
@@ -110,6 +114,8 @@ def upload_all(
     out_dir: Path,
     privacy_status: str,
     category_id: str,
+    max_items: int,
+    force_guid: str,
 ) -> int:
     repo = (repo_root / ".git").exists()
     if not repo:
@@ -124,11 +130,16 @@ def upload_all(
     service = _build_service()
 
     uploads: List[Tuple[str, str]] = []
+    force_guid = (force_guid or "").strip()
+    uploaded_n = 0
+
     for ep in episodes:
+        if force_guid and ep.guid != force_guid:
+            continue
         entry = processed.get(ep.guid)
         if not isinstance(entry, dict):
             continue
-        if not _needs_upload(entry):
+        if (not force_guid) and (not _needs_upload(entry)):
             continue
         asset = str(entry.get("video_asset_name") or "").strip()
         if not asset:
@@ -176,7 +187,11 @@ def upload_all(
             _write_manifest(manifest_path, man)
 
         uploads.append((ep.guid, vid))
+        uploaded_n += 1
         print("[youtube] upload_ok guid=%s video_id=%s" % (ep.guid, vid))
+
+        if max_items > 0 and uploaded_n >= max_items:
+            break
 
     # Always rewrite CSV and RSS so they include YouTube links when available.
     write_status_csv(status_csv, episodes, state)
@@ -206,6 +221,8 @@ def main() -> int:
     ap.add_argument("--out-dir", default="work/video-podcast")
     ap.add_argument("--privacy-status", default="private")
     ap.add_argument("--category-id", default="25")
+    ap.add_argument("--max-items", default="0")
+    ap.add_argument("--force-guid", default="")
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -215,21 +232,47 @@ def main() -> int:
     rss_path = (repo_root / args.rss_path).resolve()
     out_dir = (repo_root / args.out_dir).resolve()
 
+    try:
+        max_items = int(str(args.max_items).strip())
+    except Exception:
+        print("max-items must be int", file=sys.stderr)
+        return 2
+
     ps = str(args.privacy_status).strip().lower()
     if ps not in ["private", "unlisted", "public"]:
         print("privacy-status must be private|unlisted|public", file=sys.stderr)
         return 2
 
-    return upload_all(
-        repo_root=repo_root,
-        episodes=episodes,
-        state_path=state_path,
-        status_csv=status_csv,
-        rss_path=rss_path,
-        out_dir=out_dir,
-        privacy_status=ps,
-        category_id=str(args.category_id).strip(),
-    )
+    try:
+        return upload_all(
+            repo_root=repo_root,
+            episodes=episodes,
+            state_path=state_path,
+            status_csv=status_csv,
+            rss_path=rss_path,
+            out_dir=out_dir,
+            privacy_status=ps,
+            category_id=str(args.category_id).strip(),
+            max_items=max_items,
+            force_guid=str(args.force_guid or "").strip(),
+        )
+    except RuntimeError as e:
+        msg = str(e)
+        if "deleted_client" in msg:
+            print("[youtube][FAIL] OAuth client was deleted.", file=sys.stderr)
+            print("[youtube][FIX] Create a NEW OAuth Client ID in Google Cloud (type: Desktop app).", file=sys.stderr)
+            print("[youtube][FIX] Run youtube_oauth_local to generate a NEW refresh token.", file=sys.stderr)
+            print("[youtube][FIX] Update GitHub repo secrets: YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN.", file=sys.stderr)
+            return 2
+        if "invalid_client" in msg:
+            print("[youtube][FAIL] Invalid client credentials.", file=sys.stderr)
+            print("[youtube][FIX] Verify YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET match the OAuth client.", file=sys.stderr)
+            return 2
+        if "invalid_grant" in msg:
+            print("[youtube][FAIL] Refresh token is invalid or revoked.", file=sys.stderr)
+            print("[youtube][FIX] Re-run youtube_oauth_local to generate a new refresh token.", file=sys.stderr)
+            return 2
+        raise
 
 
 if __name__ == "__main__":
