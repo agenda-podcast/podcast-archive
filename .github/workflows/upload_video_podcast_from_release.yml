@@ -29,7 +29,7 @@ on:
         default: "25"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   upload:
