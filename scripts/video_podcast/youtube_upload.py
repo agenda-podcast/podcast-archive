@@ -110,6 +110,7 @@ def upload_all(
     out_dir: Path,
     privacy_status: str,
     category_id: str,
+    max_items: int,
 ) -> int:
     repo = (repo_root / ".git").exists()
     if not repo:
@@ -123,8 +124,14 @@ def upload_all(
 
     service = _build_service()
 
+    max_n = int(max_items)
+    if max_n < 0:
+        max_n = 0
+
     uploads: List[Tuple[str, str]] = []
     for ep in episodes:
+        if max_n and len(uploads) >= max_n:
+            break
         entry = processed.get(ep.guid)
         if not isinstance(entry, dict):
             continue
@@ -206,6 +213,12 @@ def main() -> int:
     ap.add_argument("--out-dir", default="work/video-podcast")
     ap.add_argument("--privacy-status", default="private")
     ap.add_argument("--category-id", default="25")
+    ap.add_argument(
+        "--max-items",
+        type=int,
+        default=0,
+        help="max number of uploads in this run (0 = no limit)",
+    )
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -229,6 +242,7 @@ def main() -> int:
         out_dir=out_dir,
         privacy_status=ps,
         category_id=str(args.category_id).strip(),
+        max_items=int(args.max_items),
     )
 
 
