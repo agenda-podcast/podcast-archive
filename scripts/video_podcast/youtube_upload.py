@@ -101,6 +101,26 @@ def _clean_tags(tags: List[str]) -> List[str]:
     return out
 
 
+def _find_video_asset_for_guid(out_dir: Path, guid: str) -> Optional[str]:
+    vids = []
+    d = out_dir / "videos"
+    if d.exists():
+        vids.extend(sorted(d.glob("*%s*.mp4" % guid)))
+    if not vids:
+        return None
+    return vids[0].name
+
+
+def _find_manifest_asset_for_guid(out_dir: Path, guid: str) -> Optional[str]:
+    mans = []
+    d = out_dir / "manifests"
+    if d.exists():
+        mans.extend(sorted(d.glob("*%s*.json" % guid)))
+    if not mans:
+        return None
+    return mans[0].name
+
+
 def upload_all(
     repo_root: Path,
     episodes: List[Episode],
@@ -126,12 +146,14 @@ def upload_all(
     service = _build_service()
 
     uploads: List[Tuple[str, str]] = []
+    episodes_all = list(episodes)
     force_guid = str(force_guid or "").strip()
     force_set = set()
+    upload_eps = episodes
     if force_guid:
         force_set.add(force_guid)
-        episodes = [e for e in episodes if e.guid in force_set]
-        if not episodes:
+        upload_eps = [e for e in episodes if e.guid in force_set]
+        if not upload_eps:
             print("[youtube] no episodes match force_guid=%s" % force_guid)
             return 0
     try:
@@ -141,19 +163,36 @@ def upload_all(
     if max_n < 0:
         max_n = 0
 
-    for ep in episodes:
+    for ep in upload_eps:
         entry = processed.get(ep.guid)
         if not isinstance(entry, dict):
-            continue
+            entry = {}
+
         if (not force_set) and (not _needs_upload(entry)):
             continue
+
         asset = str(entry.get("video_asset_name") or "").strip()
+        if not asset and force_set:
+            asset = str(_find_video_asset_for_guid(out_dir, ep.guid) or "").strip()
+            if asset:
+                entry["video_asset_name"] = asset
+
         if not asset:
+            if force_set:
+                print("[youtube] skip guid=%s reason=no_video_asset_name" % ep.guid)
             continue
+
         video_path = out_dir / "videos" / asset
         if not video_path.exists():
+            if force_set:
+                print("[youtube] skip guid=%s reason=video_missing file=%s" % (ep.guid, asset))
             continue
+
         manifest_asset = str(entry.get("manifest_asset_name") or "").strip()
+        if not manifest_asset and force_set:
+            manifest_asset = str(_find_manifest_asset_for_guid(out_dir, ep.guid) or "").strip()
+            if manifest_asset:
+                entry["manifest_asset_name"] = manifest_asset
         manifest_path = out_dir / "manifests" / manifest_asset if manifest_asset else None
 
         title = ep.title
@@ -192,6 +231,9 @@ def upload_all(
             man["youtube"] = dict(entry["youtube"])
             _write_manifest(manifest_path, man)
 
+        processed[ep.guid] = entry
+        save_state(state_path, state)
+
         uploads.append((ep.guid, vid))
         print("[youtube] upload_ok guid=%s video_id=%s" % (ep.guid, vid))
         if max_n and (len(uploads) >= max_n):
@@ -200,7 +242,7 @@ def upload_all(
 
 
     # Always rewrite CSV and RSS so they include YouTube links when available.
-    write_status_csv(status_csv, episodes, state)
+    write_status_csv(status_csv, episodes_all, state)
 
     import os
     gh_repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
@@ -211,7 +253,7 @@ def upload_all(
     any_entry = next(iter(processed.values()), None)
     if isinstance(any_entry, dict):
         video_tag = str(any_entry.get("video_tag") or video_tag)
-    write_video_rss(rss_path, gh_repo, video_tag, episodes, state)
+    write_video_rss(rss_path, gh_repo, video_tag, episodes_all, state)
 
     print("[youtube] uploaded_count=%d" % len(uploads))
     return 0
