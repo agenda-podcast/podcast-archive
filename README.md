@@ -80,7 +80,7 @@ then publish MP4s and per-episode manifests to GitHub Releases.
 - Render state and status: `data/video-data/`
   - `state.json`: processed GUIDs (used to render only new episodes)
   - `status.csv`: full list with PENDING/RENDERED
-- Video RSS feed: `rss/video-rss/video_podcast.xml`
+- Video RSS feed: `feed/video_podcast.xml`
   - Enclosure URLs point to release assets under tag `video-podcast`.
 
 ### GitHub Actions workflow (manual)

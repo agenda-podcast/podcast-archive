@@ -302,15 +302,15 @@ def load_state() -> dict:
     {
       "episodes": {
         "<source_key>": {
-           "source_key": "...",
-           "guid": "...",
-           "title": "...",
-           "pubDate_rfc822": "...",
-           "audio_url": "...",
+           "source_key": "example-source-key",
+           "guid": "example-guid",
+           "title": "Example title",
+           "pubDate_rfc822": "Mon, 01 Jan 2024 00:00:00 +0000",
+           "audio_url": "https://example.com/audio.mp3",
            "length_bytes": 123,
-           "description_html": "..."
+           "description_html": "Example description"
         },
-        ...
+        "another-source-key": {"guid": "example-guid-2"}
       }
     }
     """

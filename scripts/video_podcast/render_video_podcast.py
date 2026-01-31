@@ -9,10 +9,10 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .ffmpeg_ops import ffmpeg_concat_and_encode, ffmpeg_make_clip, ffmpeg_mux_audio
+from .ffmpeg_ops import ffmpeg_concat_with_audio, ffmpeg_make_clip
 from .model import Episode, parse_episodes
 from .repo_state import choose_todo, load_state, save_state, write_status_csv, write_video_rss
-from .releases import try_download_any
+from .releases import download_clips_for_guid
 from .sources import apply_sensitive_query_policy, search_assets, text_queries
 from .util import ffprobe_duration_sec, now_iso, rand_for_guid, safe_slug, sha256_file, download, save_json
 
@@ -38,7 +38,7 @@ def render_episode(
     out_videos_dir: Path,
     out_manifests_dir: Path,
     out_clips_root: Path,
-    out_clips_cache_dir: Path,
+    out_clips_release_dir: Path,
     run_root: Path,
     pexels_key: str,
     pixabay_key: str,
@@ -52,8 +52,7 @@ def render_episode(
     base = "%s-%s-%s" % (date_prefix, ep.guid, safe_slug(ep.title))
     video_asset = "%s.mp4" % base
     manifest_asset = "%s.json" % base
-    clips_silent_asset = "%s-clips-silent.mp4" % base
-    clips_meta_asset = "%s-clips-meta.json" % base
+    clip_asset_prefix = "%s_main_" % ep.guid
 
     if dry_run:
         return video_asset, manifest_asset
@@ -87,22 +86,8 @@ def render_episode(
         "location_prefix": "",
     }
 
-    used_clip_cache = False
-    used_clip_cache_asset = ""
-    silent_video = work / "video_silent.mp4"
-
-    # Reuse pre-rendered silent clips timeline if it exists in Releases.
-    if gh_token and clips_tag:
-        ok, picked = try_download_any(
-            repo=repo,
-            tag=clips_tag,
-            candidates=(clips_silent_asset,),
-            dst=silent_video,
-            token=gh_token,
-        )
-        if ok:
-            used_clip_cache = True
-            used_clip_cache_asset = picked
+    used_release_clips = False
+    used_release_clips_count = 0
 
     # Reuse already-built local clips if present (useful for local runs).
     local_clips = _list_ordered_clips(out_clips_dir)
@@ -110,10 +95,24 @@ def render_episode(
     prov: List[Dict[str, Any]] = []
     clips: List[Path] = []
 
-    if not used_clip_cache:
-        if local_clips and len(local_clips) >= 1:
-            clips = local_clips
-        else:
+    if local_clips and len(local_clips) >= 1:
+        clips = local_clips
+    else:
+        # Try to reuse ordered clips from Releases (per-guid, per-clip assets).
+        if gh_token and clips_tag:
+            got = download_clips_for_guid(
+                repo=repo,
+                tag=clips_tag,
+                guid=ep.guid,
+                dst_dir=out_clips_dir,
+                token=gh_token,
+            )
+            if got > 0:
+                used_release_clips = True
+                used_release_clips_count = got
+                clips = _list_ordered_clips(out_clips_dir)
+
+        if not clips:
             out_clips_dir.mkdir(parents=True, exist_ok=True)
             queries_orig = text_queries(ep.title, ep.description, max_q=12)
             queries, query_policy = apply_sensitive_query_policy(ep.title, ep.description, queries_orig, max_q=12)
@@ -173,35 +172,20 @@ def render_episode(
             except Exception:
                 pass
 
-        if len(clips) < 1:
-            raise RuntimeError("no usable clips produced")
+    if len(clips) < 1:
+        raise RuntimeError("no usable clips produced")
 
-        ffmpeg_concat_and_encode(clips, silent_video)
-
-        # Persist clip-cache artifacts for Releases. Do not place zips into clips.
-        out_clips_cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_mp4 = out_clips_cache_dir / clips_silent_asset
-        shutil.copyfile(silent_video, cache_mp4)
-        cache_meta = {
-            "guid": ep.guid,
-            "title": ep.title,
-            "rendered_at": now_iso(),
-            "clips_tag": clips_tag,
-            "clips_silent_asset_name": clips_silent_asset,
-            "clips_meta_asset_name": clips_meta_asset,
-            "clips_dir": str(out_clips_dir),
-            "clip_sec": CLIP_SEC,
-            "clips_count": len(clips),
-            "query_policy": query_policy,
-            "provenance": prov,
-        }
-        save_json(out_clips_cache_dir / clips_meta_asset, cache_meta)
-    else:
-        # For cache-based renders, report expected clip count.
-        clips = local_clips
+    # Prepare per-clip assets for Releases with unique names.
+    out_clips_release_dir.mkdir(parents=True, exist_ok=True)
+    for c in clips:
+        name = c.name
+        rel_name = "%s_%s" % (ep.guid, name)
+        dst = out_clips_release_dir / rel_name
+        if not dst.exists():
+            shutil.copyfile(c, dst)
 
     final_video = work / "video.mp4"
-    ffmpeg_mux_audio(silent_video, audio_path, final_video)
+    ffmpeg_concat_with_audio(clips, audio_path, final_video)
 
     out_videos_dir.mkdir(parents=True, exist_ok=True)
     out_manifests_dir.mkdir(parents=True, exist_ok=True)
@@ -227,10 +211,9 @@ def render_episode(
         "clip_sec": CLIP_SEC,
         "clips_count": len(clips) if len(clips) > 0 else int(need),
         "clips_tag": clips_tag,
-        "clips_silent_asset_name": clips_silent_asset,
-        "clips_meta_asset_name": clips_meta_asset,
-        "used_clip_cache": used_clip_cache,
-        "used_clip_cache_asset_name": used_clip_cache_asset,
+        "clip_asset_prefix": clip_asset_prefix,
+        "used_release_clips": used_release_clips,
+        "used_release_clips_count": used_release_clips_count,
         "query_policy": query_policy,
         "provenance": prov,
         "license_notes": {
@@ -256,7 +239,7 @@ def main() -> int:
     ap.add_argument("--episodes-json", default="data/episodes.json")
     ap.add_argument("--state-path", default="data/video-data/state.json")
     ap.add_argument("--status-csv", default="data/video-data/status.csv")
-    ap.add_argument("--rss-path", default="rss/video-rss/video_podcast.xml")
+    ap.add_argument("--rss-path", default="feed/video_podcast.xml")
     ap.add_argument("--out-dir", default="work/video-podcast")
     ap.add_argument("--max-items", type=int, default=3)
     ap.add_argument("--force-guid", default="")
@@ -294,7 +277,7 @@ def main() -> int:
     out_videos = out_dir / "videos"
     out_manifests = out_dir / "manifests"
     out_clips_root = out_dir / "clips"
-    out_clips_cache_dir = out_dir / "clips_cache"
+    out_clips_release_dir = out_dir / "clips_release"
     run_root = out_dir / "_run"
     run_root.mkdir(parents=True, exist_ok=True)
 
@@ -312,7 +295,7 @@ def main() -> int:
                 out_videos_dir=out_videos,
                 out_manifests_dir=out_manifests,
                 out_clips_root=out_clips_root,
-                out_clips_cache_dir=out_clips_cache_dir,
+                out_clips_release_dir=out_clips_release_dir,
                 run_root=run_root,
                 pexels_key=pexels_key,
                 pixabay_key=pixabay_key,

@@ -202,7 +202,7 @@ def main() -> int:
     ap.add_argument("--episodes-json", default="data/episodes.json")
     ap.add_argument("--state-path", default="data/video-data/state.json")
     ap.add_argument("--status-csv", default="data/video-data/status.csv")
-    ap.add_argument("--rss-path", default="rss/video-rss/video_podcast.xml")
+    ap.add_argument("--rss-path", default="feed/video_podcast.xml")
     ap.add_argument("--out-dir", default="work/video-podcast")
     ap.add_argument("--privacy-status", default="private")
     ap.add_argument("--category-id", default="25")

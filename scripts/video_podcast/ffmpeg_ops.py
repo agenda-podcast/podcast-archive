@@ -69,3 +69,35 @@ def ffmpeg_mux_audio(video: Path, audio: Path, dst: Path) -> None:
         str(dst),
     ]
     run(cmd)
+
+
+def ffmpeg_concat_with_audio(clips: List[Path], audio: Path, dst: Path) -> None:
+    """Concatenate silent clips and mux external audio into a single output.
+
+    This avoids writing an intermediate silent timeline file.
+    """
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    lst = dst.parent / "concat_list.txt"
+    lines = []
+    for c in clips:
+        lines.append("file '%s'" % c.as_posix())
+    lst.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", str(lst),
+        "-i", str(audio),
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-r", str(TARGET_FPS),
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+        "-movflags", "+faststart",
+        str(dst),
+    ]
+    run(cmd)

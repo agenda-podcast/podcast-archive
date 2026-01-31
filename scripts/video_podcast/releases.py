@@ -1,7 +1,7 @@
 # ASCII-only. No ellipses. Keep <= 500 lines.
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .util import download, http_get_json
 
@@ -65,7 +65,7 @@ def download_release_asset(repo: str, tag: str, asset_name: str, dst: Path, toke
 def try_download_any(
     repo: str,
     tag: str,
-    candidates: Tuple[str, ...],
+    candidates: Sequence[str],
     dst: Path,
     token: str,
 ) -> Tuple[bool, str]:
@@ -74,3 +74,47 @@ def try_download_any(
         if ok:
             return True, name
     return False, ""
+
+
+def list_asset_names(repo: str, tag: str, token: str) -> List[str]:
+    rel = get_release_by_tag(repo, tag, token)
+    if not rel:
+        return []
+    assets = rel.get("assets")
+    if not isinstance(assets, list):
+        return []
+    out: List[str] = []
+    for a in assets:
+        if isinstance(a, dict):
+            n = a.get("name")
+            if isinstance(n, str) and n:
+                out.append(n)
+    return out
+
+
+def download_clips_for_guid(repo: str, tag: str, guid: str, dst_dir: Path, token: str) -> int:
+    """Download per-clip assets for a guid into dst_dir.
+
+    Assets are expected to be named like: <guid>_main_0001.mp4, <guid>_main_0002.mp4, and so on.
+    They are stored locally as: main_0001.mp4, main_0002.mp4, and so on.
+    """
+    if not guid:
+        return 0
+    prefix = "%s_main_" % guid
+    names = [n for n in list_asset_names(repo, tag, token) if n.startswith(prefix) and n.endswith(".mp4")]
+    names.sort()
+    if not names:
+        return 0
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    got = 0
+    for n in names:
+        # Strip guid_ prefix.
+        local_name = n[len(guid) + 1 :]
+        dst = dst_dir / local_name
+        try:
+            ok = download_release_asset(repo, tag, n, dst, token)
+            if ok:
+                got += 1
+        except Exception:
+            continue
+    return got

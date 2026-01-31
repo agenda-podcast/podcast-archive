@@ -99,7 +99,7 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add data/video-data rss/video-rss
+            git add data/video-data feed/video_podcast.xml
             git commit -m "video: update rss and render state"
             git push
           else
@@ -126,7 +126,7 @@ jobs:
             gh release create "${MAN_TAG}" --title "${MAN_NAME}" --notes "Auto-generated episode manifests." --latest=false
           fi
           if ! gh release view "${CLIPS_TAG}" >/dev/null 2>&1; then
-            gh release create "${CLIPS_TAG}" --title "${CLIPS_NAME}" --notes "Auto-generated silent clip timelines and clip provenance." --latest=false
+            gh release create "${CLIPS_TAG}" --title "${CLIPS_NAME}" --notes "Auto-generated ordered clips per episode (assets named <guid>_main_0001.mp4, etc.)." --latest=false
           fi
 
           if ls -1 work/video-podcast/videos/*.mp4 >/dev/null 2>&1; then
@@ -141,18 +141,13 @@ jobs:
             echo "No manifests found to upload."
           fi
 
-          if ls -1 work/video-podcast/clips_cache/* >/dev/null 2>&1; then
-            gh release upload "${CLIPS_TAG}" work/video-podcast/clips_cache/* --clobber
+          if ls -1 work/video-podcast/clips_release/*.mp4 >/dev/null 2>&1; then
+            gh release upload "${CLIPS_TAG}" work/video-podcast/clips_release/*.mp4 --clobber
           else
-            echo "No clip-cache artifacts found to upload."
+            echo "No clips found to upload."
           fi
 
-      - name: Upload build artifacts
-        if: ${{ inputs.dry_run != 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: video-podcast-artifacts
-          path: |
-            work/video-podcast/manifests
-            work/video-podcast/clips
-          if-no-files-found: warn
+          # Cleanup release staging files to keep workspace small.
+          rm -rf work/video-podcast/clips_release || true
+          rm -rf work/video-podcast/videos || true
+          rm -rf work/video-podcast/manifests || true

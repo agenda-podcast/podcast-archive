@@ -23,3 +23,17 @@ audio_tmp/
 
 # Video render outputs (kept out of repo)
 work/
+
+# Extra safety: never commit large media or scratch folders.
+*.mp4
+*.mov
+*.mkv
+*.zip
+
+downloads/
+out/
+tmp/
+raw/
+
+# Local OAuth helper outputs (never commit)
+youtube_refresh_token.json
