@@ -111,6 +111,7 @@ def upload_all(
     privacy_status: str,
     category_id: str,
     max_items: int,
+    force_guid: str,
 ) -> int:
     repo = (repo_root / ".git").exists()
     if not repo:
@@ -124,18 +125,27 @@ def upload_all(
 
     service = _build_service()
 
-    max_n = int(max_items)
+    uploads: List[Tuple[str, str]] = []
+    force_guid = str(force_guid or "").strip()
+    force_set = set()
+    if force_guid:
+        force_set.add(force_guid)
+        episodes = [e for e in episodes if e.guid in force_set]
+        if not episodes:
+            print("[youtube] no episodes match force_guid=%s" % force_guid)
+            return 0
+    try:
+        max_n = int(max_items)
+    except Exception:
+        max_n = 0
     if max_n < 0:
         max_n = 0
 
-    uploads: List[Tuple[str, str]] = []
     for ep in episodes:
-        if max_n and len(uploads) >= max_n:
-            break
         entry = processed.get(ep.guid)
         if not isinstance(entry, dict):
             continue
-        if not _needs_upload(entry):
+        if (not force_set) and (not _needs_upload(entry)):
             continue
         asset = str(entry.get("video_asset_name") or "").strip()
         if not asset:
@@ -184,6 +194,10 @@ def upload_all(
 
         uploads.append((ep.guid, vid))
         print("[youtube] upload_ok guid=%s video_id=%s" % (ep.guid, vid))
+        if max_n and (len(uploads) >= max_n):
+            print("[youtube] max-items reached=%d" % max_n)
+            break
+
 
     # Always rewrite CSV and RSS so they include YouTube links when available.
     write_status_csv(status_csv, episodes, state)
@@ -213,12 +227,8 @@ def main() -> int:
     ap.add_argument("--out-dir", default="work/video-podcast")
     ap.add_argument("--privacy-status", default="private")
     ap.add_argument("--category-id", default="25")
-    ap.add_argument(
-        "--max-items",
-        type=int,
-        default=0,
-        help="max number of uploads in this run (0 = no limit)",
-    )
+    ap.add_argument("--max-items", default="0", help="Upload at most N items (0 = no limit).")
+    ap.add_argument("--force-guid", default="", help="If set, upload only this guid and ignore skip logic.")
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -242,7 +252,8 @@ def main() -> int:
         out_dir=out_dir,
         privacy_status=ps,
         category_id=str(args.category_id).strip(),
-        max_items=int(args.max_items),
+        max_items=int(str(args.max_items).strip() or "0"),
+        force_guid=str(args.force_guid).strip(),
     )
 
 
