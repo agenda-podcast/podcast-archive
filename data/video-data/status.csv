@@ -1,11 +1,2 @@
-guid,title,pubDate_rfc822,status,video_asset_name,manifest_asset_name,processed_at
-agenda-18322949,Episode 1: The U.S. Domestic AI Regulatory War and Federal Preemption,"Sun, 01 Dec 2025 05:00:00 +0000",PENDING,,,
-agenda-18349868,Episode 2: The General-Purpose AI (GPAI) Battleground and Innovation Conflict,"Fri, 05 Dec 2025 05:00:00 +0000",PENDING,,,
-agenda-18349866,Episode 3: The EU AI Act: Extraterritoriality and Direct US Compliance Costs,"Wed, 10 Dec 2025 05:00:00 +0000",PENDING,,,
-agenda-18349874,"Episode 4: Litigation Risks, IP Conflicts, and Global Security Threats","Sun, 14 Dec 2025 05:00:00 +0000",PENDING,,,
-agenda-18591274,"2026 Winter Storm: infrastructure damage, widespread power outages, and over 100 fatalities","Thu, 29 Jan 2026 17:00:00 +0000",PENDING,,,
-agenda-18592126,US big Cities: Why Record Safety Feels Like Danger,"Thu, 29 Jan 2026 19:00:00 +0000",PENDING,,,
-agenda-18592072,Why NYC Rejected Record Safety for Socialism,"Thu, 29 Jan 2026 19:00:00 +0000",PENDING,,,
-agenda-18592614,New York City: Market of Bodies. Prostitution crisis.,"Thu, 29 Jan 2026 21:00:00 +0000",PENDING,,,
-agenda-18592980,Failure of Legalization and the Rise of Disorder,"Thu, 29 Jan 2026 22:00:00 +0000",PENDING,,,
-agenda-18593227,Cooking the Books on NYC Crime: Arrest Avoidance as Statistical Strategy,"Thu, 29 Jan 2026 23:00:00 +0000",PENDING,,,
+guid,title,pubDate_rfc822,status,video_asset_name,manifest_asset_name,processed_at,youtube_video_id,youtube_uploaded_at,youtube_privacy_status
+agenda-18592614,New York City: Market of Bodies. Prostitution crisis.,"Thu, 29 Jan 2026 21:00:00 +0000",PENDING,,,,,,
