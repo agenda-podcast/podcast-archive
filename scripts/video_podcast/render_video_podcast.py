@@ -10,7 +10,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .ffmpeg_ops import ffmpeg_concat_with_intro_outro_and_frame, ffmpeg_make_clip
+from .ffmpeg_ops import build_episode_video_streamcopy, ffmpeg_make_clip
 from .model import Episode, parse_episodes
 from .repo_state import choose_todo, load_state, save_state, write_status_csv, write_video_rss
 from .releases import download_clips_for_guid
@@ -134,6 +134,17 @@ def render_episode(
                 clips = _list_ordered_clips(out_clips_dir)
                 log("[clips][release] guid=%s downloaded=%d local_now=%d" % (ep.guid, got, len(clips)))
 
+                total_dur = sum(ffprobe_duration_sec(p) for p in clips)
+                if total_dur + 0.2 < audio_dur:
+                    log("[clips][release][insufficient] guid=%s total_dur=%.3f audio_dur=%.3f" % (
+                        ep.guid,
+                        total_dur,
+                        audio_dur,
+                    ))
+                    used_release_clips = False
+                    used_release_clips_count = 0
+                    clips = []
+
         if not clips:
             out_clips_dir.mkdir(parents=True, exist_ok=True)
             queries_orig = text_queries(ep.title, ep.description, max_q=12)
@@ -168,6 +179,10 @@ def render_episode(
             rng.shuffle(picks)
 
             pick_i = 0
+
+            frame_png_local = (repo_root / DEFAULT_FRAME_PNG).resolve()
+            if not frame_png_local.exists():
+                raise RuntimeError("frame_png_missing: %s" % str(frame_png_local))
             clip_i = 1
             stats = {
                 "download_ok": 0,
@@ -205,7 +220,7 @@ def render_episode(
 
                     clip_name = "main_%04d.mp4" % clip_i
                     clip_path = out_clips_dir / clip_name
-                    ffmpeg_make_clip(src_path, clip_path, start, CLIP_SEC)
+                    ffmpeg_make_clip(src_path, clip_path, start, CLIP_SEC, frame_png=frame_png_local)
                     if not clip_path.exists() or clip_path.stat().st_size < 1024:
                         raise RuntimeError("clip_too_small")
 
@@ -272,15 +287,14 @@ def render_episode(
             shutil.copyfile(c, dst)
 
     intro_outro_mp4 = (repo_root / DEFAULT_INTRO_OUTRO_MP4).resolve()
-    frame_png = (repo_root / DEFAULT_FRAME_PNG).resolve()
 
     final_video = work / "video.mp4"
-    ffmpeg_concat_with_intro_outro_and_frame(
+    build_episode_video_streamcopy(
         clips=clips,
-        podcast_audio=audio_path,
+        podcast_mp3=audio_path,
         intro_outro_mp4=intro_outro_mp4,
-        frame_png=frame_png,
         dst=final_video,
+        work_dir=work,
     )
 
     out_videos_dir.mkdir(parents=True, exist_ok=True)

@@ -75,6 +75,33 @@ def run(cmd: List[str]) -> subprocess.CompletedProcess:
         raise
 
 
+def run_stream(cmd: List[str], prefix: str = "cmd") -> None:
+    # Stream stdout/stderr line-by-line so long ffmpeg steps do not look stuck.
+    # Keep a short tail for error context.
+    shown = " ".join(cmd[:10])
+    if len(cmd) > 10:
+        shown = shown + " [more]"
+    log("[%s][start] %s" % (prefix, shown))
+
+    tail: List[str] = []
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    assert p.stdout is not None
+    for line in p.stdout:
+        line = (line or "").rstrip("\n")
+        if line:
+            log("[%s] %s" % (prefix, line))
+        tail.append(line)
+        if len(tail) > 80:
+            tail = tail[-80:]
+    rc = p.wait()
+    if rc != 0:
+        log("[%s][fail] rc=%s" % (prefix, str(rc)))
+        if tail:
+            log("[%s][tail]\n%s" % (prefix, "\n".join(tail[-40:])))
+        raise RuntimeError("command_failed rc=%d" % rc)
+    log("[%s][ok]" % prefix)
+
+
 def ffprobe_duration_sec(p: Path) -> float:
     cmd = [
         "ffprobe", "-v", "error",
