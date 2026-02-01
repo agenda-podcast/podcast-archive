@@ -1,5 +1,17 @@
 {
-  "processed": {},
-  "updated_at": "1970-01-01T00:00:00Z",
+  "processed": {
+    "agenda-18592614": {
+      "manifest_asset_name": "20260129-agenda-18592614-new-york-city-market-of-bodies-prostitution-crisis.json",
+      "video_asset_name": "20260129-agenda-18592614-new-york-city-market-of-bodies-prostitution-crisis.mp4",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "private",
+        "uploaded_at": "2026-01-31T21:26:40Z",
+        "video_id": "H-KcR7957eA",
+        "video_url": "https://www.youtube.com/watch?v=H-KcR7957eA"
+      }
+    }
+  },
+  "updated_at": "2026-01-31T21:26:40Z",
   "version": 1
 }
