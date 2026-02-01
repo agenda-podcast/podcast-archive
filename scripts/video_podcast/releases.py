@@ -1,5 +1,6 @@
 # ASCII-only. No ellipses. Keep <= 500 lines.
 
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -92,23 +93,70 @@ def list_asset_names(repo: str, tag: str, token: str) -> List[str]:
     return out
 
 
-def download_clips_for_guid(repo: str, tag: str, guid: str, dst_dir: Path, token: str) -> int:
-    """Download per-clip assets for a guid into dst_dir.
+def _extract_zip_mp4s(zip_path: Path, dst_dir: Path, guid: str) -> int:
+    if not zip_path.exists():
+        return 0
+    try:
+        z = zipfile.ZipFile(str(zip_path), "r")
+    except Exception:
+        return 0
 
-    Assets are expected to be named like: <guid>_main_0001.mp4, <guid>_main_0002.mp4, and so on.
-    They are stored locally as: main_0001.mp4, main_0002.mp4, and so on.
+    got = 0
+    with z:
+        for info in z.infolist():
+            if info.is_dir():
+                continue
+            name = info.filename
+            if not name.lower().endswith(".mp4"):
+                continue
+            base = Path(name).name
+            # Support both <guid>_main_0001.mp4 and main_0001.mp4 inside the zip.
+            if guid and base.startswith(guid + "_"):
+                base = base[len(guid) + 1 :]
+            dst = dst_dir / base
+            try:
+                with z.open(info, "r") as src, open(dst, "wb") as out:
+                    out.write(src.read())
+                if dst.exists():
+                    got += 1
+            except Exception:
+                continue
+    return got
+
+
+def download_clips_for_guid(
+    repo: str,
+    tag: str,
+    guid: str,
+    dst_dir: Path,
+    token: str,
+    max_items: int = 0,
+) -> int:
+    """Download ordered clip assets for a guid into dst_dir.
+
+    Preferred (current) format: per-clip MP4 assets in the clips release.
+      - <guid>_main_0001.mp4, <guid>_main_0002.mp4, and so on.
+
+    Legacy fallback: a single zip asset (older pipelines):
+      - clips_<guid>.zip containing MP4 clips.
+
+    When max_items > 0, only the first max_items clips are downloaded.
     """
     if not guid:
         return 0
-    prefix = "%s_main_" % guid
-    names = [n for n in list_asset_names(repo, tag, token) if n.startswith(prefix) and n.endswith(".mp4")]
-    names.sort()
-    if not names:
-        return 0
+
     dst_dir.mkdir(parents=True, exist_ok=True)
+
+    names_all = list_asset_names(repo, tag, token)
+    # Current format.
+    prefix = "%s_main_" % guid
+    names = [n for n in names_all if n.startswith(prefix) and n.endswith(".mp4")]
+    names.sort()
+    if max_items and max_items > 0:
+        names = names[:max_items]
+
     got = 0
     for n in names:
-        # Strip guid_ prefix.
         local_name = n[len(guid) + 1 :]
         dst = dst_dir / local_name
         try:
@@ -117,4 +165,24 @@ def download_clips_for_guid(repo: str, tag: str, guid: str, dst_dir: Path, token
                 got += 1
         except Exception:
             continue
+
+    if got > 0:
+        return got
+
+    # Legacy zip fallback.
+    zip_candidates = [
+        "clips_%s.zip" % guid,
+        "%s_clips.zip" % guid,
+        "%s.zip" % guid,
+    ]
+    tmp = dst_dir / ("_tmp_%s_clips.zip" % guid)
+    ok, _ = try_download_any(repo, tag, zip_candidates, tmp, token)
+    if not ok:
+        return 0
+    got = _extract_zip_mp4s(tmp, dst_dir, guid)
+    try:
+        if tmp.exists():
+            tmp.unlink()
+    except Exception:
+        pass
     return got

@@ -9,7 +9,13 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .ffmpeg_ops import ffmpeg_concat_with_intro_outro_and_frame, ffmpeg_make_clip
+from .ffmpeg_ops import (
+    ffmpeg_build_audio_track_aac,
+    ffmpeg_concat_video_streamcopy,
+    ffmpeg_make_clip_with_frame,
+    ffmpeg_mux_av_streamcopy,
+    ffmpeg_prepare_segment_no_audio,
+)
 from .model import Episode, parse_episodes
 from .repo_state import choose_todo, load_state, save_state, write_status_csv, write_video_rss
 from .releases import download_clips_for_guid
@@ -35,6 +41,20 @@ def _list_ordered_clips(dir_path: Path) -> List[Path]:
         return []
     items = sorted([p for p in dir_path.iterdir() if p.is_file() and p.suffix.lower() == ".mp4"])
     return items
+
+
+def _clips_match_audio(clips: List[Path], need: int, audio_dur: float) -> bool:
+    """Return True if the first `need` clips exist and their total duration matches audio."""
+    if len(clips) < need:
+        return False
+    total = 0.0
+    for p in clips[:need]:
+        try:
+            total += ffprobe_duration_sec(p)
+        except Exception:
+            return False
+    # allow small drift due to encoder rounding
+    return abs(total - audio_dur) <= 1.0
 
 
 def render_episode(
@@ -79,8 +99,19 @@ def render_episode(
     audio_path = work / "audio.mp3"
     download(ep.audio_url, audio_path)
 
-    audio_dur = ffprobe_duration_sec(audio_path)
-    need = int((audio_dur + (CLIP_SEC - 0.001)) // CLIP_SEC)
+    audio_dur = float(ffprobe_duration_sec(audio_path))
+    clip_durations: List[float] = []
+    remaining = audio_dur
+    while remaining > 0.01:
+        dur = min(float(CLIP_SEC), remaining)
+        # Avoid ultra-short tail clips; round up to a full clip if <1.0s left.
+        if dur < 1.0 and clip_durations:
+            clip_durations[-1] += dur
+            remaining = 0.0
+            break
+        clip_durations.append(dur)
+        remaining -= dur
+    need = len(clip_durations)
 
     query_policy: Dict[str, Any] = {
         "sensitive_detected": False,
@@ -96,12 +127,13 @@ def render_episode(
     used_release_clips_count = 0
 
     # Reuse already-built local clips if present (useful for local runs).
+    # Validate duration match; otherwise fall back to re-building.
     local_clips = _list_ordered_clips(out_clips_dir)
 
     prov: List[Dict[str, Any]] = []
     clips: List[Path] = []
 
-    if local_clips and len(local_clips) >= 1:
+    if local_clips and _clips_match_audio(local_clips, need=need, audio_dur=audio_dur):
         clips = local_clips
     else:
         # Try to reuse ordered clips from Releases (per-guid, per-clip assets).
@@ -112,11 +144,21 @@ def render_episode(
                 guid=ep.guid,
                 dst_dir=out_clips_dir,
                 token=gh_token,
+                max_items=need,
             )
             if got > 0:
-                used_release_clips = True
-                used_release_clips_count = got
-                clips = _list_ordered_clips(out_clips_dir)
+                maybe = _list_ordered_clips(out_clips_dir)
+                if _clips_match_audio(maybe, need=need, audio_dur=audio_dur):
+                    used_release_clips = True
+                    used_release_clips_count = got
+                    clips = maybe
+                else:
+                    # Existing cached clips do not match; rebuild.
+                    for p in out_clips_dir.glob("*.mp4"):
+                        try:
+                            p.unlink()
+                        except Exception:
+                            pass
 
         if not clips:
             out_clips_dir.mkdir(parents=True, exist_ok=True)
@@ -150,9 +192,22 @@ def render_episode(
                     max_start = max(0.0, dur - CLIP_SEC)
                     start = rng.uniform(0.0, max_start) if max_start > 0 else 0.0
 
+                    idx = len(clips)
+                    if idx >= need:
+                        break
+                    target_dur = float(clip_durations[idx])
+                    if not (repo_root / "data" / "video_frame.png").exists():
+                        raise RuntimeError("missing data/video_frame.png")
+
                     clip_name = "main_%04d.mp4" % clip_i
                     clip_path = out_clips_dir / clip_name
-                    ffmpeg_make_clip(src_path, clip_path, start, CLIP_SEC)
+                    ffmpeg_make_clip_with_frame(
+                        src_mp4=src_path,
+                        dst_mp4=clip_path,
+                        start_sec=float(start),
+                        duration_sec=target_dur,
+                        frame_png=repo_root / "data" / "video_frame.png",
+                    )
 
                     clips.append(clip_path)
                     prov.append({
@@ -165,7 +220,7 @@ def render_episode(
                         "download_url": a.get("download_url") or "",
                         "license_url": a.get("license_url") or "",
                         "start_sec": round(start, 3),
-                        "duration_sec": round(CLIP_SEC, 3),
+                        "duration_sec": round(float(target_dur), 3),
                     })
                     clip_i += 1
                 except Exception:
@@ -181,6 +236,14 @@ def render_episode(
     if len(clips) < 1:
         raise RuntimeError("no usable clips produced")
 
+    # Only use the amount needed for the final duration. This also keeps Releases smaller.
+    if len(clips) > need:
+        clips = clips[:need]
+
+    # Never over-download / over-render clips. Align to required count.
+    if need > 0 and len(clips) > need:
+        clips = clips[:need]
+
     # Prepare per-clip assets for Releases with unique names.
     out_clips_release_dir.mkdir(parents=True, exist_ok=True)
     for c in clips:
@@ -191,16 +254,33 @@ def render_episode(
             shutil.copyfile(c, dst)
 
     intro_outro_mp4 = (repo_root / DEFAULT_INTRO_OUTRO_MP4).resolve()
-    frame_png = (repo_root / DEFAULT_FRAME_PNG).resolve()
+    intro_outro_dur = float(ffprobe_duration_sec(intro_outro_mp4))
+
+    intro_video = work / "intro.mp4"
+    outro_video = work / "outro.mp4"
+    ffmpeg_prepare_segment_no_audio(intro_outro_mp4, intro_video)
+    ffmpeg_prepare_segment_no_audio(intro_outro_mp4, outro_video)
+
+    concat_list = work / "concat_list.txt"
+    with concat_list.open("w", encoding="utf-8") as f:
+        f.write("file '%s'\n" % str(intro_video))
+        for c in clips:
+            f.write("file '%s'\n" % str(c))
+        f.write("file '%s'\n" % str(outro_video))
+
+    video_track = work / "video_track.mp4"
+    ffmpeg_concat_video_streamcopy(concat_list, video_track)
+
+    audio_track = work / "audio_track.m4a"
+    ffmpeg_build_audio_track_aac(
+        podcast_audio=audio_path,
+        intro_silence_sec=intro_outro_dur,
+        outro_silence_sec=intro_outro_dur,
+        dst=audio_track,
+    )
 
     final_video = work / "video.mp4"
-    ffmpeg_concat_with_intro_outro_and_frame(
-        clips=clips,
-        podcast_audio=audio_path,
-        intro_outro_mp4=intro_outro_mp4,
-        frame_png=frame_png,
-        dst=final_video,
-    )
+    ffmpeg_mux_av_streamcopy(video_track, audio_track, final_video)
 
     out_videos_dir.mkdir(parents=True, exist_ok=True)
     out_manifests_dir.mkdir(parents=True, exist_ok=True)
@@ -223,6 +303,7 @@ def render_episode(
         "audio_sha256": sha256_file(audio_path),
         "video_sha256": sha256_file(video_out),
         "audio_duration_sec": round(audio_dur, 3),
+        "clip_durations_sec": [round(d, 3) for d in clip_durations],
         "clip_sec": CLIP_SEC,
         "clips_count": len(clips) if len(clips) > 0 else int(need),
         "clips_tag": clips_tag,
@@ -230,6 +311,9 @@ def render_episode(
         "used_release_clips": used_release_clips,
         "used_release_clips_count": used_release_clips_count,
         "query_policy": query_policy,
+        "intro_outro_source": str(DEFAULT_INTRO_OUTRO_MP4),
+        "intro_duration_sec": round(intro_dur, 3),
+        "outro_duration_sec": round(outro_dur, 3),
         "provenance": prov,
         "license_notes": {
             "pexels": "https://www.pexels.com/license/",
