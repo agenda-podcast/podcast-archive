@@ -105,8 +105,19 @@ Note: Git tags cannot contain spaces, so the release tags use hyphens.
   - searches for related stock videos
   - cuts random 15s clips (deterministic per guid)
   - concatenates clips to match audio duration
-  - muxes audio into the final MP4
+  - adds intro and outro from `data/raw_2_1440p_crf15_aac256.mp4`
+  - overlays a static frame PNG on top of the full video from `data/video_frame.png`
+  - muxes audio so the episode audio starts after the intro and ends before the outro
   - writes a per-episode manifest JSON listing clip provenance
+
+### Required local assets for rendering
+Two assets are expected to exist in the repository:
+
+- `data/raw_2_1440p_crf15_aac256.mp4` (intro/outro)
+- `data/video_frame.png` (overlay frame)
+
+This repo includes small placeholder files at these paths so the pipeline can run end-to-end.
+Replace them with your real intro/outro and frame assets.
 
 ### YouTube upload
 The workflow can optionally upload rendered MP4s to YouTube.

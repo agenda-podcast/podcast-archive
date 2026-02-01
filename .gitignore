@@ -30,6 +30,9 @@ work/
 *.mkv
 *.zip
 
+# Allow the shared intro/outro asset for the video renderer.
+!data/raw_2_1440p_crf15_aac256.mp4
+
 downloads/
 out/
 tmp/

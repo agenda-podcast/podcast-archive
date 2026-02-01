@@ -9,7 +9,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .ffmpeg_ops import ffmpeg_concat_with_audio, ffmpeg_make_clip
+from .ffmpeg_ops import ffmpeg_concat_with_intro_outro_and_frame, ffmpeg_make_clip
 from .model import Episode, parse_episodes
 from .repo_state import choose_todo, load_state, save_state, write_status_csv, write_video_rss
 from .releases import download_clips_for_guid
@@ -24,6 +24,11 @@ DEFAULT_VIDEO_TAG = "video-podcast"
 DEFAULT_MANIFEST_TAG = "video-podcast-manifests"
 DEFAULT_CLIPS_TAG = "video-podcast-clips"
 
+# Expected asset locations in the repository.
+# Keep these files out of git history if they are large. Git LFS is a common option.
+DEFAULT_INTRO_OUTRO_MP4 = "data/raw_2_1440p_crf15_aac256.mp4"
+DEFAULT_FRAME_PNG = "data/video_frame.png"
+
 
 def _list_ordered_clips(dir_path: Path) -> List[Path]:
     if not dir_path.exists() or not dir_path.is_dir():
@@ -34,6 +39,7 @@ def _list_ordered_clips(dir_path: Path) -> List[Path]:
 
 def render_episode(
     ep: Episode,
+    repo_root: Path,
     repo: str,
     out_videos_dir: Path,
     out_manifests_dir: Path,
@@ -184,8 +190,17 @@ def render_episode(
         if not dst.exists():
             shutil.copyfile(c, dst)
 
+    intro_outro_mp4 = (repo_root / DEFAULT_INTRO_OUTRO_MP4).resolve()
+    frame_png = (repo_root / DEFAULT_FRAME_PNG).resolve()
+
     final_video = work / "video.mp4"
-    ffmpeg_concat_with_audio(clips, audio_path, final_video)
+    ffmpeg_concat_with_intro_outro_and_frame(
+        clips=clips,
+        podcast_audio=audio_path,
+        intro_outro_mp4=intro_outro_mp4,
+        frame_png=frame_png,
+        dst=final_video,
+    )
 
     out_videos_dir.mkdir(parents=True, exist_ok=True)
     out_manifests_dir.mkdir(parents=True, exist_ok=True)
@@ -291,6 +306,7 @@ def main() -> int:
         try:
             video_asset, manifest_asset = render_episode(
                 ep=ep,
+                repo_root=repo_root,
                 repo=repo,
                 out_videos_dir=out_videos,
                 out_manifests_dir=out_manifests,
