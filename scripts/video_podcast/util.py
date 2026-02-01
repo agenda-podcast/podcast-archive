@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import random
 import re
 import shutil
@@ -148,3 +149,10 @@ def rand_for_guid(guid: str) -> random.Random:
     h = hashlib.sha256(guid.encode("utf-8")).digest()
     seed = int.from_bytes(h[:4], "big")
     return random.Random(seed)
+
+
+def require_env(name: str) -> str:
+    v = os.environ.get(name)
+    if not v:
+        raise RuntimeError("Missing required env var: %s" % name)
+    return v
