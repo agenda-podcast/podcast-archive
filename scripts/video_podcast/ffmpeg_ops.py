@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import List
 
-from .util import run
+from .util import ffprobe_duration_sec, run
 
 TARGET_W = 1920
 TARGET_H = 1080
@@ -116,12 +116,18 @@ def ffmpeg_concat_with_intro_outro_and_frame(
     - Main segment: concatenated clips with podcast_audio
     - Outro segment: intro_outro_mp4
 
-    A PNG frame is overlaid on top of all segments.
-    The PNG is scaled to match output height (no stretching), centered.
+    Video:
+    - Intro video: scaled/padded
+    - Main video: concat list plus frame overlay
+    - Outro video: scaled/padded
 
-    Notes:
-    - Podcast audio starts after the intro and ends before the outro.
-    - The intro/outro keep their own audio track (if present).
+    Audio:
+    - Intro audio: silence
+    - Main audio: podcast mp3
+    - Outro audio: silence
+
+    The frame PNG is scaled to match output height (no stretching), centered.
+    Podcast audio starts after the intro and ends before the outro.
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
 
@@ -146,31 +152,41 @@ def ffmpeg_concat_with_intro_outro_and_frame(
         "fps=%d" % (TARGET_W, TARGET_H, TARGET_W, TARGET_H, TARGET_FPS)
     )
 
+    intro_dur = ffprobe_duration_sec(intro_outro_mp4)
+    if intro_dur <= 0.01:
+        raise ValueError("intro/outro duration is invalid")
+
+    main_dur = 0.0
+    for c in clips:
+        try:
+            main_dur += ffprobe_duration_sec(c)
+        except Exception:
+            pass
+    if main_dur <= 0.01:
+        raise ValueError("main duration is invalid")
+
+    intro_dur_s = "%.3f" % float(intro_dur)
+    main_dur_s = "%.3f" % float(main_dur)
+
     # Inputs:
-    # 0: intro/outro mp4
-    # 1: concat list (silent)
-    # 2: podcast audio
+    # 0: intro/outro mp4 (video only)
+    # 1: concat list (silent clips)
+    # 2: podcast audio mp3
     # 3: frame png (looped)
-    #
-    # We split intro/outro so we can use the same file for both ends.
     filt = (
         "[0:v]split=2[i0][o0];"
-        "[0:a]asplit=2[i0a][o0a];"
-        "[i0]%s[intro_pre];"
-        "[o0]%s[outro_pre];"
+        "[i0]%s[introv];"
+        "[o0]%s[outrov];"
         "[1:v]%s[main_pre];"
         "[3:v]format=rgba[frame];"
-        "[frame][intro_pre]scale2ref=w=-1:h=main_h[frame_i][intro_ref];"
-        "[intro_ref][frame_i]overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2,format=yuv420p[introv];"
         "[frame][main_pre]scale2ref=w=-1:h=main_h[frame_m][main_ref];"
         "[main_ref][frame_m]overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2,format=yuv420p[mainv];"
-        "[frame][outro_pre]scale2ref=w=-1:h=main_h[frame_o][outro_ref];"
-        "[outro_ref][frame_o]overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2,format=yuv420p[outrov];"
-        "[i0a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[introa];"
-        "[2:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[maina];"
-        "[o0a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[outroa];"
+        "anullsrc=r=44100:cl=stereo,atrim=0:%s,asetpts=N/SR/TB[introa];"
+        "[2:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
+        "apad,atrim=0:%s,asetpts=N/SR/TB[maina];"
+        "anullsrc=r=44100:cl=stereo,atrim=0:%s,asetpts=N/SR/TB[outroa];"
         "[introv][introa][mainv][maina][outrov][outroa]concat=n=3:v=1:a=1[v][a]"
-    ) % (vf_base, vf_base, vf_base)
+    ) % (vf_base, vf_base, vf_base, intro_dur_s, main_dur_s, intro_dur_s)
 
     cmd = [
         "ffmpeg", "-y",
