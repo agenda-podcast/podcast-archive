@@ -8,12 +8,16 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .ffmpeg_ops import ffmpeg_make_clip
 from .github_release import download_release_asset
-from .sources import TIER_1, TIER_2, TIER_3, build_query_plan, search_assets_by_tier
-from .util import download, ffprobe_duration_sec, now_iso, rand_for_guid, save_json, load_json, sha256_file
+from .sources import apply_sensitive_query_policy, build_tiered_queries, search_assets
+from .util import download, ffprobe_duration_sec, now_iso, rand_for_guid, save_json, load_json, sha256_file, strip_html
 
 
 CLIP_SEC = 15.0
 MIN_ASSET_SEC = 16.0
+
+TIER_1 = 1
+TIER_2 = 2
+TIER_3 = 3
 
 
 def count_clips(dirp: Path) -> int:
@@ -174,13 +178,32 @@ def ensure_clips(
         except Exception:
             reused = False
 
-    query_plan = build_query_plan(title, desc_html)
+    desc_text = strip_html(desc_html)
+    tiered_orig = build_tiered_queries(title, desc_text, max_q=12)
+    q_orig = [str(x.get("query") or "") for x in tiered_orig]
+    q_filtered, _policy = apply_sensitive_query_policy(title, desc_text, q_orig, max_q=12)
+    tiered_final: List[Dict[str, Any]] = []
+    for item in tiered_orig:
+        q = str(item.get("query") or "")
+        if q in q_filtered:
+            tiered_final.append({"tier": int(item.get("tier") or 3), "query": q})
+    for q in q_filtered:
+        if not any(str(it.get("query") or "") == q for it in tiered_final):
+            tiered_final.append({"tier": 3, "query": q})
     assets_by_tier = {TIER_1: [], TIER_2: [], TIER_3: []}
 
     if not clips_ordered_dir.exists() or count_clips(clips_ordered_dir) < 1:
         if not (pexels_key and pixabay_key):
             raise RuntimeError("API keys are required to generate clips")
-        assets_by_tier = search_assets_by_tier(pexels_key, pixabay_key, query_plan)
+        assets_all = search_assets(pexels_key, pixabay_key, tiered_final)
+        for a in assets_all:
+            tier = int(a.get("tier") or 3)
+            if tier <= 1:
+                assets_by_tier[TIER_1].append(a)
+            elif tier == 2:
+                assets_by_tier[TIER_2].append(a)
+            else:
+                assets_by_tier[TIER_3].append(a)
         for t in [TIER_1, TIER_2, TIER_3]:
             rng.shuffle(assets_by_tier[t])
 
@@ -233,7 +256,7 @@ def ensure_clips(
             "generated_at": now_iso(),
             "clip_sec": CLIP_SEC,
             "clips_count": need,
-            "query_plan": query_plan,
+            "query_plan": tiered_final,
             "provenance": prov_final,
             "generic_positions": order_generic,
         }
@@ -246,8 +269,8 @@ def ensure_clips(
         if not (pexels_key and pixabay_key):
             raise RuntimeError("API keys are required to extend clips")
 
-        assets_by_tier = search_assets_by_tier(pexels_key, pixabay_key, query_plan)
-        generic_assets2 = list(assets_by_tier[TIER_3])
+        assets_all2 = search_assets(pexels_key, pixabay_key, tiered_final)
+        generic_assets2 = [a for a in assets_all2 if int(a.get("tier") or 3) >= 3]
         rng.shuffle(generic_assets2)
         raw_dir.mkdir(parents=True, exist_ok=True)
 
@@ -270,8 +293,8 @@ def ensure_clips(
             seq2.append((clips_more[i], prov_more[i]))
 
         order_generic = sprinkle_positions(need, add_n, rng)
-        gen_items = [(p, info) for (p, info) in seq2 if str(info.get("tier") or "") == TIER_3]
-        main_items = [(p, info) for (p, info) in seq2 if str(info.get("tier") or "") != TIER_3]
+        gen_items = [(p, info) for (p, info) in seq2 if int(info.get("tier") or 3) == TIER_3]
+        main_items = [(p, info) for (p, info) in seq2 if int(info.get("tier") or 3) != TIER_3]
         rng.shuffle(gen_items)
         rng.shuffle(main_items)
 
@@ -302,7 +325,7 @@ def ensure_clips(
             "generated_at": now_iso(),
             "clip_sec": CLIP_SEC,
             "clips_count": need,
-            "query_plan": query_plan,
+            "query_plan": tiered_final,
             "provenance": prov_final,
             "generic_positions": order_generic,
         }
@@ -319,6 +342,6 @@ def ensure_clips(
         "clips_sha256": sha,
         "reused": bool(reused),
         "generated": bool(generated),
-        "query_plan": query_plan,
+        "query_plan": tiered_final,
         "assets_by_tier": assets_by_tier,
     }

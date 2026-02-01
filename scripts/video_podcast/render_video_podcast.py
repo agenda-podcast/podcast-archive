@@ -2,7 +2,6 @@
 # ASCII-only. No ellipses. Keep <= 500 lines.
 
 import argparse
-import json
 import os
 import shutil
 import sys
@@ -10,27 +9,24 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .ffmpeg_ops import build_episode_video_streamcopy, ffmpeg_make_clip
+from .ffmpeg_ops import (
+    ffmpeg_concat_with_intro_outro_and_frame,
+    ffmpeg_make_clip,
+    ffmpeg_normalize_audio,
+    ffmpeg_normalize_video,
+)
 from .model import Episode, parse_episodes
 from .repo_state import choose_todo, load_state, save_state, write_status_csv, write_video_rss
 from .releases import download_clips_for_guid
-from .sources import apply_sensitive_query_policy, search_assets, text_queries
-from .util import (
-    download,
-    ffprobe_duration_sec,
-    HttpError,
-    log,
-    now_iso,
-    rand_for_guid,
-    require_env,
-    safe_slug,
-    save_json,
-    sha256_file,
-)
+from .sources import apply_sensitive_query_policy, build_tiered_queries, search_assets
+from .util import ffprobe_duration_sec, now_iso, rand_for_guid, safe_slug, sha256_file, download, save_json
 
 
-CLIP_SEC = 15.0
+CLIP_SEC_T2 = 30.0
+CLIP_SEC_T3 = 15.0
 MIN_ASSET_SEC = 16.0
+T1_MIN_SEC = 40.0
+T1_MAX_SEC = 600.0
 
 DEFAULT_VIDEO_TAG = "video-podcast"
 DEFAULT_MANIFEST_TAG = "video-podcast-manifests"
@@ -92,7 +88,9 @@ def render_episode(
     download(ep.audio_url, audio_path)
 
     audio_dur = ffprobe_duration_sec(audio_path)
-    need = int((audio_dur + (CLIP_SEC - 0.001)) // CLIP_SEC)
+    # Normalize audio to reduce loudness variance across episodes.
+    audio_norm_path = work / "audio_norm.m4a"
+    ffmpeg_normalize_audio(audio_path, audio_norm_path)
 
     query_policy: Dict[str, Any] = {
         "sensitive_detected": False,
@@ -112,15 +110,12 @@ def render_episode(
 
     prov: List[Dict[str, Any]] = []
     clips: List[Path] = []
-    clip_gen_stats_json = ""
 
     if local_clips and len(local_clips) >= 1:
         clips = local_clips
-        log("[clips][local] guid=%s n=%d" % (ep.guid, len(clips)))
     else:
         # Try to reuse ordered clips from Releases (per-guid, per-clip assets).
         if gh_token and clips_tag:
-            log("[clips][release] try_download guid=%s tag=%s" % (ep.guid, clips_tag))
             got = download_clips_for_guid(
                 repo=repo,
                 tag=clips_tag,
@@ -132,128 +127,109 @@ def render_episode(
                 used_release_clips = True
                 used_release_clips_count = got
                 clips = _list_ordered_clips(out_clips_dir)
-                log("[clips][release] guid=%s downloaded=%d local_now=%d" % (ep.guid, got, len(clips)))
-
-                total_dur = sum(ffprobe_duration_sec(p) for p in clips)
-                if total_dur + 0.2 < audio_dur:
-                    log("[clips][release][insufficient] guid=%s total_dur=%.3f audio_dur=%.3f" % (
-                        ep.guid,
-                        total_dur,
-                        audio_dur,
-                    ))
-                    used_release_clips = False
-                    used_release_clips_count = 0
-                    clips = []
 
         if not clips:
             out_clips_dir.mkdir(parents=True, exist_ok=True)
-            queries_orig = text_queries(ep.title, ep.description, max_q=12)
-            queries, query_policy = apply_sensitive_query_policy(ep.title, ep.description, queries_orig, max_q=12)
-
-            log("[policy] guid=%s sensitive=%s matched_terms=%s" % (
-                ep.guid,
-                str(bool(query_policy.get("sensitive_detected"))),
-                ",".join([str(x) for x in (query_policy.get("matched_terms") or [])]),
-            ))
-            log("[queries][orig] %s" % " | ".join([str(q) for q in (queries_orig or [])]))
-            log("[queries][used] %s" % " | ".join([str(q) for q in (queries or [])]))
-
-            # Only require API keys if we must generate clips.
-            if not pexels_key:
-                pexels_key = require_env("PEXELS_API_KEY")
-            if not pixabay_key:
-                pixabay_key = require_env("PIXABAY_API_KEY")
-
-            assets = search_assets(pexels_key, pixabay_key, queries)
+            tiered_orig = build_tiered_queries(ep.title, ep.description, max_q=12)
+            q_orig = [str(x.get("query") or "") for x in tiered_orig]
+            q_filtered, query_policy = apply_sensitive_query_policy(ep.title, ep.description, q_orig, max_q=12)
+            # Re-apply tiers after filtering, keeping Tier-1 phrases first.
+            tiered_final: List[Dict[str, Any]] = []
+            for item in tiered_orig:
+                q = str(item.get("query") or "")
+                if q in q_filtered:
+                    tiered_final.append({"tier": int(item.get("tier") or 3), "query": q})
+            # Add any proxy queries as Tier-3.
+            for q in q_filtered:
+                if not any(str(it.get("query") or "") == q for it in tiered_final):
+                    tiered_final.append({"tier": 3, "query": q})
+            assets = search_assets(pexels_key, pixabay_key, tiered_final)
             if not assets:
                 raise RuntimeError("no candidate assets found")
-
-            c_pex = len([a for a in assets if a.get("source") == "pexels"])
-            c_pix = len([a for a in assets if a.get("source") == "pixabay"])
-            log("[assets] total=%d pexels=%d pixabay=%d" % (len(assets), c_pex, c_pix))
 
             raw_dir = work / "raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
 
-            picks = list(assets)
-            rng.shuffle(picks)
+            # Shuffle within tiers but keep Tier-1 first for higher relevance.
+            t1 = [a for a in assets if int(a.get("tier") or 3) == 1]
+            t2 = [a for a in assets if int(a.get("tier") or 3) == 2]
+            t3 = [a for a in assets if int(a.get("tier") or 3) >= 3]
+            rng.shuffle(t1)
+            rng.shuffle(t2)
+            rng.shuffle(t3)
+            picks = t1 + t2 + t3
 
             pick_i = 0
-
-            frame_png_local = (repo_root / DEFAULT_FRAME_PNG).resolve()
-            if not frame_png_local.exists():
-                raise RuntimeError("frame_png_missing: %s" % str(frame_png_local))
             clip_i = 1
-            stats = {
-                "download_ok": 0,
-                "download_fail": 0,
-                "too_short": 0,
-                "ffmpeg_ok": 0,
-                "ffmpeg_fail": 0,
-                "ffprobe_fail": 0,
-            }
-            logged_errors = 0
+            main_total = 0.0
 
-            while len(clips) < need and pick_i < len(picks) * 3:
+            while main_total < audio_dur and pick_i < len(picks) * 3:
                 a = picks[pick_i % len(picks)]
                 pick_i += 1
                 asset_key = "%s-%s" % (a["source"], a["asset_id"])
                 src_path = raw_dir / ("%s.mp4" % asset_key)
+                tier = int(a.get("tier") or 3)
 
                 try:
                     if not src_path.exists():
-                        nbytes = download(a["download_url"], src_path)
-                        if nbytes <= 0:
-                            raise RuntimeError("download_empty")
-                        stats["download_ok"] += 1
-
-                    try:
-                        dur = ffprobe_duration_sec(src_path)
-                    except Exception:
-                        stats["ffprobe_fail"] += 1
-                        continue
+                        download(a["download_url"], src_path)
+                    dur = ffprobe_duration_sec(src_path)
                     if dur < MIN_ASSET_SEC:
-                        stats["too_short"] += 1
                         continue
-                    max_start = max(0.0, dur - CLIP_SEC)
-                    start = rng.uniform(0.0, max_start) if max_start > 0 else 0.0
 
                     clip_name = "main_%04d.mp4" % clip_i
                     clip_path = out_clips_dir / clip_name
-                    ffmpeg_make_clip(src_path, clip_path, start, CLIP_SEC, frame_png=frame_png_local)
-                    if not clip_path.exists() or clip_path.stat().st_size < 1024:
-                        raise RuntimeError("clip_too_small")
+
+                    # Tier-1 assets: allow long clips without cutting.
+                    if tier == 1 and dur >= T1_MIN_SEC and dur <= T1_MAX_SEC:
+                        ffmpeg_normalize_video(src_path, clip_path)
+                        clip_dur = ffprobe_duration_sec(clip_path)
+                        clips.append(clip_path)
+                        prov.append({
+                            "clip_index": clip_i,
+                            "clip_name": clip_name,
+                            "tier": tier,
+                            "mode": "full",
+                            "source": a["source"],
+                            "asset_id": a["asset_id"],
+                            "author": a.get("author") or "",
+                            "page_url": a.get("page_url") or "",
+                            "download_url": a.get("download_url") or "",
+                            "license_url": a.get("license_url") or "",
+                            "query": a.get("query") or "",
+                            "start_sec": 0.0,
+                            "duration_sec": round(float(clip_dur), 3),
+                        })
+                        main_total += float(clip_dur)
+                        clip_i += 1
+                        continue
+
+                    seg = CLIP_SEC_T2 if tier == 2 else CLIP_SEC_T3
+                    if dur < (seg + 1.0):
+                        continue
+                    max_start = max(0.0, dur - seg)
+                    start = rng.uniform(0.0, max_start) if max_start > 0 else 0.0
+                    ffmpeg_make_clip(src_path, clip_path, start, seg)
 
                     clips.append(clip_path)
-                    stats["ffmpeg_ok"] += 1
                     prov.append({
                         "clip_index": clip_i,
                         "clip_name": clip_name,
+                        "tier": tier,
+                        "mode": "trim",
                         "source": a["source"],
                         "asset_id": a["asset_id"],
                         "author": a.get("author") or "",
                         "page_url": a.get("page_url") or "",
                         "download_url": a.get("download_url") or "",
                         "license_url": a.get("license_url") or "",
+                        "query": a.get("query") or "",
                         "start_sec": round(start, 3),
-                        "duration_sec": round(CLIP_SEC, 3),
+                        "duration_sec": round(float(seg), 3),
                     })
+                    main_total += float(seg)
                     clip_i += 1
-                except HttpError as e:
-                    stats["download_fail"] += 1
-                    if logged_errors < 6:
-                        log("[clip][err] http status=%d source=%s asset=%s" % (e.status, str(a.get("source")), str(a.get("asset_id"))))
-                        logged_errors += 1
-                    continue
-                except Exception as e:
-                    # Record a few samples for troubleshooting.
-                    if "download" in str(e):
-                        stats["download_fail"] += 1
-                    else:
-                        stats["ffmpeg_fail"] += 1
-                    if logged_errors < 6:
-                        log("[clip][err] type=%s source=%s asset=%s" % (type(e).__name__, str(a.get("source")), str(a.get("asset_id"))))
-                        logged_errors += 1
+                except Exception:
                     continue
 
             # Never persist raw downloads.
@@ -263,19 +239,8 @@ def render_episode(
             except Exception:
                 pass
 
-            log(
-                "[clips][gen] guid=%s need=%d got=%d stats=%s" % (
-                    ep.guid,
-                    int(need),
-                    len(clips),
-                    json.dumps(stats, sort_keys=True),
-                )
-            )
-            clip_gen_stats_json = json.dumps(stats, sort_keys=True)
-
     if len(clips) < 1:
-        extra = (" stats=" + clip_gen_stats_json) if clip_gen_stats_json else ""
-        raise RuntimeError("no usable clips produced" + extra)
+        raise RuntimeError("no usable clips produced")
 
     # Prepare per-clip assets for Releases with unique names.
     out_clips_release_dir.mkdir(parents=True, exist_ok=True)
@@ -287,14 +252,15 @@ def render_episode(
             shutil.copyfile(c, dst)
 
     intro_outro_mp4 = (repo_root / DEFAULT_INTRO_OUTRO_MP4).resolve()
+    frame_png = (repo_root / DEFAULT_FRAME_PNG).resolve()
 
     final_video = work / "video.mp4"
-    build_episode_video_streamcopy(
+    ffmpeg_concat_with_intro_outro_and_frame(
         clips=clips,
-        podcast_mp3=audio_path,
+        podcast_audio=audio_norm_path,
         intro_outro_mp4=intro_outro_mp4,
+        frame_png=frame_png,
         dst=final_video,
-        work_dir=work,
     )
 
     out_videos_dir.mkdir(parents=True, exist_ok=True)
@@ -316,10 +282,12 @@ def render_episode(
         "manifest_asset_name": manifest_asset,
         "repo": repo,
         "audio_sha256": sha256_file(audio_path),
+        "audio_norm_sha256": sha256_file(audio_norm_path),
         "video_sha256": sha256_file(video_out),
         "audio_duration_sec": round(audio_dur, 3),
-        "clip_sec": CLIP_SEC,
-        "clips_count": len(clips) if len(clips) > 0 else int(need),
+        "clip_sec_t2": CLIP_SEC_T2,
+        "clip_sec_t3": CLIP_SEC_T3,
+        "clips_count": len(clips),
         "clips_tag": clips_tag,
         "clip_asset_prefix": clip_asset_prefix,
         "used_release_clips": used_release_clips,
@@ -374,7 +342,9 @@ def main() -> int:
     pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
     pixabay_key = os.environ.get("PIXABAY_API_KEY", "").strip()
     gh_token = os.environ.get("GH_TOKEN", "").strip() or os.environ.get("GITHUB_TOKEN", "").strip()
-    # API keys are only required when we need to fetch new source videos.
+    if not args.dry_run and (not pexels_key or not pixabay_key):
+        print("PEXELS_API_KEY and PIXABAY_API_KEY must be set in environment.", file=sys.stderr)
+        return 2
 
     episodes = parse_episodes(episodes_json)
     state = load_state(state_path)
@@ -394,7 +364,6 @@ def main() -> int:
         state["processed"] = {}
         processed = state["processed"]
 
-    failed_any = False
     for ep in todo:
         print("[episode] guid=%s title=%s" % (ep.guid, ep.title))
         try:
@@ -425,7 +394,6 @@ def main() -> int:
                 save_state(state_path, state)
                 print("[ok] guid=%s video=%s manifest=%s" % (ep.guid, video_asset, manifest_asset))
         except Exception as e:
-            failed_any = True
             print("[fail] guid=%s err=%s" % (ep.guid, str(e)), file=sys.stderr)
 
     write_status_csv(status_csv, episodes, state)
@@ -439,7 +407,7 @@ def main() -> int:
         pass
 
     print("[done] out_dir=%s" % str(out_dir))
-    return 1 if failed_any else 0
+    return 0
 
 
 if __name__ == "__main__":

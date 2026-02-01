@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .util import download, http_get_json, log
+from .util import download, http_get_json
 
 
 def _auth_headers(token: str) -> Dict[str, str]:
@@ -129,12 +129,9 @@ def try_download_any(
 def list_asset_names(repo: str, tag: str, token: str) -> List[str]:
     rel = get_release_by_tag(repo, tag, token)
     if not rel:
-        log("[release][warn] no release found tag=%s" % tag)
         return []
     out: List[str] = []
-    assets = _release_assets_all(rel, token)
-    log("[release] tag=%s assets=%d" % (tag, len(assets)))
-    for a in assets:
+    for a in _release_assets_all(rel, token):
         if isinstance(a, dict):
             n = a.get("name")
             if isinstance(n, str) and n:
@@ -151,11 +148,9 @@ def download_clips_for_guid(repo: str, tag: str, guid: str, dst_dir: Path, token
     if not guid:
         return 0
     prefix = "%s_main_" % guid
-    all_names = list_asset_names(repo, tag, token)
-    names = [n for n in all_names if n.startswith(prefix) and n.endswith(".mp4")]
+    names = [n for n in list_asset_names(repo, tag, token) if n.startswith(prefix) and n.endswith(".mp4")]
     names.sort()
     if not names:
-        log("[release][clips] guid=%s none" % guid)
         return 0
     dst_dir.mkdir(parents=True, exist_ok=True)
     got = 0
@@ -169,5 +164,4 @@ def download_clips_for_guid(repo: str, tag: str, guid: str, dst_dir: Path, token
                 got += 1
         except Exception:
             continue
-    log("[release][clips] guid=%s found=%d downloaded=%d" % (guid, len(names), got))
     return got

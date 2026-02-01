@@ -2,40 +2,18 @@
 
 import hashlib
 import json
-import os
 import random
 import re
 import shutil
 import subprocess
+import sys
 import time
 import urllib.request
-import urllib.error
 from pathlib import Path
 from typing import Any, Dict, List
 
 
 USER_AGENT = "video-podcast-render/1.0"
-
-
-def log(msg: str) -> None:
-    # Keep logs visible in GitHub Actions.
-    print(msg, flush=True)
-
-
-def _tail(s: str, max_chars: int = 1200) -> str:
-    s = s or ""
-    if len(s) <= max_chars:
-        return s
-    return s[-max_chars:]
-
-
-class HttpError(RuntimeError):
-    def __init__(self, method: str, url: str, status: int, body: str):
-        self.method = method
-        self.url = url
-        self.status = int(status)
-        self.body = body or ""
-        super().__init__("http_%s status=%d" % (method.lower(), self.status))
 
 
 def now_iso() -> str:
@@ -59,47 +37,39 @@ def safe_slug(s: str, max_len: int = 80) -> str:
     return s[:max_len]
 
 
-def run(cmd: List[str]) -> subprocess.CompletedProcess:
+def run(
+    cmd: List[str],
+    timeout_sec: int = 600,
+    stream: bool = False,
+) -> subprocess.CompletedProcess:
+    """Run a subprocess with sane defaults for GitHub Actions.
+
+    - By default, captures stdout/stderr for parsing.
+    - For long-running processes (ffmpeg), pass stream=True to avoid "looks stuck".
+    - A timeout guard prevents indefinite hangs.
+    """
     try:
-        return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        if stream:
+            return subprocess.run(cmd, text=True, check=True, timeout=timeout_sec)
+        return subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+            timeout=timeout_sec,
+        )
+    except subprocess.TimeoutExpired as e:
+        print("[run][timeout] cmd=%s" % " ".join(cmd), file=sys.stderr)
+        raise RuntimeError("command timed out") from e
     except subprocess.CalledProcessError as e:
-        # Surface stderr to avoid "looks stuck" debugging.
-        shown = " ".join(cmd[:8])
-        if len(cmd) > 8:
-            shown = shown + " [more]"
-        log("[cmd][fail] rc=%s cmd=%s" % (str(e.returncode), shown))
-        if e.stdout:
-            log("[cmd][stdout_tail]\n%s" % _tail(e.stdout))
-        if e.stderr:
-            log("[cmd][stderr_tail]\n%s" % _tail(e.stderr))
+        # Keep stderr reasonably small in exception messages.
+        err = (e.stderr or "")
+        err = err[-4000:] if len(err) > 4000 else err
+        print("[run][fail] cmd=%s" % " ".join(cmd), file=sys.stderr)
+        if err:
+            print(err, file=sys.stderr)
         raise
-
-
-def run_stream(cmd: List[str], prefix: str = "cmd") -> None:
-    # Stream stdout/stderr line-by-line so long ffmpeg steps do not look stuck.
-    # Keep a short tail for error context.
-    shown = " ".join(cmd[:10])
-    if len(cmd) > 10:
-        shown = shown + " [more]"
-    log("[%s][start] %s" % (prefix, shown))
-
-    tail: List[str] = []
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-    assert p.stdout is not None
-    for line in p.stdout:
-        line = (line or "").rstrip("\n")
-        if line:
-            log("[%s] %s" % (prefix, line))
-        tail.append(line)
-        if len(tail) > 80:
-            tail = tail[-80:]
-    rc = p.wait()
-    if rc != 0:
-        log("[%s][fail] rc=%s" % (prefix, str(rc)))
-        if tail:
-            log("[%s][tail]\n%s" % (prefix, "\n".join(tail[-40:])))
-        raise RuntimeError("command_failed rc=%d" % rc)
-    log("[%s][ok]" % prefix)
 
 
 def ffprobe_duration_sec(p: Path) -> float:
@@ -115,21 +85,12 @@ def ffprobe_duration_sec(p: Path) -> float:
 
 def http_get_json(url: str, headers: Dict[str, str], timeout_sec: int = 30) -> Dict[str, Any]:
     req = urllib.request.Request(url, headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-        return json.loads(raw)
-    except urllib.error.HTTPError as e:
-        try:
-            body = e.read().decode("utf-8", errors="replace")
-        except Exception:
-            body = ""
-        raise HttpError("GET", url, int(getattr(e, "code", 0) or 0), _tail(body))
-    except urllib.error.URLError as e:
-        raise RuntimeError("http_get url_error: %s" % str(e))
+    with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+    return json.loads(raw)
 
 
-def download(url: str, dst: Path, timeout_sec: int = 90, headers: Dict[str, str] = None) -> int:
+def download(url: str, dst: Path, timeout_sec: int = 90, headers: Dict[str, str] = None) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     h = {"User-Agent": USER_AGENT}
     if headers:
@@ -137,23 +98,9 @@ def download(url: str, dst: Path, timeout_sec: int = 90, headers: Dict[str, str]
             if k and v:
                 h[str(k)] = str(v)
     req = urllib.request.Request(url, headers=h, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-            with open(dst, "wb") as f:
-                shutil.copyfileobj(resp, f)
-    except urllib.error.HTTPError as e:
-        try:
-            body = e.read().decode("utf-8", errors="replace")
-        except Exception:
-            body = ""
-        raise HttpError("GET", url, int(getattr(e, "code", 0) or 0), _tail(body))
-    except urllib.error.URLError as e:
-        raise RuntimeError("download url_error: %s" % str(e))
-
-    try:
-        return int(dst.stat().st_size)
-    except Exception:
-        return 0
+    with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+        with open(dst, "wb") as f:
+            shutil.copyfileobj(resp, f)
 
 
 def load_json(p: Path) -> Any:
@@ -176,10 +123,3 @@ def rand_for_guid(guid: str) -> random.Random:
     h = hashlib.sha256(guid.encode("utf-8")).digest()
     seed = int.from_bytes(h[:4], "big")
     return random.Random(seed)
-
-
-def require_env(name: str) -> str:
-    v = os.environ.get(name)
-    if not v:
-        raise RuntimeError("Missing required env var: %s" % name)
-    return v

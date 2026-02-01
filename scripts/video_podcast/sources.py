@@ -4,7 +4,7 @@ import time
 import urllib.parse
 from typing import Any, Dict, List, Tuple
 
-from .util import USER_AGENT, HttpError, http_get_json, log
+from .util import USER_AGENT, http_get_json
 
 
 _SENSITIVE_TERMS = [
@@ -173,45 +173,148 @@ def apply_sensitive_query_policy(
 
 
 def text_queries(title: str, desc: str, max_q: int = 12) -> List[str]:
-    import re
-    text = ("%s %s" % (title, desc)).lower()
-    text = re.sub(r"http[s]?://\S+", " ", text)
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
-    words = [w for w in text.split() if len(w) >= 4]
-    stop = set([
+    tiered = build_tiered_queries(title, desc, max_q=max_q)
+    out: List[str] = []
+    for item in tiered:
+        q = str(item.get("query") or "").strip()
+        if q and q not in out:
+            out.append(q)
+        if len(out) >= max_q:
+            break
+    return out
+
+
+def _stop_words() -> set:
+    return set([
         "that", "this", "with", "from", "your", "about", "into", "have", "will", "they",
         "them", "what", "when", "where", "which", "their", "there", "were", "been",
         "also", "more", "over", "under", "than", "then", "very", "much", "most",
+        "some", "just", "like", "because", "after", "before", "again", "today",
     ])
+
+
+def _clean_for_tokens(s: str) -> str:
+    import re
+    t = (s or "")
+    t = re.sub(r"http[s]?://\S+", " ", t)
+    t = re.sub(r"<[^>]+>", " ", t)
+    t = re.sub(r"[^a-zA-Z0-9\s]", " ", t)
+    return " ".join(t.split()).strip()
+
+
+def _title_phrases(title: str, max_phrases: int = 6) -> List[str]:
+    t = _clean_for_tokens(title)
+    if not t:
+        return []
+    words = t.split()
+    stop = _stop_words()
+
+    phrases: List[str] = []
+    # Tier-1: exact title first.
+    phrases.append(title.strip())
+
+    # Then short sliding-window phrases (2 to 4 words) that are not just stop words.
+    for n in [4, 3, 2]:
+        for i in range(0, max(0, len(words) - n + 1)):
+            seg = words[i:i + n]
+            seg_l = [w.lower() for w in seg]
+            if all(w in stop for w in seg_l):
+                continue
+            if sum(1 for w in seg_l if w in stop) >= n - 1:
+                continue
+            ph = " ".join(seg).strip()
+            if ph and ph not in phrases:
+                phrases.append(ph)
+            if len(phrases) >= max_phrases:
+                return phrases[:max_phrases]
+    return phrases[:max_phrases]
+
+
+def _keywords(text: str, max_k: int = 10) -> List[str]:
+    t = _clean_for_tokens(text).lower()
+    if not t:
+        return []
+    stop = _stop_words()
+    words = [w for w in t.split() if len(w) >= 4 and w not in stop]
     freq: Dict[str, int] = {}
     for w in words:
-        if w in stop:
-            continue
         freq[w] = freq.get(w, 0) + 1
     ranked = sorted(freq.items(), key=lambda x: (-x[1], x[0]))
-    qs: List[str] = []
-    if title.strip():
-        qs.append(title.strip())
+    out: List[str] = []
     for w, _ in ranked:
-        if w not in qs:
-            qs.append(w)
-        if len(qs) >= max_q:
+        if w not in out:
+            out.append(w)
+        if len(out) >= max_k:
             break
-    return qs[:max_q]
+    return out
+
+
+def build_tiered_queries(title: str, desc: str, max_q: int = 12) -> List[Dict[str, Any]]:
+    """Build tiered search queries.
+
+    Tier-1: high-precision title phrases.
+    Tier-2: extracted keywords + short phrases.
+    Tier-3: safe generic fallbacks.
+    """
+    title = (title or "").strip()
+    desc = (desc or "").strip()
+
+    t1 = _title_phrases(title, max_phrases=6) if title else []
+    kw = _keywords("%s %s" % (title, desc), max_k=10)
+
+    t2: List[str] = []
+    for w in kw:
+        if w and w not in t2:
+            t2.append(w)
+    # Prefer a few short phrases derived from the title.
+    for ph in t1[1:]:
+        if ph and ph not in t2:
+            t2.append(ph)
+
+    t3: List[str] = []
+    # Generic fallbacks, tuned for podcast/news style episodes.
+    for g in [
+        "podcast microphone",
+        "news studio",
+        "city skyline",
+        "world map",
+        "finance chart",
+        "crowd street",
+    ]:
+        if g not in t3:
+            t3.append(g)
+
+    out: List[Dict[str, Any]] = []
+    for q in t1:
+        if q:
+            out.append({"tier": 1, "query": q})
+    for q in t2:
+        if q:
+            out.append({"tier": 2, "query": q})
+    for q in t3:
+        if q:
+            out.append({"tier": 3, "query": q})
+
+    # Dedupe while keeping the best tier.
+    seen = set()
+    ded: List[Dict[str, Any]] = []
+    for item in out:
+        q = _normalize_spaces(str(item.get("query") or ""))
+        if not q:
+            continue
+        key = q.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        ded.append({"tier": int(item.get("tier") or 3), "query": q})
+        if len(ded) >= max_q:
+            break
+    return ded
 
 
 def pexels_search(api_key: str, q: str, per_page: int = 12) -> List[Dict[str, Any]]:
     url = "https://api.pexels.com/videos/search?query=%s&per_page=%d" % (urllib.parse.quote(q), per_page)
-    try:
-        j = http_get_json(url, headers={"Authorization": api_key, "User-Agent": USER_AGENT})
-    except HttpError as e:
-        # Fail fast for auth/rate-limit issues.
-        if e.status in [401, 403]:
-            raise RuntimeError("api_auth_failed source=pexels status=%d" % e.status)
-        if e.status == 429:
-            raise RuntimeError("api_rate_limited source=pexels status=429")
-        log("[src][pexels][warn] status=%d q=%s" % (e.status, q))
-        return []
+    j = http_get_json(url, headers={"Authorization": api_key, "User-Agent": USER_AGENT})
     vids = j.get("videos") or []
     out: List[Dict[str, Any]] = []
     for v in vids:
@@ -254,21 +357,7 @@ def pixabay_search(api_key: str, q: str, per_page: int = 20) -> List[Dict[str, A
         urllib.parse.quote(q),
         per_page,
     )
-    safe_url = "https://pixabay.com/api/videos/?key=REDACTED&q=%s&per_page=%d" % (
-        urllib.parse.quote(q),
-        per_page,
-    )
-    try:
-        j = http_get_json(url, headers={"User-Agent": USER_AGENT})
-    except HttpError as e:
-        if e.status in [401, 403]:
-            raise RuntimeError("api_auth_failed source=pixabay status=%d" % e.status)
-        if e.status == 429:
-            raise RuntimeError("api_rate_limited source=pixabay status=429")
-        log("[src][pixabay][warn] status=%d q=%s" % (e.status, q))
-        # Avoid logging the API key.
-        _ = safe_url
-        return []
+    j = http_get_json(url, headers={"User-Agent": USER_AGENT})
     hits = j.get("hits") or []
     out: List[Dict[str, Any]] = []
     for h in hits:
@@ -304,36 +393,67 @@ def pixabay_search(api_key: str, q: str, per_page: int = 20) -> List[Dict[str, A
 
 
 def dedupe_assets(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    seen = set()
-    out = []
+    seen = {}
+    out: List[Dict[str, Any]] = []
     for a in assets:
         key = "%s:%s" % (a.get("source"), a.get("asset_id"))
+        tier = int(a.get("tier") or 3)
         if key in seen:
+            prev_i = seen[key]
+            prev_tier = int(out[prev_i].get("tier") or 3)
+            if tier < prev_tier:
+                out[prev_i] = a
             continue
-        seen.add(key)
+        seen[key] = len(out)
         out.append(a)
     return out
 
 
-def search_assets(pexels_key: str, pixabay_key: str, queries: List[str]) -> List[Dict[str, Any]]:
+def search_assets(pexels_key: str, pixabay_key: str, queries: List[Any]) -> List[Dict[str, Any]]:
+    """Search for candidate assets.
+
+    Accepts either:
+    - List[str] queries (treated as tier=2)
+    - List[{tier:int, query:str}] tiered queries
+    """
+    tiered: List[Dict[str, Any]] = []
+    if queries and isinstance(queries[0], str):
+        for q in queries:
+            qq = _normalize_spaces(str(q))
+            if qq:
+                tiered.append({"tier": 2, "query": qq})
+    else:
+        for item in (queries or []):
+            if not isinstance(item, dict):
+                continue
+            q = _normalize_spaces(str(item.get("query") or ""))
+            if not q:
+                continue
+            tiered.append({"tier": int(item.get("tier") or 3), "query": q})
+
     assets: List[Dict[str, Any]] = []
-    for q in queries:
-        qn = (q or "").strip()
-        if not qn:
+    for item in tiered:
+        q = str(item.get("query") or "").strip()
+        tier = int(item.get("tier") or 3)
+        if not q:
             continue
-
         time.sleep(0.2)
-        log("[src][search] q=%s" % qn)
-
-        a1 = pexels_search(pexels_key, qn, per_page=10)
-        log("[src][pexels] q=%s n=%d" % (qn, len(a1)))
-        assets += a1
-
+        try:
+            for a in pexels_search(pexels_key, q, per_page=10):
+                a["tier"] = tier
+                a["query"] = q
+                assets.append(a)
+        except Exception:
+            pass
         time.sleep(0.2)
-        a2 = pixabay_search(pixabay_key, qn, per_page=15)
-        log("[src][pixabay] q=%s n=%d" % (qn, len(a2)))
-        assets += a2
+        try:
+            for a in pixabay_search(pixabay_key, q, per_page=15):
+                a["tier"] = tier
+                a["query"] = q
+                assets.append(a)
+        except Exception:
+            pass
 
     out = dedupe_assets(assets)
-    log("[src][done] queries=%d assets=%d" % (len([q for q in (queries or []) if (q or '').strip()]), len(out)))
+    out.sort(key=lambda a: (int(a.get("tier") or 3), str(a.get("source") or ""), str(a.get("asset_id") or "")))
     return out
