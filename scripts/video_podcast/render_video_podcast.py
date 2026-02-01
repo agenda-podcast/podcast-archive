@@ -71,6 +71,9 @@ def main() -> int:
         state["processed"] = {}
         processed = state["processed"]
 
+    failures = 0
+    successes = 0
+
     for ep in todo:
         print("[episode] guid=%s title=%s" % (ep.guid, ep.title))
         try:
@@ -101,11 +104,23 @@ def main() -> int:
                 }
                 save_state(state_path, state)
                 print("[ok] guid=%s video=%s manifest=%s" % (ep.guid, video_asset, manifest_asset))
+                successes += 1
         except Exception as e:
+            failures += 1
             print("[fail] guid=%s err=%s" % (ep.guid, str(e)), file=sys.stderr)
 
     write_status_csv(status_csv, episodes, state)
     write_video_rss(rss_path, repo, args.video_tag, episodes, state)
+
+    # Hard-fail guard: if we planned work and are not in dry-run mode, do not
+    # allow a green workflow that produced no outputs.
+    if not args.dry_run and len(todo) > 0:
+        if failures > 0:
+            print("[summary] successes=%d failures=%d" % (successes, failures), file=sys.stderr)
+            return 1
+        if successes == 0:
+            print("[summary] no episodes succeeded", file=sys.stderr)
+            return 1
 
     try:
         if run_root.exists():
