@@ -1,7 +1,7 @@
 # ASCII-only. No ellipses. Keep <= 500 lines.
 
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Tuple
 
 from .util import ffprobe_duration_sec, run
 
@@ -282,3 +282,140 @@ def ffmpeg_concat_with_intro_outro_and_frame(
                 lst.unlink()
         except Exception:
             pass
+
+
+def ffmpeg_render_one_pass_with_intro_outro_and_frame(
+    segments: List[Dict[str, float]],
+    podcast_audio: Path,
+    intro_outro_mp4: Path,
+    frame_png: Path,
+    dst: Path,
+    main_dur_sec: float,
+    intro_silence_sec: float,
+    outro_silence_sec: float,
+) -> Tuple[List[str], float]:
+    """One-pass final render.
+
+    This function builds and runs a single ffmpeg command that:
+
+    - Uses raw source clips (no per-clip encoding).
+    - Trims the last clip as needed so total main video duration equals main_dur_sec.
+    - Applies the existing frame overlay sizing logic (height-aligned, centered, AR preserved).
+    - Produces intro and outro segments with silent audio.
+
+    segments items are dicts with:
+      - path: str
+      - start_sec: float
+      - dur_sec: float
+
+    Returns (cmd, expected_total_sec).
+    """
+    dst.parent.mkdir(parents=True, exist_ok=True)
+
+    if not intro_outro_mp4.exists():
+        raise FileNotFoundError("intro/outro mp4 not found: %s" % str(intro_outro_mp4))
+    if not frame_png.exists():
+        raise FileNotFoundError("frame png not found: %s" % str(frame_png))
+    if not podcast_audio.exists():
+        raise FileNotFoundError("podcast audio not found: %s" % str(podcast_audio))
+    if not segments:
+        raise ValueError("no segments provided")
+    if main_dur_sec <= 0.01:
+        raise ValueError("main duration is invalid")
+    if intro_silence_sec < 0.0 or outro_silence_sec < 0.0:
+        raise ValueError("intro/outro silence duration is invalid")
+
+    # Keep the existing video normalization targets.
+    vf_base = (
+        "scale=%d:%d:force_original_aspect_ratio=decrease,"
+        "pad=%d:%d:(ow-iw)/2:(oh-ih)/2,"
+        "fps=%d" % (TARGET_W, TARGET_H, TARGET_W, TARGET_H, TARGET_FPS)
+    )
+
+    intro_dur_s = "%.3f" % float(intro_silence_sec)
+    outro_dur_s = "%.3f" % float(outro_silence_sec)
+    main_dur_s = "%.3f" % float(main_dur_sec)
+    expected_total = float(intro_silence_sec) + float(main_dur_sec) + float(outro_silence_sec)
+
+    # Inputs:
+    # 0: intro/outro mp4 (video)
+    # 1: podcast audio (original)
+    # 2: frame png (looped)
+    # 3..: raw source clips
+    cmd: List[str] = [
+        "ffmpeg", "-y",
+        "-i", str(intro_outro_mp4),
+        "-i", str(podcast_audio),
+        "-loop", "1",
+        "-i", str(frame_png),
+    ]
+    for seg in segments:
+        p = str(seg.get("path") or "")
+        if not p:
+            raise ValueError("segment missing path")
+        cmd += ["-i", p]
+
+    # Build per-segment trim+normalize filters.
+    # Concat uses v=1:a=0, and audio is provided separately.
+    v_parts: List[str] = []
+    v_labels: List[str] = []
+    for i, seg in enumerate(segments):
+        in_idx = 3 + i
+        st = float(seg.get("start_sec") or 0.0)
+        du = float(seg.get("dur_sec") or 0.0)
+        if du <= 0.01:
+            raise ValueError("segment duration too short")
+        lab = "v%02d" % i
+        v_labels.append("[%s]" % lab)
+        v_parts.append(
+            "[%d:v]trim=start=%.3f:duration=%.3f,setpts=PTS-STARTPTS,%s[%s]" % (in_idx, st, du, vf_base, lab)
+        )
+
+    # Concat main video from all segments.
+    concat_main = "%sconcat=n=%d:v=1:a=0[main_pre]" % ("".join(v_labels), len(segments))
+
+    # Apply existing frame overlay sizing logic.
+    overlay = (
+        "[2:v]format=rgba[frame];"
+        "[frame][main_pre]scale2ref=w=-1:h=main_h[frame_m][main_ref];"
+        "[main_ref][frame_m]overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2,format=yuv420p[mainv]"
+    )
+
+    # Intro/outro video from the same asset, trimmed by duration and normalized.
+    intro_outro = (
+        "[0:v]split=2[i0][o0];"
+        "[i0]trim=0:%s,setpts=PTS-STARTPTS,%s[introv];"
+        "[o0]trim=0:%s,setpts=PTS-STARTPTS,%s[outrov]" % (intro_dur_s, vf_base, outro_dur_s, vf_base)
+    )
+
+    # Audio: silence intro/outro, original audio for main (trimmed), all concatenated.
+    # Keep loudnorm settings consistent with the earlier approach, but apply in the final pass.
+    audio = (
+        "anullsrc=r=44100:cl=stereo,atrim=0:%s,asetpts=N/SR/TB[introa];"
+        "[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
+        "loudnorm=I=-16:TP=-1.5:LRA=11,atrim=0:%s,asetpts=N/SR/TB[maina];"
+        "anullsrc=r=44100:cl=stereo,atrim=0:%s,asetpts=N/SR/TB[outroa]" % (intro_dur_s, main_dur_s, outro_dur_s)
+    )
+
+    # Final concat of (intro, main, outro) for both video and audio.
+    tail = "[introv][introa][mainv][maina][outrov][outroa]concat=n=3:v=1:a=1[v][a]"
+
+    filt = ";".join(v_parts + [concat_main, overlay, intro_outro, audio, tail])
+
+    cmd += [
+        "-filter_complex", filt,
+        "-map", "[v]",
+        "-map", "[a]",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-r", str(TARGET_FPS),
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
+        str(dst),
+    ]
+
+    run(cmd, timeout_sec=7200, stream=True)
+    _verify_output_media(dst, min_bytes=500 * 1024, min_dur_sec=5.0)
+    return cmd, expected_total
