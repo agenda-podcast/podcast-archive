@@ -4,7 +4,7 @@ import time
 import urllib.parse
 from typing import Any, Dict, List, Tuple
 
-from .util import USER_AGENT, http_get_json
+from .util import USER_AGENT, HttpError, http_get_json, log
 
 
 _SENSITIVE_TERMS = [
@@ -202,7 +202,16 @@ def text_queries(title: str, desc: str, max_q: int = 12) -> List[str]:
 
 def pexels_search(api_key: str, q: str, per_page: int = 12) -> List[Dict[str, Any]]:
     url = "https://api.pexels.com/videos/search?query=%s&per_page=%d" % (urllib.parse.quote(q), per_page)
-    j = http_get_json(url, headers={"Authorization": api_key, "User-Agent": USER_AGENT})
+    try:
+        j = http_get_json(url, headers={"Authorization": api_key, "User-Agent": USER_AGENT})
+    except HttpError as e:
+        # Fail fast for auth/rate-limit issues.
+        if e.status in [401, 403]:
+            raise RuntimeError("api_auth_failed source=pexels status=%d" % e.status)
+        if e.status == 429:
+            raise RuntimeError("api_rate_limited source=pexels status=429")
+        log("[src][pexels][warn] status=%d q=%s" % (e.status, q))
+        return []
     vids = j.get("videos") or []
     out: List[Dict[str, Any]] = []
     for v in vids:
@@ -245,7 +254,21 @@ def pixabay_search(api_key: str, q: str, per_page: int = 20) -> List[Dict[str, A
         urllib.parse.quote(q),
         per_page,
     )
-    j = http_get_json(url, headers={"User-Agent": USER_AGENT})
+    safe_url = "https://pixabay.com/api/videos/?key=REDACTED&q=%s&per_page=%d" % (
+        urllib.parse.quote(q),
+        per_page,
+    )
+    try:
+        j = http_get_json(url, headers={"User-Agent": USER_AGENT})
+    except HttpError as e:
+        if e.status in [401, 403]:
+            raise RuntimeError("api_auth_failed source=pixabay status=%d" % e.status)
+        if e.status == 429:
+            raise RuntimeError("api_rate_limited source=pixabay status=429")
+        log("[src][pixabay][warn] status=%d q=%s" % (e.status, q))
+        # Avoid logging the API key.
+        _ = safe_url
+        return []
     hits = j.get("hits") or []
     out: List[Dict[str, Any]] = []
     for h in hits:
@@ -295,14 +318,22 @@ def dedupe_assets(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def search_assets(pexels_key: str, pixabay_key: str, queries: List[str]) -> List[Dict[str, Any]]:
     assets: List[Dict[str, Any]] = []
     for q in queries:
+        qn = (q or "").strip()
+        if not qn:
+            continue
+
         time.sleep(0.2)
-        try:
-            assets += pexels_search(pexels_key, q, per_page=10)
-        except Exception:
-            pass
+        log("[src][search] q=%s" % qn)
+
+        a1 = pexels_search(pexels_key, qn, per_page=10)
+        log("[src][pexels] q=%s n=%d" % (qn, len(a1)))
+        assets += a1
+
         time.sleep(0.2)
-        try:
-            assets += pixabay_search(pixabay_key, q, per_page=15)
-        except Exception:
-            pass
-    return dedupe_assets(assets)
+        a2 = pixabay_search(pixabay_key, qn, per_page=15)
+        log("[src][pixabay] q=%s n=%d" % (qn, len(a2)))
+        assets += a2
+
+    out = dedupe_assets(assets)
+    log("[src][done] queries=%d assets=%d" % (len([q for q in (queries or []) if (q or '').strip()]), len(out)))
+    return out

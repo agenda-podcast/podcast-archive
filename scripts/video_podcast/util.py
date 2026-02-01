@@ -8,11 +8,33 @@ import shutil
 import subprocess
 import time
 import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import Any, Dict, List
 
 
 USER_AGENT = "video-podcast-render/1.0"
+
+
+def log(msg: str) -> None:
+    # Keep logs visible in GitHub Actions.
+    print(msg, flush=True)
+
+
+def _tail(s: str, max_chars: int = 1200) -> str:
+    s = s or ""
+    if len(s) <= max_chars:
+        return s
+    return s[-max_chars:]
+
+
+class HttpError(RuntimeError):
+    def __init__(self, method: str, url: str, status: int, body: str):
+        self.method = method
+        self.url = url
+        self.status = int(status)
+        self.body = body or ""
+        super().__init__("http_%s status=%d" % (method.lower(), self.status))
 
 
 def now_iso() -> str:
@@ -37,7 +59,19 @@ def safe_slug(s: str, max_len: int = 80) -> str:
 
 
 def run(cmd: List[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    try:
+        return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        # Surface stderr to avoid "looks stuck" debugging.
+        shown = " ".join(cmd[:8])
+        if len(cmd) > 8:
+            shown = shown + " [more]"
+        log("[cmd][fail] rc=%s cmd=%s" % (str(e.returncode), shown))
+        if e.stdout:
+            log("[cmd][stdout_tail]\n%s" % _tail(e.stdout))
+        if e.stderr:
+            log("[cmd][stderr_tail]\n%s" % _tail(e.stderr))
+        raise
 
 
 def ffprobe_duration_sec(p: Path) -> float:
@@ -53,12 +87,21 @@ def ffprobe_duration_sec(p: Path) -> float:
 
 def http_get_json(url: str, headers: Dict[str, str], timeout_sec: int = 30) -> Dict[str, Any]:
     req = urllib.request.Request(url, headers=headers, method="GET")
-    with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-        raw = resp.read().decode("utf-8", errors="replace")
-    return json.loads(raw)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+        return json.loads(raw)
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        raise HttpError("GET", url, int(getattr(e, "code", 0) or 0), _tail(body))
+    except urllib.error.URLError as e:
+        raise RuntimeError("http_get url_error: %s" % str(e))
 
 
-def download(url: str, dst: Path, timeout_sec: int = 90, headers: Dict[str, str] = None) -> None:
+def download(url: str, dst: Path, timeout_sec: int = 90, headers: Dict[str, str] = None) -> int:
     dst.parent.mkdir(parents=True, exist_ok=True)
     h = {"User-Agent": USER_AGENT}
     if headers:
@@ -66,9 +109,23 @@ def download(url: str, dst: Path, timeout_sec: int = 90, headers: Dict[str, str]
             if k and v:
                 h[str(k)] = str(v)
     req = urllib.request.Request(url, headers=h, method="GET")
-    with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-        with open(dst, "wb") as f:
-            shutil.copyfileobj(resp, f)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            with open(dst, "wb") as f:
+                shutil.copyfileobj(resp, f)
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        raise HttpError("GET", url, int(getattr(e, "code", 0) or 0), _tail(body))
+    except urllib.error.URLError as e:
+        raise RuntimeError("download url_error: %s" % str(e))
+
+    try:
+        return int(dst.stat().st_size)
+    except Exception:
+        return 0
 
 
 def load_json(p: Path) -> Any:
