@@ -3,6 +3,10 @@ name: Render Video Podcast
 on:
   workflow_dispatch:
     inputs:
+      render_one_pass:
+        description: "If true, render final video in ONE ffmpeg pass (no per-clip encoding)"
+        required: true
+        default: "false"
       max_items:
         description: "Max NEW episodes to render (0 = no limit)"
         required: true
@@ -66,12 +70,16 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RENDER_ONE_PASS: ${{ inputs.render_one_pass }}
         run: |
           set -euo pipefail
           DRY="${{ inputs.dry_run }}"
           EXTRA=""
           if [ "${DRY}" = "true" ]; then
             EXTRA="--dry-run"
+          fi
+          if [ "${{ inputs.render_one_pass }}" = "true" ]; then
+            EXTRA="${EXTRA} --render-one-pass"
           fi
           python -m scripts.video_podcast.render_video_podcast \
             --repo-root . \
