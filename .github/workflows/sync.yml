@@ -98,7 +98,18 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then
             git add feed/rss.xml data/episodes.json
             git commit -m "chore: sync archive feed" || true
-            git push
+            # Option 1: rebase onto latest main then push (retry).
+            git fetch origin main
+            git rebase origin/main
+            for i in 1 2 3; do
+              if git push; then
+                break
+              fi
+              echo "[git] push rejected; rebasing onto origin/main and retrying (\${i}/3)"
+              git fetch origin main
+              git rebase origin/main
+              sleep 2
+            done
           else
             echo "No changes"
           fi
