@@ -15,6 +15,21 @@
         "video_url": "https://www.youtube.com/watch?v=eMjnxEa8Ocg"
       }
     },
+    "agenda-18592072": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18592072_why-nyc-rejected-record-safety-for-socialism.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-02T23:36:11Z",
+      "video_asset_name": "agenda-18592072_why-nyc-rejected-record-safety-for-socialism.mp4",
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-02T23:36:19Z",
+        "video_id": "cpcdk4H8dXA",
+        "video_url": "https://www.youtube.com/watch?v=cpcdk4H8dXA"
+      }
+    },
     "agenda-18592126": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18592126_us-big-cities-why-record-safety-feels-like-danger.json",
@@ -31,6 +46,6 @@
       }
     }
   },
-  "updated_at": "2026-02-02T19:28:03Z",
+  "updated_at": "2026-02-02T23:36:19Z",
   "version": 1
 }
