@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -16,6 +18,29 @@ from .youtube_auth import build_credentials
 
 THUMB_LEFT_PNG = "data/thumbnail_left.png"
 THUMB_TEMPLATE_PNG = "data/thumbnail_template.png"
+
+
+def _gh_delete_release_asset(tag: str, asset_name: str) -> None:
+    """Delete an asset from a GitHub release tag using `gh`.
+
+    This is used to clean up large video assets once they are successfully uploaded
+    to YouTube.
+
+    The workflow must export GH_TOKEN (or GITHUB_TOKEN) so `gh` is authorized.
+    """
+    gh_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not gh_token:
+        raise RuntimeError("GH_TOKEN (or GITHUB_TOKEN) is required to delete release assets")
+
+    # gh reads GH_TOKEN from the environment; ensure it is set for this subprocess.
+    env = dict(os.environ)
+    env["GH_TOKEN"] = gh_token
+
+    cmd = ["gh", "release", "delete-asset", tag, asset_name, "--yes"]
+    print(f"[cleanup][release] deleting asset tag={tag} asset={asset_name}")
+    proc = subprocess.run(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"failed to delete release asset: {proc.stdout.strip()}")
 
 
 def _youtube_url(video_id: str) -> str:
@@ -168,6 +193,7 @@ def upload_all(
     category_id: str,
     max_items: int,
     force_guid: str,
+    cleanup_release_tag: str,
 ) -> int:
     repo = (repo_root / ".git").exists()
     if not repo:
@@ -272,6 +298,14 @@ def upload_all(
 
         uploads.append((ep.guid, vid))
         print("[youtube] upload_ok guid=%s video_id=%s" % (ep.guid, vid))
+
+        if cleanup_release_tag:
+            try:
+                _gh_delete_release_asset(cleanup_release_tag, asset)
+                print("[youtube] release_asset_deleted tag=%s asset=%s" % (cleanup_release_tag, asset))
+            except Exception as e:
+                print("[youtube] release_asset_delete_fail tag=%s asset=%s err=%s" % (cleanup_release_tag, asset, str(e)), file=sys.stderr)
+                return 2
         if max_n and (len(uploads) >= max_n):
             print("[youtube] max-items reached=%d" % max_n)
             break
@@ -307,6 +341,11 @@ def main() -> int:
     ap.add_argument("--category-id", default="25")
     ap.add_argument("--max-items", default="0", help="Upload at most N items (0 = no limit).")
     ap.add_argument("--force-guid", default="", help="If set, upload only this guid and ignore skip logic.")
+    ap.add_argument(
+        "--cleanup-release-tag",
+        default=os.environ.get("CLEANUP_RELEASE_TAG", ""),
+        help="If set, delete uploaded video asset from this GitHub release tag (uses gh + GH_TOKEN).",
+    )
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -332,6 +371,7 @@ def main() -> int:
         category_id=str(args.category_id).strip(),
         max_items=int(str(args.max_items).strip() or "0"),
         force_guid=str(args.force_guid).strip(),
+        cleanup_release_tag=str(args.cleanup_release_tag).strip(),
     )
 
 

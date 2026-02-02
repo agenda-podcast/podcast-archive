@@ -121,6 +121,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          UPLOAD_TO_YOUTUBE="${{ inputs.upload_to_youtube }}"
           VIDEO_TAG="video-podcast"
           VIDEO_NAME="video podcast"
           MAN_TAG="video-podcast-manifests"
@@ -140,6 +141,17 @@ jobs:
 
           if ls -1 work/video-podcast/videos/*.mp4 >/dev/null 2>&1; then
             gh release upload "${VIDEO_TAG}" work/video-podcast/videos/*.mp4 --clobber
+
+            # If the episode was successfully uploaded to YouTube in this run,
+            # delete the corresponding *video* assets from the release to keep
+            # releases small. (Manifests/clips remain.)
+            if [ "${UPLOAD_TO_YOUTUBE}" = "true" ]; then
+              for f in work/video-podcast/videos/*.mp4; do
+                b="$(basename "${f}")"
+                echo "[cleanup] deleting release asset tag=${VIDEO_TAG} name=${b}"
+                gh release delete-asset "${VIDEO_TAG}" "${b}" --yes
+              done
+            fi
           else
             echo "No videos found to upload."
           fi

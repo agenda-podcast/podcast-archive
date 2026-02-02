@@ -77,9 +77,11 @@ jobs:
 
       - name: Upload to YouTube
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          CLEANUP_RELEASE_TAG: ${{ inputs.video_tag }}
         run: |
           set -euo pipefail
           EXTRA=""
