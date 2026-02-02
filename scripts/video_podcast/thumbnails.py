@@ -44,7 +44,15 @@ def _wrap_text(draw, text: str, font, max_w: int):
     return lines
 
 
-def _fit_text(draw, text: str, *, box_w: int, box_h: int, bold: bool):
+def _fit_text(
+    draw,
+    text: str,
+    *,
+    box_w: int,
+    box_h: int,
+    bold: bool,
+    max_size: int = 160,
+):
     # Prefer DejaVu on Linux runners.
     if bold:
         font_paths = (
@@ -58,7 +66,7 @@ def _fit_text(draw, text: str, *, box_w: int, box_h: int, bold: bool):
         )
 
     # Start large, step down until fits.
-    for size in range(80, 14, -2):
+    for size in range(max_size, 14, -2):
         font = _load_font(font_paths, size=size)
         lines = _wrap_text(draw, text, font, box_w)
         if not lines:
@@ -146,8 +154,8 @@ def render_episode_thumbnail(
     Layout:
       - left: square image from template
       - right: black background
-      - right top 1/3: title (bold, large, white)
-      - right bottom 2/3: description (regular, white)
+      - right: title only (bold, large, white), auto-sized to fill the full
+        right panel. Episode description is intentionally not rendered.
     """
 
     try:
@@ -179,25 +187,27 @@ def render_episode_thumbnail(
     pad = 32
     box_x0 = right_x0 + pad
     box_x1 = w - pad
-    top_h = h // 3
-    bot_h = h - top_h
+    # Use the full right panel for title.
+    title_box = (box_x0, pad, box_x1, h - pad)
+    box_w = title_box[2] - title_box[0]
+    box_h = title_box[3] - title_box[1]
+    font_t, lines_t = _fit_text(
+        draw,
+        title,
+        box_w=box_w,
+        box_h=box_h,
+        bold=True,
+        max_size=220,
+    )
 
-    # Title box.
-    title_box = (box_x0, pad, box_x1, top_h - pad)
-    font_t, lines_t = _fit_text(draw, title, box_w=title_box[2] - title_box[0], box_h=title_box[3] - title_box[1], bold=True)
-    y = title_box[1]
-    line_h = int(getattr(font_t, "size", 32) * 1.2)
+    # Center vertically and horizontally.
+    line_h = int(getattr(font_t, "size", 32) * 1.18)
+    total_h = max(1, len(lines_t)) * line_h
+    y = title_box[1] + max(0, (box_h - total_h) // 2)
     for line in lines_t:
-        draw.text((title_box[0], y), line, font=font_t, fill=(255, 255, 255))
-        y += line_h
-
-    # Description box.
-    desc_box = (box_x0, top_h + pad, box_x1, h - pad)
-    font_d, lines_d = _fit_text(draw, description, box_w=desc_box[2] - desc_box[0], box_h=desc_box[3] - desc_box[1], bold=False)
-    y = desc_box[1]
-    line_h = int(getattr(font_d, "size", 22) * 1.25)
-    for line in lines_d:
-        draw.text((desc_box[0], y), line, font=font_d, fill=(255, 255, 255))
+        tw = draw.textlength(line, font=font_t)
+        x = title_box[0] + max(0, int((box_w - tw) // 2))
+        draw.text((x, y), line, font=font_t, fill=(255, 255, 255))
         y += line_h
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
