@@ -37,12 +37,12 @@ jobs:
           set -euo pipefail
           echo "[queue] triggering render for next pending episode"
           gh workflow run render_video_podcast.yml \
-            -f do_render_clips=true \
+            -f render_one_pass=true \
             -f max_items=1 \
-            -f do_force=false \
+            -f dry_run=false \
             -f force_guid="" \
-            -f do_upload_to_youtube=true \
-            -f youtube_privacy_status=public \
+            -f upload_to_youtube=true \
+            -f youtube_privacy=public \
             -f youtube_category_id=25
 
       - name: Trigger Upload Rendered Video Podcast From Releases
@@ -54,9 +54,8 @@ jobs:
           echo "[queue] triggering upload for next rendered episode without youtube id"
           gh workflow run upload_video_podcast_from_release.yml \
             -f max_items=1 \
-            -f do_force=false \
             -f force_guid="" \
-            -f youtube_privacy_status=public \
+            -f youtube_privacy=public \
             -f youtube_category_id=25
 
       - name: Nothing to do
