@@ -1,17 +1,21 @@
 {
   "processed": {
     "agenda-18592614": {
-      "manifest_asset_name": "20260129-agenda-18592614-new-york-city-market-of-bodies-prostitution-crisis.json",
-      "video_asset_name": "20260129-agenda-18592614-new-york-city-market-of-bodies-prostitution-crisis.mp4",
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18592614_new-york-city-market-of-bodies-prostitution-crisis.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-02T13:09:10Z",
+      "video_asset_name": "agenda-18592614_new-york-city-market-of-bodies-prostitution-crisis.mp4",
+      "video_tag": "video-podcast",
       "youtube": {
         "category_id": "25",
         "privacy_status": "private",
-        "uploaded_at": "2026-01-31T21:26:40Z",
-        "video_id": "H-KcR7957eA",
-        "video_url": "https://www.youtube.com/watch?v=H-KcR7957eA"
+        "uploaded_at": "2026-02-02T13:09:33Z",
+        "video_id": "lhYn6oS0Eic",
+        "video_url": "https://www.youtube.com/watch?v=lhYn6oS0Eic"
       }
     }
   },
-  "updated_at": "2026-01-31T21:26:40Z",
+  "updated_at": "2026-02-02T13:09:33Z",
   "version": 1
 }
