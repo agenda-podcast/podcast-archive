@@ -344,76 +344,74 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
     main_dur_s = "%.3f" % float(main_dur_sec)
     expected_total = float(intro_silence_sec) + float(main_dur_sec) + float(outro_silence_sec)
 
-# Build a segment plan for clear logs and for runaway duration guards.
-segment_plan: List[Dict[str, Any]] = []
-abs_t = 0.0
-segment_plan.append({
-    "kind": "intro",
-    "abs_start": abs_t,
-    "abs_end": abs_t + float(intro_silence_sec),
-    "dur": float(intro_silence_sec),
-})
-abs_t += float(intro_silence_sec)
-
-repeats: Dict[str, List[int]] = {}
-for i, seg in enumerate(segments):
-    p = str(seg.get("path") or "")
-    base = Path(p).name
-    st = float(seg.get("start_sec") or 0.0)
-    du = float(seg.get("dur_sec") or 0.0)
+    # Build a segment plan for clear logs and runaway duration guards.
+    segment_plan: List[Dict[str, Any]] = []
+    abs_t = 0.0
     segment_plan.append({
-        "kind": "clip",
-        "idx": int(i),
-        "file": base,
-        "src_start": float(st),
-        "src_dur": float(du),
+        "kind": "intro",
         "abs_start": abs_t,
-        "abs_end": abs_t + float(du),
-        "dur": float(du),
+        "abs_end": abs_t + float(intro_silence_sec),
+        "dur": float(intro_silence_sec),
     })
-    abs_t += float(du)
-    repeats.setdefault(base, []).append(int(i))
-
-segment_plan.append({
-    "kind": "outro",
-    "abs_start": abs_t,
-    "abs_end": abs_t + float(outro_silence_sec),
-    "dur": float(outro_silence_sec),
-})
-abs_t += float(outro_silence_sec)
-
-# Structured plan logs.
-print("[plan] intro_sec=%.3f main_sec=%.3f outro_sec=%.3f expected_total_sec=%.3f" % (
-    float(intro_silence_sec), float(main_dur_sec), float(outro_silence_sec), float(expected_total)
-), flush=True)
-for s in segment_plan:
-    kind = str(s.get("kind") or "")
-    if kind == "clip":
-        print("[plan][seg] kind=clip idx=%s file=%s src_start=%.3f src_dur=%.3f abs_start=%.3f abs_end=%.3f" % (
-            str(s.get("idx")),
-            str(s.get("file")),
-            float(s.get("src_start") or 0.0),
-            float(s.get("src_dur") or 0.0),
-            float(s.get("abs_start") or 0.0),
-            float(s.get("abs_end") or 0.0),
+    abs_t += float(intro_silence_sec)
+    repeats: Dict[str, List[int]] = {}
+    for i, seg in enumerate(segments):
+        p = str(seg.get("path") or "")
+        base = Path(p).name
+        st = float(seg.get("start_sec") or 0.0)
+        du = float(seg.get("dur_sec") or 0.0)
+        segment_plan.append({
+            "kind": "clip",
+            "idx": int(i),
+            "file": base,
+            "src_start": float(st),
+            "src_dur": float(du),
+            "abs_start": abs_t,
+            "abs_end": abs_t + float(du),
+            "dur": float(du),
+        })
+        abs_t += float(du)
+        repeats.setdefault(base, []).append(int(i))
+    segment_plan.append({
+        "kind": "outro",
+        "abs_start": abs_t,
+        "abs_end": abs_t + float(outro_silence_sec),
+        "dur": float(outro_silence_sec),
+    })
+    abs_t += float(outro_silence_sec)
+    # Structured plan logs.
+    print("[plan] intro_sec=%.3f main_sec=%.3f outro_sec=%.3f expected_total_sec=%.3f" % (
+        float(intro_silence_sec), float(main_dur_sec), float(outro_silence_sec), float(expected_total)
+    ), flush=True)
+    for s in segment_plan:
+        kind = str(s.get("kind") or "")
+        if kind == "clip":
+            print("[plan][seg] kind=clip idx=%s file=%s src_start=%.3f src_dur=%.3f abs_start=%.3f abs_end=%.3f" % (
+                str(s.get("idx")),
+                str(s.get("file")),
+                float(s.get("src_start") or 0.0),
+                float(s.get("src_dur") or 0.0),
+                float(s.get("abs_start") or 0.0),
+                float(s.get("abs_end") or 0.0),
+            ), flush=True)
+        else:
+            print("[plan][seg] kind=%s abs_start=%.3f abs_end=%.3f dur=%.3f" % (
+                kind,
+                float(s.get("abs_start") or 0.0),
+                float(s.get("abs_end") or 0.0),
+                float(s.get("dur") or 0.0),
+            ), flush=True)
+    for base, idxs in repeats.items():
+        if len(idxs) > 1:
+            print("[plan][repeat] file=%s count=%d idxs=%s" % (
+                base, int(len(idxs)), ",".join([str(x) for x in idxs])
+            ), flush=True)
+    # Guard: planned timeline must match expected_total within 1 frame.
+    tol = (1.0 / float(max(1, int(TARGET_FPS)))) + 0.05
+    if abs(abs_t - float(expected_total)) > tol:
+        print("[plan][warn] planned_total_mismatch planned=%.3f expected=%.3f tol=%.3f" % (
+            float(abs_t), float(expected_total), float(tol)
         ), flush=True)
-    else:
-        print("[plan][seg] kind=%s abs_start=%.3f abs_end=%.3f dur=%.3f" % (
-            kind,
-            float(s.get("abs_start") or 0.0),
-            float(s.get("abs_end") or 0.0),
-            float(s.get("dur") or 0.0),
-        ), flush=True)
-
-for base, idxs in repeats.items():
-    if len(idxs) > 1:
-        print("[plan][repeat] file=%s count=%d idxs=%s" % (base, int(len(idxs)), ",".join([str(x) for x in idxs])), flush=True)
-
-# Guard: planned timeline must match expected_total within 1 frame.
-tol = (1.0 / float(max(1, int(TARGET_FPS)))) + 0.05
-if abs(abs_t - float(expected_total)) > tol:
-    print("[plan][warn] planned_total_mismatch planned=%.3f expected=%.3f tol=%.3f" % (float(abs_t), float(expected_total), float(tol)), flush=True)
-
     # Inputs:
     # 0: intro/outro mp4 (video)
     # 1: podcast audio (original)
