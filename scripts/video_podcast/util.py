@@ -180,7 +180,7 @@ def run_ffmpeg_with_progress(
 
     th = None
     try:
-        th = threading.Thread(target=_stderr_reader, daemon=True)
+        th = threading.Thread(target=_stderr_reader)
         th.start()
 
         assert p.stdout is not None
@@ -220,7 +220,10 @@ def run_ffmpeg_with_progress(
 
             # Stall detection should be based on timeline advance, not just progress events.
             # Some ffmpeg states can emit progress=continue repeatedly while out_time_ms stays fixed.
-            if now - last_advance_ts >= 240.0 and now - start_ts >= 60.0:
+            near_end = False
+            if expected_total_sec is not None and last_out_sec is not None:
+                near_end = last_out_sec >= float(expected_total_sec) - 0.25
+            if (not near_end) and now - last_advance_ts >= 240.0 and now - start_ts >= 60.0:
                 print("[ffmpeg][stall] no_out_time_advance_for_sec=%.1f seg=%s out_time=%s expected_total=%s terminating=1" % (
                     float(now - last_advance_ts),
                     str(last_seg_key),
@@ -330,6 +333,11 @@ def run_ffmpeg_with_progress(
                 p.terminate()
         except Exception:
             pass
+        try:
+            if th is not None:
+                th.join(timeout=5.0)
+        except Exception:
+            pass
 
 def ffprobe_duration_sec(p: Path) -> float:
     cmd = [
@@ -340,6 +348,30 @@ def ffprobe_duration_sec(p: Path) -> float:
     ]
     out = run(cmd).stdout.strip()
     return float(out)
+
+
+def ffprobe_video_dims(p: Path) -> Tuple[int, int]:
+    """Return (width, height) for the first video stream. (0,0) on failure."""
+    try:
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=p=0:s=x",
+            str(p),
+        ]
+        out = run(cmd).stdout.strip()
+        if not out or "x" not in out:
+            return 0, 0
+        w_s, h_s = out.split("x", 1)
+        return int(float(w_s)), int(float(h_s))
+    except Exception:
+        return 0, 0
 
 
 def http_get_json(url: str, headers: Dict[str, str], timeout_sec: int = 30) -> Dict[str, Any]:

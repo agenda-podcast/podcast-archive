@@ -128,7 +128,7 @@ def ffmpeg_mux_audio(video: Path, audio: Path, dst: Path) -> None:
         "-c:a", "aac",
         "-b:a", "192k",
         "-shortest",
-        "-movflags", "+faststart",
+        # One-pass mode: avoid +faststart secondary rewrite pass.
         str(dst),
     ]
     run(cmd, timeout_sec=3600, stream=True)
@@ -161,7 +161,6 @@ def ffmpeg_concat_with_audio(clips: List[Path], audio: Path, dst: Path) -> None:
         "-c:a", "aac",
         "-b:a", "192k",
         "-shortest",
-        "-movflags", "+faststart",
         str(dst),
     ]
     run(cmd, timeout_sec=3600, stream=True)
@@ -245,7 +244,7 @@ def ffmpeg_concat_with_intro_outro_and_frame(
         "[1:v]%s[main_pre];"
         "[3:v]format=rgba[frame];"
         "[frame][main_pre]scale2ref=w=-1:h=main_h[frame_m][main_ref];"
-        "[main_ref][frame_m]overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2,format=yuv420p[mainv];"
+        "[main_ref][frame_m]overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2:shortest=1,format=yuv420p[mainv];"
         "anullsrc=r=44100:cl=stereo,atrim=0:%s,asetpts=N/SR/TB[introa];"
         "[2:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
         "apad,atrim=0:%s,asetpts=N/SR/TB[maina];"
@@ -450,7 +449,7 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
     overlay = (
         "[2:v]format=rgba[frame];"
         "[frame][main_pre]scale2ref=w=-1:h=main_h[frame_m][main_ref];"
-        "[main_ref][frame_m]overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2,format=yuv420p[mainv]"
+        "[main_ref][frame_m]overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2:shortest=1,format=yuv420p[mainv]"
     )
 
     # Intro/outro video from the same asset, trimmed by duration and normalized.

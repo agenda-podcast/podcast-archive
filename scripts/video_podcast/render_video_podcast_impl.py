@@ -15,7 +15,7 @@ from .ffmpeg_ops import (
 from .model import Episode
 from .releases import download_clips_for_guid
 from .sources import apply_sensitive_query_policy, build_tiered_queries, search_assets
-from .util import ffprobe_duration_sec, now_iso, rand_for_guid, safe_slug, sha256_file, download, save_json
+from .util import ffprobe_duration_sec, ffprobe_video_dims, now_iso, rand_for_guid, safe_slug, sha256_file, download, save_json
 
 
 CLIP_SEC_T2 = 30.0
@@ -149,83 +149,55 @@ def render_episode(
         )
         print("[intro_outro] file=%s dur_sec=%.3f" % (intro_outro_mp4.name, float(intro_silence)))
 
-        # Shuffle within tiers but keep Tier-1 first for higher relevance.
-        t1 = [a for a in assets if int(a.get("tier") or 3) == 1]
-        t2 = [a for a in assets if int(a.get("tier") or 3) == 2]
-        t3 = [a for a in assets if int(a.get("tier") or 3) >= 3]
-        rng.shuffle(t1)
-        rng.shuffle(t2)
-        rng.shuffle(t3)
-        picks = t1 + t2 + t3
+        picks = [a for a in assets if int(a.get("tier") or 3) == 1]
+        if not picks:
+            raise RuntimeError("no Tier-1 assets found")
+        rng.shuffle(picks)
 
-        # Step 2) Clip acquisition (download one-by-one, duration-checked).
-        pick_i = 0
+        # Step 2) Clip acquisition (Tier-1 only, horizontal only).
+        attempts = 0
+        max_attempts = max(1, len(picks)) * 5
         clip_i = 1
         d_sum = 0.0
-        seen_assets = set()
-        while d_sum < audio_dur and pick_i < len(picks) * 3:
-            a = picks[pick_i % len(picks)]
-            pick_i += 1
+        while d_sum < audio_dur and attempts < max_attempts:
+            a = picks[attempts % len(picks)]
+            attempts += 1
             asset_key = "%s-%s" % (a["source"], a["asset_id"])
-            if asset_key in seen_assets:
-                print("[clip][repeat_candidate] asset=%s" % asset_key)
-            seen_assets.add(asset_key)
             src_path = raw_dir / ("%s.mp4" % asset_key)
-            tier = int(a.get("tier") or 3)
-
-            url = a.get("download_url") or a.get("url") or ""
-            if url:
-                print("[clip][candidate] asset=%s tier=%d url=%s" % (asset_key, tier, str(url)))
-
             try:
                 if not src_path.exists():
                     download(a["download_url"], src_path)
+                w, h = ffprobe_video_dims(src_path)
+                if w and h and w < h:
+                    print("[clip][reject] vertical asset=%s w=%d h=%d" % (asset_key, int(w), int(h)))
+                    try:
+                        src_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    continue
                 file_dur = ffprobe_duration_sec(src_path)
                 if file_dur < MIN_ASSET_SEC:
                     continue
-
                 start = 0.0
-                use_dur = 0.0
-                mode = ""
-
-                if tier == 1 and file_dur >= T1_MIN_SEC and file_dur <= T1_MAX_SEC:
-                    start = 0.0
-                    use_dur = float(file_dur)
-                    mode = "full"
-                else:
-                    seg = CLIP_SEC_T2 if tier == 2 else CLIP_SEC_T3
-                    if file_dur < (seg + 1.0):
-                        continue
-                    max_start = max(0.0, float(file_dur) - float(seg))
-                    start = rng.uniform(0.0, max_start) if max_start > 0 else 0.0
-                    use_dur = float(seg)
-                    mode = "trim"
-
+                use_dur = float(file_dur)
                 clip_name = "raw_%04d.mp4" % clip_i
-                print(
-                    "[clip] %s file_dur=%.3f use_start=%.3f use_dur=%.3f tier=%d"
-                    % (clip_name, float(file_dur), float(start), float(use_dur), int(tier))
-                )
+                print("[clip] %s file_dur=%.3f use_start=0.000 use_dur=%.3f tier=1" % (clip_name, float(file_dur), float(use_dur)))
                 duration_log.append({
                     "clip_index": clip_i,
                     "clip_name": clip_name,
                     "path": str(src_path),
                     "file_duration_sec": round(float(file_dur), 3),
-                    "start_sec": round(float(start), 3),
+                    "start_sec": 0.0,
                     "planned_duration_sec": round(float(use_dur), 3),
-                    "tier": int(tier),
+                    "tier": 1,
                     "query": a.get("query") or "",
                 })
-                segments.append({
-                    "path": str(src_path),
-                    "start_sec": float(start),
-                    "dur_sec": float(use_dur),
-                })
+                segments.append({"path": str(src_path), "start_sec": 0.0, "dur_sec": float(use_dur)})
                 prov.append({
                     "clip_index": clip_i,
                     "clip_name": clip_name,
-                    "tier": tier,
-                    "mode": mode,
+                    "tier": 1,
+                    "mode": "full",
                     "source": a["source"],
                     "asset_id": a["asset_id"],
                     "author": a.get("author") or "",
@@ -233,15 +205,48 @@ def render_episode(
                     "download_url": a.get("download_url") or "",
                     "license_url": a.get("license_url") or "",
                     "query": a.get("query") or "",
-                    "start_sec": round(float(start), 3),
+                    "start_sec": 0.0,
                     "duration_sec": round(float(use_dur), 3),
                     "file_duration_sec": round(float(file_dur), 3),
                 })
-
                 d_sum += float(use_dur)
                 clip_i += 1
             except Exception:
                 continue
+
+        if d_sum < audio_dur and segments:
+            rep_i = 0
+            print("[clip][repeat] need_more_sec=%.3f" % (float(audio_dur) - float(d_sum)))
+            while d_sum < audio_dur:
+                base_seg = segments[rep_i % len(segments)]
+                base_prov = prov[rep_i % len(prov)]
+                clip_name = "raw_%04d.mp4" % clip_i
+                print("[clip][repeat] %s from=%s" % (clip_name, str(base_prov.get("clip_name") or "")))
+                duration_log.append({
+                    "clip_index": clip_i,
+                    "clip_name": clip_name,
+                    "path": str(base_seg.get("path") or ""),
+                    "file_duration_sec": round(float(base_prov.get("file_duration_sec") or 0.0), 3),
+                    "start_sec": round(float(base_seg.get("start_sec") or 0.0), 3),
+                    "planned_duration_sec": round(float(base_seg.get("dur_sec") or 0.0), 3),
+                    "tier": 1,
+                    "query": str(base_prov.get("query") or ""),
+                    "repeat_of": str(base_prov.get("clip_name") or ""),
+                })
+                segments.append({
+                    "path": str(base_seg.get("path") or ""),
+                    "start_sec": float(base_seg.get("start_sec") or 0.0),
+                    "dur_sec": float(base_seg.get("dur_sec") or 0.0),
+                })
+                prov.append({
+                    **base_prov,
+                    "clip_index": clip_i,
+                    "clip_name": clip_name,
+                    "mode": "repeat",
+                })
+                d_sum += float(base_seg.get("dur_sec") or 0.0)
+                clip_i += 1
+                rep_i += 1
 
         # Trim last clip as needed so sum(clip durations) == T_audio.
         if segments:
@@ -307,18 +312,16 @@ def render_episode(
                 raw_dir = work / "raw"
                 raw_dir.mkdir(parents=True, exist_ok=True)
 
-                t1 = [a for a in assets if int(a.get("tier") or 3) == 1]
-                t2 = [a for a in assets if int(a.get("tier") or 3) == 2]
-                t3 = [a for a in assets if int(a.get("tier") or 3) >= 3]
-                rng.shuffle(t1)
-                rng.shuffle(t2)
-                rng.shuffle(t3)
-                picks = t1 + t2 + t3
+                picks = [a for a in assets if int(a.get("tier") or 3) == 1]
+                rng.shuffle(picks)
+                if not picks:
+                    raise RuntimeError("no tier-1 assets found")
 
                 pick_i = 0
                 clip_i = 1
                 main_total = 0.0
-                while main_total < audio_dur and pick_i < len(picks) * 3:
+                max_iters = max(len(picks) * 5, int(audio_dur / 5.0) + 10)
+                while main_total < audio_dur and pick_i < max_iters:
                     a = picks[pick_i % len(picks)]
                     pick_i += 1
                     asset_key = "%s-%s" % (a["source"], a["asset_id"])
@@ -331,11 +334,19 @@ def render_episode(
                         dur = ffprobe_duration_sec(src_path)
                         if dur < MIN_ASSET_SEC:
                             continue
+                        w, h = ffprobe_video_dims(src_path)
+                        if w > 0 and h > 0 and w < h:
+                            print("[clip][reject] non_horizontal file=%s w=%d h=%d" % (src_path.name, w, h))
+                            try:
+                                src_path.unlink()
+                            except Exception:
+                                pass
+                            continue
 
                         clip_name = "main_%04d.mp4" % clip_i
                         clip_path = out_clips_dir / clip_name
 
-                        if tier == 1 and dur >= T1_MIN_SEC and dur <= T1_MAX_SEC:
+                        if tier == 1:
                             ffmpeg_normalize_video(src_path, clip_path)
                             clip_dur = ffprobe_duration_sec(clip_path)
                             clips.append(clip_path)
@@ -358,30 +369,6 @@ def render_episode(
                             clip_i += 1
                             continue
 
-                        seg = CLIP_SEC_T2 if tier == 2 else CLIP_SEC_T3
-                        if dur < (seg + 1.0):
-                            continue
-                        max_start = max(0.0, dur - seg)
-                        start = rng.uniform(0.0, max_start) if max_start > 0 else 0.0
-                        ffmpeg_make_clip(src_path, clip_path, start, seg)
-                        clips.append(clip_path)
-                        prov.append({
-                            "clip_index": clip_i,
-                            "clip_name": clip_name,
-                            "tier": tier,
-                            "mode": "trim",
-                            "source": a["source"],
-                            "asset_id": a["asset_id"],
-                            "author": a.get("author") or "",
-                            "page_url": a.get("page_url") or "",
-                            "download_url": a.get("download_url") or "",
-                            "license_url": a.get("license_url") or "",
-                            "query": a.get("query") or "",
-                            "start_sec": round(start, 3),
-                            "duration_sec": round(float(seg), 3),
-                        })
-                        main_total += float(seg)
-                        clip_i += 1
                     except Exception:
                         continue
 
