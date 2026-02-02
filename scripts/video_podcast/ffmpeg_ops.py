@@ -328,9 +328,13 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
     # Keep the existing video normalization targets.
     # One-pass concat requires every segment to have matching geometry, fps, and pixel format.
     # Per-clip mode already outputs yuv420p, so we enforce the same here to avoid concat failures.
+    # NOTE: Some providers ship MP4s with pathological sample-aspect-ratio (SAR) metadata.
+    # The concat filter requires matching SAR across all inputs, so force SAR to 1:1
+    # after scaling/padding (this does not change pixel dimensions; it only normalizes metadata).
     vf_base = (
         "scale=%d:%d:force_original_aspect_ratio=decrease,"
         "pad=%d:%d:(ow-iw)/2:(oh-ih)/2,"
+        "setsar=1,"
         "fps=%d,"
         "format=yuv420p" % (TARGET_W, TARGET_H, TARGET_W, TARGET_H, TARGET_FPS)
     )
