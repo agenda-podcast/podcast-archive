@@ -13,7 +13,7 @@ import time
 import urllib.request
 from collections import deque
 from pathlib import Path
-from typing import Any, Deque, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 
 USER_AGENT = "video-podcast-render/1.0"
