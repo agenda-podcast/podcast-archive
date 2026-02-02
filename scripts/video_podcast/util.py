@@ -5,6 +5,7 @@ import json
 import random
 import re
 import shutil
+import select
 import subprocess
 import sys
 import time
@@ -106,6 +107,10 @@ def run_ffmpeg_with_progress(
     last_seg_key = ""
     backward_jumps = 0
 
+    last_progress_ts = time.time()
+    last_hb_ts = time.time()
+    last_out_sec = -1.0
+
     def _seg_for_out_sec(t: float) -> Dict[str, Any]:
         for s in segment_plan:
             if t >= float(s.get("abs_start") or 0.0) and t < float(s.get("abs_end") or 0.0):
@@ -166,6 +171,31 @@ def run_ffmpeg_with_progress(
                     pass
                 raise RuntimeError("ffmpeg timeout exceeded")
 
+            # Use select() so we can emit heartbeat logs even if ffmpeg is not producing output.
+            rlist, _, _ = select.select([p.stdout], [], [], 1.0)
+            now = time.time()
+            if not rlist:
+                # Heartbeat and stall detection on wall-clock time.
+                if now - last_hb_ts >= 30.0:
+                    age = now - last_progress_ts
+                    print("[heartbeat] ffmpeg_running=1 last_progress_age_sec=%.1f seg=%s out_time_sec=%.3f expected_total_sec=%.3f" % (
+                        float(age), str(last_seg_key), float(last_out_sec), float(expected_total_sec)
+                    ), flush=True)
+                    last_hb_ts = now
+                if now - last_progress_ts >= 180.0 and now - start_ts >= 60.0:
+                    age = now - last_progress_ts
+                    print("[stall] no_ffmpeg_progress_for_sec=%.1f seg=%s out_time_sec=%.3f expected_total_sec=%.3f terminating=1" % (
+                        float(age), str(last_seg_key), float(last_out_sec), float(expected_total_sec)
+                    ), flush=True)
+                    try:
+                        p.terminate()
+                    except Exception:
+                        pass
+                    raise RuntimeError("ffmpeg progress stalled")
+                if p.poll() is not None:
+                    break
+                continue
+
             line = p.stdout.readline()
             if line == "" and p.poll() is not None:
                 break
@@ -177,6 +207,7 @@ def run_ffmpeg_with_progress(
                 progress_kv[k.strip()] = v.strip()
 
             if progress_kv.get("progress") in ("continue", "end"):
+                last_progress_ts = time.time()
                 out_ms_s = progress_kv.get("out_time_ms", "")
                 out_sec = None
                 if out_ms_s.isdigit():
@@ -188,6 +219,7 @@ def run_ffmpeg_with_progress(
                             int(last_out_ms), int(out_ms), int(backward_jumps)
                         ), flush=True)
                     last_out_ms = out_ms
+                    last_out_sec = out_sec
 
                 if out_sec is not None:
                     # Segment switch logs.
