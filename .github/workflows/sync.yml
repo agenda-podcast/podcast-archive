@@ -3,7 +3,7 @@ name: Sync Podcast
 on:
   schedule:
     # hourly at minute 0 (UTC)
-    - cron: "0 * * * *"
+    #- cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:
