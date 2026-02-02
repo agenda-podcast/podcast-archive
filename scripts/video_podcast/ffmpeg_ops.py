@@ -270,9 +270,11 @@ def ffmpeg_concat_with_intro_outro_and_frame(
         "-r", str(TARGET_FPS),
         "-c:a", "aac",
         "-b:a", "192k",
-        "-movflags", "+faststart",
         str(dst),
     ]
+    if os.getenv("VIDEO_FASTSTART", "0") not in ("0", "false", "False", "no", "NO"):
+        cmd.insert(-1, "+faststart")
+        cmd.insert(-1, "-movflags")
     try:
         run_ffmpeg_with_progress(cmd=cmd, segment_plan=segment_plan, expected_total_sec=expected_total, target_fps=TARGET_FPS, timeout_sec=7200)
         _verify_output_media(dst, min_bytes=500 * 1024, min_dur_sec=5.0)
@@ -489,9 +491,11 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
         "-r", str(TARGET_FPS),
         "-c:a", "aac",
         "-b:a", "192k",
-        "-movflags", "+faststart",
         str(dst),
     ]
+    if os.getenv("VIDEO_FASTSTART", "0") not in ("0", "false", "False", "no", "NO"):
+        cmd.insert(-1, "+faststart")
+        cmd.insert(-1, "-movflags")
 
     # Print the final ffmpeg command before running so failures still show the exact invocation.
     print("[ffmpeg][one_pass] %s" % " ".join([str(x) for x in cmd]), flush=True)

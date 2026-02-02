@@ -386,7 +386,19 @@ def render_episode(
             raise RuntimeError("no usable clips produced")
 
     intro_outro_mp4 = (repo_root / DEFAULT_INTRO_OUTRO_MP4).resolve()
-    frame_png = (repo_root / DEFAULT_FRAME_PNG).resolve()
+    frame_src_png = (repo_root / DEFAULT_FRAME_PNG).resolve()
+    # Create a transparent 16:9 canvas with the original frame centered.
+    # This avoids any stretching while ensuring ffmpeg sees a 16:9 overlay input.
+    frame_png = (work / "frame_16x9.png").resolve()
+    try:
+        from .util import ensure_png_canvas_16x9
+
+        ensure_png_canvas_16x9(src_png=frame_src_png, dst_png=frame_png, out_w=1920, out_h=1080)
+        print(f"[frame] src={frame_src_png} dst={frame_png} out=1920x1080")
+    except Exception as e:
+        # Fall back to the original frame if preprocessing fails.
+        frame_png = frame_src_png
+        print(f"[frame][warn] preprocessing_failed using_original err={e}")
 
     final_video = work / "video.mp4"
     ffmpeg_cmd: List[str] = []

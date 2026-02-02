@@ -16,6 +16,63 @@ from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 
+def ensure_png_canvas_16x9(
+    *,
+    src_png: Path,
+    dst_png: Path,
+    out_w: int,
+    out_h: int,
+) -> None:
+    """Create a transparent out_w x out_h PNG with src centered.
+
+    This is used to avoid filtergraph stretching / SAR incompatibility
+    by ensuring the overlay frame asset is already 16:9.
+
+    The original src is scaled by height to out_h (AR preserved), then
+    pasted centered onto a transparent canvas.
+    """
+
+    dst_png.parent.mkdir(parents=True, exist_ok=True)
+
+    # Fast path: if dst exists and is newer than src, keep it.
+    try:
+        if dst_png.exists() and dst_png.stat().st_mtime >= src_png.stat().st_mtime:
+            return
+    except Exception:
+        pass
+
+    # Prefer Pillow if available; otherwise fall back to a single-image ffmpeg pad.
+    try:
+        from PIL import Image
+
+        im = Image.open(src_png).convert("RGBA")
+        # Scale by height to out_h.
+        if im.height != out_h:
+            new_w = max(1, int(round(im.width * (out_h / float(im.height)))))
+            im = im.resize((new_w, out_h), Image.LANCZOS)
+        canvas = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 0))
+        x = max(0, (out_w - im.width) // 2)
+        y = max(0, (out_h - im.height) // 2)
+        canvas.paste(im, (x, y), im)
+        canvas.save(dst_png)
+        return
+    except Exception:
+        # Fall back to ffmpeg. This encodes only a PNG (not a video), and runs once.
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(src_png),
+            "-vf",
+            f"scale=-1:{out_h}:flags=lanczos,pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=0x00000000",
+            "-frames:v",
+            "1",
+            str(dst_png),
+        ]
+        run(cmd)
+
+
+
 USER_AGENT = "video-podcast-render/1.0"
 
 
@@ -163,17 +220,23 @@ def run_ffmpeg_with_progress(
     stderr_tail: Deque[str] = deque(maxlen=200)
     last_stderr_ts = time.time()
     stderr_lines = 0
+    stderr_stop_evt = threading.Event()
 
     def _stderr_reader() -> None:
+        nonlocal last_stderr_ts, stderr_lines
         try:
             assert p.stderr is not None
             for line in p.stderr:
+                if stderr_stop_evt.is_set():
+                    break
                 line = line.rstrip("\n")
-                if line:
-                    stderr_tail.append(line)
-                    nonlocal last_stderr_ts, stderr_lines
-                    last_stderr_ts = time.time()
-                    stderr_lines += 1
+                if not line:
+                    continue
+                stderr_tail.append(line)
+                last_stderr_ts = time.time()
+                stderr_lines += 1
+                # Keep logs useful but bounded: print early lines, then periodically.
+                if stderr_lines <= 50 or (stderr_lines % 200) == 0:
                     print("[ffmpeg][stderr] %s" % line, flush=True)
         except Exception:
             return
@@ -334,6 +397,12 @@ def run_ffmpeg_with_progress(
         except Exception:
             pass
         try:
+            stderr_stop_evt.set()
+            if p.stderr is not None:
+                try:
+                    p.stderr.close()
+                except Exception:
+                    pass
             if th is not None:
                 th.join(timeout=5.0)
         except Exception:

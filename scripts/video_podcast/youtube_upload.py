@@ -14,6 +14,9 @@ from .sources import text_queries
 from .util import now_iso, load_json, save_json
 from .youtube_auth import build_credentials
 
+THUMB_LEFT_PNG = "data/thumbnail_left.png"
+THUMB_TEMPLATE_PNG = "data/thumbnail_template.png"
+
 
 def _youtube_url(video_id: str) -> str:
     return "https://www.youtube.com/watch?v=%s" % video_id
@@ -47,6 +50,8 @@ def _upload_one(
             "description": description,
             "tags": tags,
             "categoryId": category_id,
+            "defaultLanguage": "en-US",
+            "defaultAudioLanguage": "en-US",
         },
         "status": {
             "privacyStatus": privacy_status,
@@ -66,6 +71,37 @@ def _upload_one(
     vid = str(response.get("id") or "").strip()
     if not vid:
         raise RuntimeError("YouTube API returned no video id")
+
+    # Upload a custom thumbnail if the left image is provided.
+    try:
+        from googleapiclient.http import MediaFileUpload as _MediaFileUpload
+
+        from .thumbnails import ensure_thumbnail_template, render_episode_thumbnail
+
+        repo_root = Path(__file__).resolve().parents[2]
+        left_img = (repo_root / THUMB_LEFT_PNG).resolve()
+        template_png = (repo_root / THUMB_TEMPLATE_PNG).resolve()
+
+        # Generate the reusable template once.
+        ensure_thumbnail_template(
+            left_img_path=left_img,
+            template_png=template_png,
+        )
+
+        thumb_out = video_path.with_suffix(".thumbnail.png")
+        render_episode_thumbnail(
+            template_png=template_png,
+            out_png=thumb_out,
+            episode_title=title,
+            episode_description=description,
+        )
+
+        if thumb_out.is_file():
+            tb_media = _MediaFileUpload(str(thumb_out), mimetype="image/png", resumable=False)
+            service.thumbnails().set(videoId=vid, media_body=tb_media).execute()
+            print("[youtube] thumbnail_uploaded=1")
+    except Exception as e:
+        print("[youtube] thumbnail_skipped=1 err=%s" % str(e).replace("\n", " "))
     return vid
 
 
