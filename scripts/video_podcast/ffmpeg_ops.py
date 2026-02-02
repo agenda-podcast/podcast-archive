@@ -19,6 +19,7 @@ def _verify_output_media(p: Path, min_bytes: int = 1024, min_dur_sec: float = 0.
         d = ffprobe_duration_sec(p)
     except Exception as e:
         raise RuntimeError("ffmpeg output is not probeable: %s" % str(p)) from e
+    print("[verify] file=%s dur_sec=%.3f bytes=%d" % (p.name, d, p.stat().st_size))
     if d < min_dur_sec:
         raise RuntimeError("ffmpeg output duration too short: %s" % str(p))
 
@@ -442,6 +443,10 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
     concat_main = "%sconcat=n=%d:v=1:a=0[main_pre]" % ("".join(v_labels), len(segments))
 
     # Apply existing frame overlay sizing logic.
+    print(
+        "[overlay] frame_png=%s logic=scale2ref(h=main_h,w=-1)+center overlay (preserve AR, align by height)"
+        % frame_png.name
+    )
     overlay = (
         "[2:v]format=rgba[frame];"
         "[frame][main_pre]scale2ref=w=-1:h=main_h[frame_m][main_ref];"

@@ -77,6 +77,19 @@ def render_episode(
     # Step 1) Compute durations precisely.
     audio_dur = ffprobe_duration_sec(audio_path)
 
+    one_pass = bool(render_one_pass)
+    one_pass_env = os.environ.get("RENDER_ONE_PASS", "").strip().lower()
+    if one_pass_env in ("1", "true", "yes", "on"):
+        one_pass = True
+
+    print("[episode] guid=%s title=%s" % (ep.guid, ep.title))
+    print("[mode] one_pass=%s (flag=%s env=%s)" % (
+        "1" if one_pass else "0",
+        "1" if render_one_pass else "0",
+        one_pass_env or "(unset)",
+    ))
+    print("[durations] audio_sec=%.3f" % audio_dur)
+
     query_policy: Dict[str, Any] = {
         "sensitive_detected": False,
         "matched_terms": [],
@@ -95,11 +108,6 @@ def render_episode(
     clips: List[Path] = []
     segments: List[Dict[str, Any]] = []
     duration_log: List[Dict[str, Any]] = []
-
-    one_pass = bool(render_one_pass)
-    one_pass_env = os.environ.get("RENDER_ONE_PASS", "").strip().lower()
-    if one_pass_env in ("1", "true", "yes", "on"):
-        one_pass = True
 
     trimmed = None
     raw_dir = None
@@ -132,12 +140,14 @@ def render_episode(
 
         intro_outro_mp4 = (repo_root / DEFAULT_INTRO_OUTRO_MP4).resolve()
         intro_silence = ffprobe_duration_sec(intro_outro_mp4)
+        print("[intro_outro] file=%s dur_sec=%.3f" % (str(intro_outro_mp4), intro_silence))
         outro_silence = float(intro_silence)
         total_audio = float(intro_silence) + float(audio_dur) + float(outro_silence)
         print(
             "[durations] T_audio=%.3f T_intro_silence=%.3f T_outro_silence=%.3f T_total=%.3f"
             % (float(audio_dur), float(intro_silence), float(outro_silence), float(total_audio))
         )
+        print("[intro_outro] file=%s dur_sec=%.3f" % (intro_outro_mp4.name, float(intro_silence)))
 
         # Shuffle within tiers but keep Tier-1 first for higher relevance.
         t1 = [a for a in assets if int(a.get("tier") or 3) == 1]
@@ -152,12 +162,20 @@ def render_episode(
         pick_i = 0
         clip_i = 1
         d_sum = 0.0
+        seen_assets = set()
         while d_sum < audio_dur and pick_i < len(picks) * 3:
             a = picks[pick_i % len(picks)]
             pick_i += 1
             asset_key = "%s-%s" % (a["source"], a["asset_id"])
+            if asset_key in seen_assets:
+                print("[clip][repeat_candidate] asset=%s" % asset_key)
+            seen_assets.add(asset_key)
             src_path = raw_dir / ("%s.mp4" % asset_key)
             tier = int(a.get("tier") or 3)
+
+            url = a.get("download_url") or a.get("url") or ""
+            if url:
+                print("[clip][candidate] asset=%s tier=%d url=%s" % (asset_key, tier, str(url)))
 
             try:
                 if not src_path.exists():

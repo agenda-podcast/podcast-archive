@@ -7,11 +7,13 @@ import re
 import shutil
 import select
 import subprocess
+import threading
 import sys
 import time
 import urllib.request
+from collections import deque
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Deque, Dict, List, Optional
 
 
 USER_AGENT = "video-podcast-render/1.0"
@@ -108,6 +110,7 @@ def run_ffmpeg_with_progress(
     backward_jumps = 0
 
     last_progress_ts = time.time()
+    last_advance_ts = time.time()
     last_hb_ts = time.time()
     last_out_sec = -1.0
 
@@ -128,6 +131,25 @@ def run_ffmpeg_with_progress(
     print("[ffmpeg][plan] segments=%d expected_total_sec=%.3f target_fps=%d" % (
         len(segment_plan), float(expected_total_sec), int(target_fps)
     ), flush=True)
+    for s in segment_plan:
+        kind = str(s.get("kind") or "unknown")
+        if kind == "clip":
+            print("[ffmpeg][plan_segment] kind=clip idx=%s file=%s abs_start=%s abs_end=%s src_start=%.3f src_dur=%.3f" % (
+                str(s.get("idx")),
+                str(s.get("file")),
+                _fmt_sec(float(s.get("abs_start") or 0.0)),
+                _fmt_sec(float(s.get("abs_end") or 0.0)),
+                float(s.get("src_start") or 0.0),
+                float(s.get("src_dur") or 0.0),
+            ), flush=True)
+        else:
+            print("[ffmpeg][plan_segment] kind=%s abs_start=%s abs_end=%s dur=%.3f" % (
+                kind,
+                _fmt_sec(float(s.get("abs_start") or 0.0)),
+                _fmt_sec(float(s.get("abs_end") or 0.0)),
+                float(s.get("dur") or 0.0),
+            ), flush=True)
+    print("[ffmpeg][cmd] %s" % (" ".join(cmd2)), flush=True)
 
     p = subprocess.Popen(
         cmd2,
@@ -138,7 +160,9 @@ def run_ffmpeg_with_progress(
         universal_newlines=True,
     )
 
-    stderr_tail: List[str] = []
+    stderr_tail: Deque[str] = deque(maxlen=200)
+    last_stderr_ts = time.time()
+    stderr_lines = 0
 
     def _stderr_reader() -> None:
         try:
@@ -147,21 +171,22 @@ def run_ffmpeg_with_progress(
                 line = line.rstrip("\n")
                 if line:
                     stderr_tail.append(line)
-                    if len(stderr_tail) > 200:
-                        del stderr_tail[0]
-                    print(line, flush=True)
+                    nonlocal last_stderr_ts, stderr_lines
+                    last_stderr_ts = time.time()
+                    stderr_lines += 1
+                    print("[ffmpeg][stderr] %s" % line, flush=True)
         except Exception:
             return
 
     th = None
     try:
-        import threading
         th = threading.Thread(target=_stderr_reader, daemon=True)
         th.start()
 
         assert p.stdout is not None
         progress_kv: Dict[str, str] = {}
         last_print_sec = -1.0
+        progress_events = 0
 
         while True:
             if time.time() - start_ts > float(timeout_sec):
@@ -174,24 +199,40 @@ def run_ffmpeg_with_progress(
             # Use select() so we can emit heartbeat logs even if ffmpeg is not producing output.
             rlist, _, _ = select.select([p.stdout], [], [], 1.0)
             now = time.time()
+
+            # Always emit a wall-clock heartbeat, even if ffmpeg is chatty but not advancing time.
+            if now - last_hb_ts >= 30.0:
+                age_adv = now - last_advance_ts
+                age_prog = now - last_progress_ts
+                age_stderr = now - last_stderr_ts
+                wall = now - start_ts
+                print("[ffmpeg][heartbeat] wall_sec=%.1f out_time=%s seg=%s prog_age_sec=%.1f adv_age_sec=%.1f stderr_age_sec=%.1f stderr_lines=%d" % (
+                    float(wall),
+                    _fmt_sec(float(last_out_sec)),
+                    str(last_seg_key),
+                    float(age_prog),
+                    float(age_adv),
+                    float(age_stderr),
+                    int(stderr_lines),
+                ), flush=True)
+                progress_events = 0
+                last_hb_ts = now
+
+            # Stall detection should be based on timeline advance, not just progress events.
+            # Some ffmpeg states can emit progress=continue repeatedly while out_time_ms stays fixed.
+            if now - last_advance_ts >= 240.0 and now - start_ts >= 60.0:
+                print("[ffmpeg][stall] no_out_time_advance_for_sec=%.1f seg=%s out_time=%s expected_total=%s terminating=1" % (
+                    float(now - last_advance_ts),
+                    str(last_seg_key),
+                    _fmt_sec(float(last_out_sec)),
+                    _fmt_sec(float(expected_total_sec)),
+                ), flush=True)
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+                raise RuntimeError("ffmpeg stalled: out_time not advancing")
             if not rlist:
-                # Heartbeat and stall detection on wall-clock time.
-                if now - last_hb_ts >= 30.0:
-                    age = now - last_progress_ts
-                    print("[heartbeat] ffmpeg_running=1 last_progress_age_sec=%.1f seg=%s out_time_sec=%.3f expected_total_sec=%.3f" % (
-                        float(age), str(last_seg_key), float(last_out_sec), float(expected_total_sec)
-                    ), flush=True)
-                    last_hb_ts = now
-                if now - last_progress_ts >= 180.0 and now - start_ts >= 60.0:
-                    age = now - last_progress_ts
-                    print("[stall] no_ffmpeg_progress_for_sec=%.1f seg=%s out_time_sec=%.3f expected_total_sec=%.3f terminating=1" % (
-                        float(age), str(last_seg_key), float(last_out_sec), float(expected_total_sec)
-                    ), flush=True)
-                    try:
-                        p.terminate()
-                    except Exception:
-                        pass
-                    raise RuntimeError("ffmpeg progress stalled")
                 if p.poll() is not None:
                     break
                 continue
@@ -208,6 +249,7 @@ def run_ffmpeg_with_progress(
 
             if progress_kv.get("progress") in ("continue", "end"):
                 last_progress_ts = time.time()
+                progress_events += 1
                 out_ms_s = progress_kv.get("out_time_ms", "")
                 out_sec = None
                 if out_ms_s.isdigit():
@@ -219,6 +261,8 @@ def run_ffmpeg_with_progress(
                             int(last_out_ms), int(out_ms), int(backward_jumps)
                         ), flush=True)
                     last_out_ms = out_ms
+                    if out_sec > last_out_sec + 0.001:
+                        last_advance_ts = time.time()
                     last_out_sec = out_sec
 
                 if out_sec is not None:
@@ -252,6 +296,12 @@ def run_ffmpeg_with_progress(
                     if out_sec - last_print_sec >= 15.0:
                         last_print_sec = out_sec
                         print("[ffmpeg][progress] abs=%s seg=%s" % (_fmt_sec(out_sec), seg_key), flush=True)
+
+                    # Near-end marker to distinguish "done encoding" vs "finalizing".
+                    if out_sec >= float(expected_total_sec) - (2.0 / float(max(1, int(target_fps)))):
+                        print("[ffmpeg][phase] nearing_end abs=%s expected_total=%s" % (
+                            _fmt_sec(out_sec), _fmt_sec(float(expected_total_sec))
+                        ), flush=True)
 
                     # Hard-fail guard: output time must not exceed expected total by more than 2 seconds + 2 frames.
                     guard = float(expected_total_sec) + 2.0 + (2.0 / float(max(1, int(target_fps))))
