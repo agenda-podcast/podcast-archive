@@ -294,19 +294,10 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
     intro_silence_sec: float,
     outro_silence_sec: float,
 ) -> Tuple[List[str], float]:
-    """One-pass final render.
+    """One-pass final render using raw clips (no per-clip encoding).
 
-    This function builds and runs a single ffmpeg command that:
-
-    - Uses raw source clips (no per-clip encoding).
-    - Trims the last clip as needed so total main video duration equals main_dur_sec.
-    - Applies the existing frame overlay sizing logic (height-aligned, centered, AR preserved).
-    - Produces intro and outro segments with silent audio.
-
-    segments items are dicts with:
-      - path: str
-      - start_sec: float
-      - dur_sec: float
+    Applies the existing frame overlay sizing logic, adds intro/outro silence,
+    and hard-caps output duration to intro + main + outro during the single encode.
 
     Returns (cmd, expected_total_sec).
     """
@@ -343,6 +334,7 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
     outro_dur_s = "%.3f" % float(outro_silence_sec)
     main_dur_s = "%.3f" % float(main_dur_sec)
     expected_total = float(intro_silence_sec) + float(main_dur_sec) + float(outro_silence_sec)
+    expected_total_s = "%.3f" % float(expected_total)
 
     # Build a segment plan for clear logs and runaway duration guards.
     segment_plan: List[Dict[str, Any]] = []
@@ -473,7 +465,13 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
     )
 
     # Final concat of (intro, main, outro) for both video and audio.
-    tail = "[introv][introa][mainv][maina][outrov][outroa]concat=n=3:v=1:a=1[v][a]"
+    # IMPORTANT: Hard-cap final timeline to expected_total *during the only encode*.
+    # This prevents cumulative frame rounding (e.g., fps normalization) from extending duration.
+    tail = (
+        "[introv][introa][mainv][maina][outrov][outroa]concat=n=3:v=1:a=1[v0][a0];"
+        "[v0]trim=duration=%s,setpts=PTS-STARTPTS[v];"
+        "[a0]atrim=duration=%s,asetpts=PTS-STARTPTS[a]" % (expected_total_s, expected_total_s)
+    )
 
     filt = ";".join(v_parts + [concat_main, overlay, intro_outro, audio, tail])
 
