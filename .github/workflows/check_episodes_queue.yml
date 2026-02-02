@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: check-episodes-queue
+  group: podcast-archive-global
   cancel-in-progress: false
 
 permissions:

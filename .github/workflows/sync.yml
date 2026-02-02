@@ -10,8 +10,8 @@ permissions:
   actions: write
 
 concurrency:
-  group: podcast-archive-sync
-  cancel-in-progress: true
+  group: podcast-archive-global
+  cancel-in-progress: false
 
 jobs:
   sync:

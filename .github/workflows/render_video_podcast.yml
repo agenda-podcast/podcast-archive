@@ -36,6 +36,11 @@ permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: podcast-archive-global
+  cancel-in-progress: false
+
+
 jobs:
   render:
     runs-on: ubuntu-latest
