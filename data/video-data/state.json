@@ -1,0 +1,21 @@
+{
+  "processed": {
+    "agenda-18591274": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18591274_2026-winter-storm-infrastructure-damage-widespread-power-out.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-02T19:17:06Z",
+      "video_asset_name": "agenda-18591274_2026-winter-storm-infrastructure-damage-widespread-power-out.mp4",
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-02T19:17:21Z",
+        "video_id": "eMjnxEa8Ocg",
+        "video_url": "https://www.youtube.com/watch?v=eMjnxEa8Ocg"
+      }
+    }
+  },
+  "updated_at": "2026-02-02T19:17:21Z",
+  "version": 1
+}

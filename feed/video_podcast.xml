@@ -4,5 +4,13 @@
 <title>Video Podcast</title>
 <description>Rendered video episodes (B-roll + RSS audio)</description>
 <link>https://github.com/agenda-podcast/podcast-archive</link>
+<item>
+<guid>agenda-18591274</guid>
+<title>2026 Winter Storm: infrastructure damage, widespread power outages, and over 100 fatalities</title>
+<description>We discuss the 2025–2026 North American winter, a season defined by a weak La Niña pattern and frequent extreme weather events. Major storms throughout late 2025 and early 2026 caused significant infrastructure damage, widespread power outages, and over 100 fatalities across the United States and Canada. Reports highlight the economic consequences of these disasters, with total costs estimated to exceed billions of dollars due to supply chain disruptions and record-breaking snowfall and ice. ...</description>
+<pubDate>Thu, 29 Jan 2026 17:00:00 +0000</pubDate>
+<link>https://www.youtube.com/watch?v=eMjnxEa8Ocg</link>
+<enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/video-podcast/agenda-18591274_2026-winter-storm-infrastructure-damage-widespread-power-out.mp4" type="video/mp4" />
+</item>
 </channel>
 </rss>
