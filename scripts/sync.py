@@ -2,6 +2,8 @@ import os
 import re
 import json
 import hashlib
+import time
+import subprocess
 from datetime import datetime, timezone
 from email.utils import format_datetime
 from xml.sax.saxutils import escape
@@ -172,18 +174,54 @@ def upload_asset(token: str, release: dict, file_path: str) -> None:
             break
 
     upload_url = release["upload_url"].split("{")[0]
-    with open(file_path, "rb") as f:
-        r = requests.post(
-            f"{upload_url}?name={filename}",
-            headers=gh_headers(token, {"Content-Type": "audio/mpeg"}),
-            data=f,
-            timeout=300,
-        )
-    r.raise_for_status()
 
-# -----------------------------
-# RSS download helpers (403 hardening)
-# -----------------------------
+    # uploads.github.com occasionally returns transient TLS EOF / handshake failures on Actions.
+    # Add a small retry loop with exponential backoff, then fall back to `gh release upload`.
+    max_attempts = int(os.environ.get("SYNC_UPLOAD_MAX_ATTEMPTS", "5") or "5")
+    base_sleep = float(os.environ.get("SYNC_UPLOAD_BASE_SLEEP_SEC", "2.0") or "2.0")
+
+    last_err: Exception | None = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with open(file_path, "rb") as f:
+                r = requests.post(
+                    f"{upload_url}?name={filename}",
+                    headers=gh_headers(token, {"Content-Type": "audio/mpeg"}),
+                    data=f,
+                    timeout=(10, 300),
+                )
+            r.raise_for_status()
+            return
+        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            last_err = e
+            if attempt >= max_attempts:
+                break
+            sleep_sec = base_sleep * (2 ** (attempt - 1))
+            print(f"[sync][upload][warn] transient upload error attempt={attempt}/{max_attempts} file={filename} err={type(e).__name__}: {e}")
+            print(f"[sync][upload][warn] retrying in {sleep_sec:.1f}s")
+            time.sleep(sleep_sec)
+
+    # Fallback: use GitHub CLI, which uses a different upload path and is often more reliable on Actions.
+    tag = (release.get("tag_name") or RELEASE_TAG or "").strip()
+    if not tag:
+        raise RuntimeError(f"upload failed and cannot determine release tag for gh fallback; last_err={last_err}")
+
+    env = dict(os.environ)
+    # gh respects GH_TOKEN; set it from token arg to avoid relying on workflow env wiring.
+    env["GH_TOKEN"] = token
+    env["GITHUB_TOKEN"] = token
+
+    try:
+        print(f"[sync][upload][fallback] using gh release upload tag={tag} file={filename}")
+        subprocess.run(
+            ["gh", "release", "upload", tag, file_path, "--clobber"],
+            check=True,
+            env=env,
+        )
+        return
+    except Exception as e:
+        raise RuntimeError(f"upload failed after retries and gh fallback failed; last_err={last_err}; fallback_err={e}") from e
 def resolve_download_url(url: str) -> str:
     """
     Follow redirects with browser-like headers.
