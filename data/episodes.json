@@ -89,6 +89,15 @@
       "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-Cooking_the_Books_on_NYC_Crime_Arrest_Avoidance_as_Statistical_Strategy.mp3",
       "length_bytes": 19834998,
       "description_html": "The phenomenon of \"arrest avoidance\" to protect statistics. In high-stakes precincts, officers may be discouraged from making arrests that could lead to a spike in reported crime or that would require extensive \"bag of shit\" paperwork and supervision. The \"fake reports\" and \"lack of reports\" described by the rank-and-file are not merely administrative errors; they are the output of a system designed to prioritize the appearance of public safety over the reality of justice. The \"impotence\" of ..."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18593477-new-york-city-market-of-bodies-prostitution-crisis.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18593477-new-york-city-market-of-bodies-prostitution-crisis.mp3",
+      "guid": "agenda-18593477",
+      "title": "New York City - Market of Bodies: Prostitution crisis",
+      "pubDate_rfc822": "Fri, 30 Jan 2026 03:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260130-New_York_City_-_Market_of_Bodies_Prostitution_crisis.mp3",
+      "length_bytes": 24752667,
+      "description_html": "For many newly arrived migrants, sex work is not a choice of profession but a \"mechanism of survival\" necessitated by the high cost of urban living and the inadequacies of the city's shelter system. This phenomenon, often termed \"survival sex,\" has led to \"corner fights\" between established sex workers and newcomers as territory on Roosevelt Avenue becomes increasingly overcrowded. Organizations like Colectivo report that the stress of the migration journey, combined with the lack of social s..."
     }
   }
 }
