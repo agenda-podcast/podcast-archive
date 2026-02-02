@@ -326,10 +326,13 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
         raise ValueError("intro/outro silence duration is invalid")
 
     # Keep the existing video normalization targets.
+    # One-pass concat requires every segment to have matching geometry, fps, and pixel format.
+    # Per-clip mode already outputs yuv420p, so we enforce the same here to avoid concat failures.
     vf_base = (
         "scale=%d:%d:force_original_aspect_ratio=decrease,"
         "pad=%d:%d:(ow-iw)/2:(oh-ih)/2,"
-        "fps=%d" % (TARGET_W, TARGET_H, TARGET_W, TARGET_H, TARGET_FPS)
+        "fps=%d,"
+        "format=yuv420p" % (TARGET_W, TARGET_H, TARGET_W, TARGET_H, TARGET_FPS)
     )
 
     intro_dur_s = "%.3f" % float(intro_silence_sec)
@@ -416,6 +419,8 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
         str(dst),
     ]
 
+    # Print the final ffmpeg command before running so failures still show the exact invocation.
+    print("[ffmpeg][one_pass] %s" % " ".join([str(x) for x in cmd]), flush=True)
     run(cmd, timeout_sec=7200, stream=True)
     _verify_output_media(dst, min_bytes=500 * 1024, min_dur_sec=5.0)
     return cmd, expected_total
