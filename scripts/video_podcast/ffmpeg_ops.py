@@ -1,9 +1,9 @@
 # ASCII-only. No ellipses. Keep <= 500 lines.
 
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
-from .util import ffprobe_duration_sec, run
+from .util import ffprobe_duration_sec, run, run_ffmpeg_with_progress
 
 TARGET_W = 1920
 TARGET_H = 1080
@@ -274,7 +274,7 @@ def ffmpeg_concat_with_intro_outro_and_frame(
         str(dst),
     ]
     try:
-        run(cmd, timeout_sec=7200, stream=True)
+        run_ffmpeg_with_progress(cmd=cmd, segment_plan=segment_plan, expected_total_sec=expected_total, target_fps=TARGET_FPS, timeout_sec=7200)
         _verify_output_media(dst, min_bytes=500 * 1024, min_dur_sec=5.0)
     finally:
         try:
@@ -343,6 +343,76 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
     outro_dur_s = "%.3f" % float(outro_silence_sec)
     main_dur_s = "%.3f" % float(main_dur_sec)
     expected_total = float(intro_silence_sec) + float(main_dur_sec) + float(outro_silence_sec)
+
+# Build a segment plan for clear logs and for runaway duration guards.
+segment_plan: List[Dict[str, Any]] = []
+abs_t = 0.0
+segment_plan.append({
+    "kind": "intro",
+    "abs_start": abs_t,
+    "abs_end": abs_t + float(intro_silence_sec),
+    "dur": float(intro_silence_sec),
+})
+abs_t += float(intro_silence_sec)
+
+repeats: Dict[str, List[int]] = {}
+for i, seg in enumerate(segments):
+    p = str(seg.get("path") or "")
+    base = Path(p).name
+    st = float(seg.get("start_sec") or 0.0)
+    du = float(seg.get("dur_sec") or 0.0)
+    segment_plan.append({
+        "kind": "clip",
+        "idx": int(i),
+        "file": base,
+        "src_start": float(st),
+        "src_dur": float(du),
+        "abs_start": abs_t,
+        "abs_end": abs_t + float(du),
+        "dur": float(du),
+    })
+    abs_t += float(du)
+    repeats.setdefault(base, []).append(int(i))
+
+segment_plan.append({
+    "kind": "outro",
+    "abs_start": abs_t,
+    "abs_end": abs_t + float(outro_silence_sec),
+    "dur": float(outro_silence_sec),
+})
+abs_t += float(outro_silence_sec)
+
+# Structured plan logs.
+print("[plan] intro_sec=%.3f main_sec=%.3f outro_sec=%.3f expected_total_sec=%.3f" % (
+    float(intro_silence_sec), float(main_dur_sec), float(outro_silence_sec), float(expected_total)
+), flush=True)
+for s in segment_plan:
+    kind = str(s.get("kind") or "")
+    if kind == "clip":
+        print("[plan][seg] kind=clip idx=%s file=%s src_start=%.3f src_dur=%.3f abs_start=%.3f abs_end=%.3f" % (
+            str(s.get("idx")),
+            str(s.get("file")),
+            float(s.get("src_start") or 0.0),
+            float(s.get("src_dur") or 0.0),
+            float(s.get("abs_start") or 0.0),
+            float(s.get("abs_end") or 0.0),
+        ), flush=True)
+    else:
+        print("[plan][seg] kind=%s abs_start=%.3f abs_end=%.3f dur=%.3f" % (
+            kind,
+            float(s.get("abs_start") or 0.0),
+            float(s.get("abs_end") or 0.0),
+            float(s.get("dur") or 0.0),
+        ), flush=True)
+
+for base, idxs in repeats.items():
+    if len(idxs) > 1:
+        print("[plan][repeat] file=%s count=%d idxs=%s" % (base, int(len(idxs)), ",".join([str(x) for x in idxs])), flush=True)
+
+# Guard: planned timeline must match expected_total within 1 frame.
+tol = (1.0 / float(max(1, int(TARGET_FPS)))) + 0.05
+if abs(abs_t - float(expected_total)) > tol:
+    print("[plan][warn] planned_total_mismatch planned=%.3f expected=%.3f tol=%.3f" % (float(abs_t), float(expected_total), float(tol)), flush=True)
 
     # Inputs:
     # 0: intro/outro mp4 (video)
@@ -425,6 +495,6 @@ def ffmpeg_render_one_pass_with_intro_outro_and_frame(
 
     # Print the final ffmpeg command before running so failures still show the exact invocation.
     print("[ffmpeg][one_pass] %s" % " ".join([str(x) for x in cmd]), flush=True)
-    run(cmd, timeout_sec=7200, stream=True)
+    run_ffmpeg_with_progress(cmd=cmd, segment_plan=segment_plan, expected_total_sec=expected_total, target_fps=TARGET_FPS, timeout_sec=7200)
     _verify_output_media(dst, min_bytes=500 * 1024, min_dur_sec=5.0)
     return cmd, expected_total

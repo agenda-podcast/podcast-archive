@@ -72,6 +72,183 @@ def run(
         raise
 
 
+def run_ffmpeg_with_progress(
+    cmd: List[str],
+    segment_plan: List[Dict[str, Any]],
+    expected_total_sec: float,
+    target_fps: int,
+    timeout_sec: int = 7200,
+) -> None:
+    """Run ffmpeg with structured progress logs.
+
+    segment_plan items:
+      - kind: intro|clip|outro
+      - idx: int (for clip only)
+      - file: str (for clip only)
+      - abs_start: float
+      - abs_end: float
+      - dur: float
+      - src_start: float (for clip only)
+      - src_dur: float (for clip only)
+
+    This function enforces a hard-fail guard if ffmpeg output time exceeds expected_total_sec
+    by a wide margin, to prevent runaway runs on Actions.
+    """
+    # Ensure progress output is enabled. Keep stderr so ffmpeg still prints codec details.
+    cmd2 = list(cmd)
+    if "-progress" not in cmd2:
+        cmd2.insert(1, "-progress")
+        cmd2.insert(2, "pipe:1")
+    if "-nostats" not in cmd2:
+        cmd2.insert(1, "-nostats")
+    start_ts = time.time()
+    last_out_ms = -1
+    last_seg_key = ""
+    backward_jumps = 0
+
+    def _seg_for_out_sec(t: float) -> Dict[str, Any]:
+        for s in segment_plan:
+            if t >= float(s.get("abs_start") or 0.0) and t < float(s.get("abs_end") or 0.0):
+                return s
+        return {"kind": "unknown", "abs_start": 0.0, "abs_end": float(expected_total_sec), "dur": float(expected_total_sec)}
+
+    def _fmt_sec(s: float) -> str:
+        if s < 0:
+            s = 0.0
+        h = int(s // 3600)
+        m = int((s % 3600) // 60)
+        sec = s - (h * 3600) - (m * 60)
+        return "%02d:%02d:%06.3f" % (h, m, sec)
+
+    print("[ffmpeg][plan] segments=%d expected_total_sec=%.3f target_fps=%d" % (
+        len(segment_plan), float(expected_total_sec), int(target_fps)
+    ), flush=True)
+
+    p = subprocess.Popen(
+        cmd2,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        universal_newlines=True,
+    )
+
+    stderr_tail: List[str] = []
+
+    def _stderr_reader() -> None:
+        try:
+            assert p.stderr is not None
+            for line in p.stderr:
+                line = line.rstrip("\n")
+                if line:
+                    stderr_tail.append(line)
+                    if len(stderr_tail) > 200:
+                        del stderr_tail[0]
+                    print(line, flush=True)
+        except Exception:
+            return
+
+    th = None
+    try:
+        import threading
+        th = threading.Thread(target=_stderr_reader, daemon=True)
+        th.start()
+
+        assert p.stdout is not None
+        progress_kv: Dict[str, str] = {}
+        last_print_sec = -1.0
+
+        while True:
+            if time.time() - start_ts > float(timeout_sec):
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+                raise RuntimeError("ffmpeg timeout exceeded")
+
+            line = p.stdout.readline()
+            if line == "" and p.poll() is not None:
+                break
+            if not line:
+                continue
+            line = line.strip()
+            if "=" in line:
+                k, v = line.split("=", 1)
+                progress_kv[k.strip()] = v.strip()
+
+            if progress_kv.get("progress") in ("continue", "end"):
+                out_ms_s = progress_kv.get("out_time_ms", "")
+                out_sec = None
+                if out_ms_s.isdigit():
+                    out_ms = int(out_ms_s)
+                    out_sec = float(out_ms) / 1000000.0
+                    if last_out_ms >= 0 and out_ms + 2000000 < last_out_ms:
+                        backward_jumps += 1
+                        print("[ffmpeg][warn] out_time_ms moved backward from %d to %d jumps=%d" % (
+                            int(last_out_ms), int(out_ms), int(backward_jumps)
+                        ), flush=True)
+                    last_out_ms = out_ms
+
+                if out_sec is not None:
+                    # Segment switch logs.
+                    seg = _seg_for_out_sec(out_sec)
+                    kind = str(seg.get("kind") or "unknown")
+                    seg_key = kind
+                    if kind == "clip":
+                        seg_key = "clip:%s:%s" % (str(seg.get("idx")), str(seg.get("file")))
+                    if seg_key != last_seg_key:
+                        last_seg_key = seg_key
+                        local = out_sec - float(seg.get("abs_start") or 0.0)
+                        if kind == "clip":
+                            print("[ffmpeg][segment] kind=clip idx=%s file=%s abs=%s local=%s src_start=%.3f src_dur=%.3f" % (
+                                str(seg.get("idx")),
+                                str(seg.get("file")),
+                                _fmt_sec(out_sec),
+                                _fmt_sec(local),
+                                float(seg.get("src_start") or 0.0),
+                                float(seg.get("src_dur") or 0.0),
+                            ), flush=True)
+                        else:
+                            print("[ffmpeg][segment] kind=%s abs=%s local=%s dur=%.3f" % (
+                                kind,
+                                _fmt_sec(out_sec),
+                                _fmt_sec(local),
+                                float(seg.get("dur") or 0.0),
+                            ), flush=True)
+
+                    # Periodic progress log (once per ~15 seconds of output time).
+                    if out_sec - last_print_sec >= 15.0:
+                        last_print_sec = out_sec
+                        print("[ffmpeg][progress] abs=%s seg=%s" % (_fmt_sec(out_sec), seg_key), flush=True)
+
+                    # Hard-fail guard: output time must not exceed expected total by more than 2 seconds + 2 frames.
+                    guard = float(expected_total_sec) + 2.0 + (2.0 / float(max(1, int(target_fps))))
+                    if out_sec > guard:
+                        print("[ffmpeg][guard] out_time_exceeds_expected abs=%s expected_total=%s" % (
+                            _fmt_sec(out_sec), _fmt_sec(float(expected_total_sec))
+                        ), flush=True)
+                        try:
+                            p.terminate()
+                        except Exception:
+                            pass
+                        raise RuntimeError("ffmpeg runaway duration detected")
+
+                pr = progress_kv.get("progress")
+                progress_kv = {}
+                if pr == "end":
+                    break
+
+        rc = p.wait()
+        if rc != 0:
+            tail = "\n".join(stderr_tail[-50:])
+            raise RuntimeError("ffmpeg failed rc=%d tail=%s" % (int(rc), tail))
+    finally:
+        try:
+            if p.poll() is None:
+                p.terminate()
+        except Exception:
+            pass
+
 def ffprobe_duration_sec(p: Path) -> float:
     cmd = [
         "ffprobe", "-v", "error",
