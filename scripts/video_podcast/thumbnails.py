@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -73,9 +73,12 @@ def _fit_text(draw, text: str, *, box_w: int, box_h: int, bold: bool):
 
 def ensure_thumbnail_template(
     *,
-    repo_root: Path,
-    left_image_path: Path,
-    template_path: Path,
+    repo_root: Optional[Path] = None,
+    left_image_path: Optional[Path] = None,
+    template_path: Optional[Path] = None,
+    # Back-compat keyword aliases used by older call sites.
+    left_img_path: Optional[Path] = None,
+    template_png: Optional[Path] = None,
     spec: ThumbnailSpec = ThumbnailSpec(),
 ) -> None:
     """Create a 16:9 template with a square left image and black right panel.
@@ -87,6 +90,14 @@ def ensure_thumbnail_template(
         from PIL import Image, ImageDraw  # type: ignore
     except Exception as e:
         raise RuntimeError("Pillow is required for thumbnail generation") from e
+
+    # Normalize keyword aliases.
+    if left_image_path is None:
+        left_image_path = left_img_path
+    if template_path is None:
+        template_path = template_png
+    if left_image_path is None or template_path is None:
+        raise ValueError("left_image_path and template_path are required")
 
     w, h = spec.w, spec.h
     left_size = h
@@ -119,10 +130,15 @@ def ensure_thumbnail_template(
 
 def render_episode_thumbnail(
     *,
-    template_path: Path,
-    out_path: Path,
-    title: str,
-    description: str,
+    template_path: Optional[Path] = None,
+    out_path: Optional[Path] = None,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    # Back-compat keyword aliases used by older call sites.
+    template_png: Optional[Path] = None,
+    out_png: Optional[Path] = None,
+    episode_title: Optional[str] = None,
+    episode_description: Optional[str] = None,
     spec: ThumbnailSpec = ThumbnailSpec(),
 ) -> None:
     """Render a per-episode thumbnail.
@@ -138,6 +154,17 @@ def render_episode_thumbnail(
         from PIL import Image, ImageDraw  # type: ignore
     except Exception as e:
         raise RuntimeError("Pillow is required for thumbnail generation") from e
+
+    if template_path is None:
+        template_path = template_png
+    if out_path is None:
+        out_path = out_png
+    if title is None:
+        title = episode_title or ""
+    if description is None:
+        description = episode_description or ""
+    if template_path is None or out_path is None:
+        raise ValueError("template_path and out_path are required")
 
     img = Image.open(template_path).convert("RGB")
     w, h = spec.w, spec.h
