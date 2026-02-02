@@ -1,12 +1,14 @@
 name: Sync Podcast
 
 on:
-  # schedule:
-    # - cron: "0 * * * *"   # hourly UTC
+  schedule:
+    # hourly at minute 0 (UTC)
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: podcast-archive-sync
@@ -101,3 +103,10 @@ jobs:
           else
             echo "No changes"
           fi
+
+      - name: Trigger Check episodes queue
+        if: ${{ success() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run check_episodes_queue.yml

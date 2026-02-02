@@ -34,6 +34,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   render:
@@ -159,3 +160,11 @@ jobs:
           rm -rf work/video-podcast/clips_release || true
           rm -rf work/video-podcast/videos || true
           rm -rf work/video-podcast/manifests || true
+
+      - name: Trigger Check episodes queue
+        if: ${{ success() && inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run check_episodes_queue.yml

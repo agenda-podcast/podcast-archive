@@ -30,6 +30,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   upload:
@@ -105,3 +106,12 @@ jobs:
           else
             echo "No repo changes to commit."
           fi
+
+      - name: Trigger Check episodes queue
+        if: ${{ success() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Triggering Check episodes queue"
+          gh workflow run check_episodes_queue.yml

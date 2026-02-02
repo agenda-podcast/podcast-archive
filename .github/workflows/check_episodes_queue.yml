@@ -1,0 +1,65 @@
+name: Check episodes queue
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: check-episodes-queue
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Decide next action
+        id: decide
+        run: |
+          set -euo pipefail
+          python -m scripts.video_podcast.check_queue
+
+      - name: Trigger Render Video Podcast
+        if: ${{ steps.decide.outputs.action == 'render' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "[queue] triggering render for next pending episode"
+          gh workflow run render_video_podcast.yml \
+            -f do_render_clips=true \
+            -f max_items=1 \
+            -f do_force=false \
+            -f force_guid="" \
+            -f do_upload_to_youtube=true \
+            -f youtube_privacy_status=public \
+            -f youtube_category_id=25
+
+      - name: Trigger Upload Rendered Video Podcast From Releases
+        if: ${{ steps.decide.outputs.action == 'upload' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "[queue] triggering upload for next rendered episode without youtube id"
+          gh workflow run upload_video_podcast_from_release.yml \
+            -f max_items=1 \
+            -f do_force=false \
+            -f force_guid="" \
+            -f youtube_privacy_status=public \
+            -f youtube_category_id=25
+
+      - name: Nothing to do
+        if: ${{ steps.decide.outputs.action == 'none' }}
+        run: |
+          echo "[queue] nothing to do"
