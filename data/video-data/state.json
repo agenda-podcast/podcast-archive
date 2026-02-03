@@ -1,20 +1,5 @@
 {
   "processed": {
-    "agenda-18591274": {
-      "clips_tag": "video-podcast-clips",
-      "manifest_asset_name": "agenda-18591274_2026-winter-storm-infrastructure-damage-widespread-power-out.json",
-      "manifest_tag": "video-podcast-manifests",
-      "processed_at": "2026-02-02T19:17:06Z",
-      "video_asset_name": "agenda-18591274_2026-winter-storm-infrastructure-damage-widespread-power-out.mp4",
-      "video_tag": "video-podcast",
-      "youtube": {
-        "category_id": "25",
-        "privacy_status": "public",
-        "uploaded_at": "2026-02-02T19:17:21Z",
-        "video_id": "eMjnxEa8Ocg",
-        "video_url": "https://www.youtube.com/watch?v=eMjnxEa8Ocg"
-      }
-    },
     "agenda-18592072": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18592072_why-nyc-rejected-record-safety-for-socialism.json",
@@ -30,21 +15,6 @@
         "video_url": "https://www.youtube.com/watch?v=cpcdk4H8dXA"
       }
     },
-    "agenda-18592126": {
-      "clips_tag": "video-podcast-clips",
-      "manifest_asset_name": "agenda-18592126_us-big-cities-why-record-safety-feels-like-danger.json",
-      "manifest_tag": "video-podcast-manifests",
-      "processed_at": "2026-02-02T19:27:57Z",
-      "video_asset_name": "agenda-18592126_us-big-cities-why-record-safety-feels-like-danger.mp4",
-      "video_tag": "video-podcast",
-      "youtube": {
-        "category_id": "25",
-        "privacy_status": "public",
-        "uploaded_at": "2026-02-02T19:28:03Z",
-        "video_id": "GWLuessMOlM",
-        "video_url": "https://www.youtube.com/watch?v=GWLuessMOlM"
-      }
-    },
     "agenda-18592980": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18592980_failure-of-legalization-and-the-rise-of-disorder.json",
@@ -52,22 +22,13 @@
       "processed_at": "2026-02-03T01:56:44Z",
       "video_asset_name": "agenda-18592980_failure-of-legalization-and-the-rise-of-disorder.mp4",
       "video_tag": "video-podcast"
-    },
-    "agenda-18593227": {
-      "clips_tag": "video-podcast-clips",
-      "manifest_asset_name": "agenda-18593227_cooking-the-books-on-nyc-crime-arrest-avoidance-as-statistic.json",
-      "manifest_tag": "video-podcast-manifests",
-      "processed_at": "2026-02-03T02:23:15Z",
-      "video_asset_name": "agenda-18593227_cooking-the-books-on-nyc-crime-arrest-avoidance-as-statistic.mp4",
-      "video_tag": "video-podcast"
-    },
-    "agenda-18593477": {
-      "clips_tag": "video-podcast-clips",
-      "manifest_asset_name": "agenda-18593477_new-york-city-market-of-bodies-prostitution-crisis.json",
-      "manifest_tag": "video-podcast-manifests",
-      "processed_at": "2026-02-03T02:56:44Z",
-      "video_asset_name": "agenda-18593477_new-york-city-market-of-bodies-prostitution-crisis.mp4",
-      "video_tag": "video-podcast"
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-02T23:46:19Z",
+        "video_id": "sMhhslmt5R0",
+        "video_url": "https://www.youtube.com/watch?v=sMhhslmt5R0"
+      }
     },
     "agenda-18615036": {
       "clips_tag": "video-podcast-clips",
