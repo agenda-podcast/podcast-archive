@@ -62,6 +62,14 @@
       "video_asset_name": "agenda-18593477_new-york-city-market-of-bodies-prostitution-crisis.mp4",
       "video_tag": "video-podcast"
     },
+    "agenda-18614975": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18614975_cinematic-presidency-and-political-branding.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-03T22:35:31Z",
+      "video_asset_name": "agenda-18614975_cinematic-presidency-and-political-branding.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18614990": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18614990_smith-mundt-act-and-domestic-propaganda.json",
@@ -95,6 +103,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-03T22:11:10Z",
+  "updated_at": "2026-02-03T22:35:31Z",
   "version": 1
 }
