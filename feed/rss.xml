@@ -9,7 +9,7 @@
     <language>en-us</language>
     <copyright>© 2026 Agenda</copyright>
     <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
-    <lastBuildDate>Mon, 02 Feb 2026 16:52:18 +0000</lastBuildDate>
+    <lastBuildDate>Tue, 03 Feb 2026 03:22:44 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
 <itunes:owner>
 
@@ -22,6 +22,51 @@
     <itunes:explicit>false</itunes:explicit>
     <itunes:image href="https://agenda-podcast.github.io/podcast-archive/poster.jpg"/>
     <itunes:category text="News"><itunes:category text="Politics"/></itunes:category>
+    <item>
+      <title>12 Billion Dollar Forever Campaign</title>
+      <itunes:title>12 Billion Dollar Forever Campaign</itunes:title>
+      <guid isPermaLink="false">agenda-18615085</guid>
+      <pubDate>Tue, 03 Feb 2026 01:00:00 +0000</pubDate>
+      <description><![CDATA[The Shift to Digital and Connected TV (CTV) in Campaign Advertising We discuss the 2024 election's massive shift toward digital advertising, particularly the 506% growth in Connected TV (CTV) spending compared to 2020. This topic covers the strategic differences between parties, such as the Republican focus on mobilization via "always-on" digital strategies versus Democratic spending advantages on platforms like Google and Meta.]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260203-12_Billion_Dollar_Forever_Campaign.mp3" length="27223395" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Dark Money Surge in the 2024 Election</title>
+      <itunes:title>Dark Money Surge in the 2024 Election</itunes:title>
+      <guid isPermaLink="false">agenda-18615036</guid>
+      <pubDate>Tue, 03 Feb 2026 01:00:00 +0000</pubDate>
+      <description><![CDATA[The "Dark Money" Surge in the 2024 Election We can discuss how undisclosed spending reached a record high of $1.9 billion in the 2024 federal election cycle, surpassing the previous record set in 2020. This includes an analysis of major 501(c)(4) "dark money" hubs like the Sixteen Thirty Fund on the left and Americans for Prosperity on the right, which funnel hundreds of millions of dollars into Super PACs and ballot measures while keeping donor identities secret.]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260203-Dark_Money_Surge_in_the_2024_Election.mp3" length="24057987" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Logistics of Protests in NYC</title>
+      <itunes:title>Logistics of Protests in NYC</itunes:title>
+      <guid isPermaLink="false">agenda-18615004</guid>
+      <pubDate>Tue, 03 Feb 2026 01:00:00 +0000</pubDate>
+      <description><![CDATA[The Economics and Logistics of Protests in NYC We can break down the financial and administrative barriers to organizing mass demonstrations in New York City. This includes the specific costs for permits (parade, sound device, street activity), insurance requirements that can exceed $4,000, daily surcharges for using court buildings, and the bureaucratic role of the Street Activity Permit Office (SAPO) and NYPD.]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260203-Logistics_of_Protests_in_NYC.mp3" length="20996941" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Smith-Mundt Act and Domestic Propaganda</title>
+      <itunes:title>Smith-Mundt Act and Domestic Propaganda</itunes:title>
+      <guid isPermaLink="false">agenda-18614990</guid>
+      <pubDate>Tue, 03 Feb 2026 01:00:00 +0000</pubDate>
+      <description><![CDATA[The Evolution of the Smith-Mundt Act and Domestic Propaganda We can examine the legislative history of the Smith-Mundt Act of 1948, which originally prohibited the domestic dissemination of government-produced information (like Voice of America) to prevent propaganda. Discussion can include the controversial 2013 Modernization Act that repealed this ban, the arguments for transparency versus the risks of covert influence, and recent legislative attempts by Rep. Thomas Massie to reinstate the ...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260203-Smith-Mundt_Act_and_Domestic_Propaganda.mp3" length="22452401" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Cinematic Presidency and Political Branding</title>
+      <itunes:title>Cinematic Presidency and Political Branding</itunes:title>
+      <guid isPermaLink="false">agenda-18614975</guid>
+      <pubDate>Tue, 03 Feb 2026 01:00:00 +0000</pubDate>
+      <description><![CDATA[The "Cinematic Presidency" and Political Branding We can explore how political figures are using high-budget entertainment to shape their narratives and bypass traditional journalism. This includes a comparison of the $75 million production and marketing budget for the documentary Melania against the Obamas' Higher Ground Productions ecosystem, which produces Academy Award-winning documentaries and scripted series like The G Word to frame government institutions positively.]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260203-Cinematic_Presidency_and_Political_Branding.mp3" length="20063772" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
     <item>
       <title>New York City - Market of Bodies: Prostitution crisis</title>
       <itunes:title>New York City - Market of Bodies: Prostitution crisis</itunes:title>
@@ -47,15 +92,6 @@
       <pubDate>Thu, 29 Jan 2026 22:00:00 +0000</pubDate>
       <description><![CDATA[The push for legalization has resulted in a chaotic landscape where illegal operators thrive at the expense of public safety. Under the Democratic leadership, the city has been forced to shut down over 1,300 illegal smoke shops that were unlawfully selling cannabis, often targeting children. Despite these efforts, drug offenses remain a stubborn outlier in crime statistics; while other categories reportedly declined, drug offenses actually increased by 7% in 2025. This "atmosphere of anything...]]></description>
       <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260129-Failure_of_Legalization_and_the_Rise_of_Disorder.mp3" length="21317660" type="audio/mpeg"/>
-      <itunes:explicit>false</itunes:explicit>
-    </item>
-    <item>
-      <title>New York City: Market of Bodies. Prostitution crisis.</title>
-      <itunes:title>New York City: Market of Bodies. Prostitution crisis.</itunes:title>
-      <guid isPermaLink="false">agenda-18592614</guid>
-      <pubDate>Thu, 29 Jan 2026 21:00:00 +0000</pubDate>
-      <description><![CDATA[For many newly arrived migrants, sex work is not a choice of profession but a "mechanism of survival" necessitated by the high cost of urban living and the inadequacies of the city's shelter system. This phenomenon, often termed "survival sex," has led to "corner fights" between established sex workers and newcomers as territory on Roosevelt Avenue becomes increasingly overcrowded. Organizations like Colectivo report that the stress of the migration journey, combined with the lack of social s...]]></description>
-      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260130-New_York_City_-_Market_of_Bodies_Prostitution_crisis.mp3" length="24752667" type="audio/mpeg"/>
       <itunes:explicit>false</itunes:explicit>
     </item>
     <item>

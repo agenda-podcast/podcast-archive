@@ -53,6 +53,51 @@
       "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260130-New_York_City_-_Market_of_Bodies_Prostitution_crisis.mp3",
       "length_bytes": 24752667,
       "description_html": "For many newly arrived migrants, sex work is not a choice of profession but a \"mechanism of survival\" necessitated by the high cost of urban living and the inadequacies of the city's shelter system. This phenomenon, often termed \"survival sex,\" has led to \"corner fights\" between established sex workers and newcomers as territory on Roosevelt Avenue becomes increasingly overcrowded. Organizations like Colectivo report that the stress of the migration journey, combined with the lack of social s..."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18615085-12-billion-dollar-forever-campaign.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18615085-12-billion-dollar-forever-campaign.mp3",
+      "guid": "agenda-18615085",
+      "title": "12 Billion Dollar Forever Campaign",
+      "pubDate_rfc822": "Tue, 03 Feb 2026 01:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260203-12_Billion_Dollar_Forever_Campaign.mp3",
+      "length_bytes": 27223395,
+      "description_html": "The Shift to Digital and Connected TV (CTV) in Campaign Advertising We discuss the 2024 election's massive shift toward digital advertising, particularly the 506% growth in Connected TV (CTV) spending compared to 2020. This topic covers the strategic differences between parties, such as the Republican focus on mobilization via \"always-on\" digital strategies versus Democratic spending advantages on platforms like Google and Meta."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18615036-dark-money-surge-in-the-2024-election.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18615036-dark-money-surge-in-the-2024-election.mp3",
+      "guid": "agenda-18615036",
+      "title": "Dark Money Surge in the 2024 Election",
+      "pubDate_rfc822": "Tue, 03 Feb 2026 01:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260203-Dark_Money_Surge_in_the_2024_Election.mp3",
+      "length_bytes": 24057987,
+      "description_html": "The \"Dark Money\" Surge in the 2024 Election We can discuss how undisclosed spending reached a record high of $1.9 billion in the 2024 federal election cycle, surpassing the previous record set in 2020. This includes an analysis of major 501(c)(4) \"dark money\" hubs like the Sixteen Thirty Fund on the left and Americans for Prosperity on the right, which funnel hundreds of millions of dollars into Super PACs and ballot measures while keeping donor identities secret."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18615004-logistics-of-protests-in-nyc.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18615004-logistics-of-protests-in-nyc.mp3",
+      "guid": "agenda-18615004",
+      "title": "Logistics of Protests in NYC",
+      "pubDate_rfc822": "Tue, 03 Feb 2026 01:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260203-Logistics_of_Protests_in_NYC.mp3",
+      "length_bytes": 20996941,
+      "description_html": "The Economics and Logistics of Protests in NYC We can break down the financial and administrative barriers to organizing mass demonstrations in New York City. This includes the specific costs for permits (parade, sound device, street activity), insurance requirements that can exceed $4,000, daily surcharges for using court buildings, and the bureaucratic role of the Street Activity Permit Office (SAPO) and NYPD."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18614990-smith-mundt-act-and-domestic-propaganda.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18614990-smith-mundt-act-and-domestic-propaganda.mp3",
+      "guid": "agenda-18614990",
+      "title": "Smith-Mundt Act and Domestic Propaganda",
+      "pubDate_rfc822": "Tue, 03 Feb 2026 01:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260203-Smith-Mundt_Act_and_Domestic_Propaganda.mp3",
+      "length_bytes": 22452401,
+      "description_html": "The Evolution of the Smith-Mundt Act and Domestic Propaganda We can examine the legislative history of the Smith-Mundt Act of 1948, which originally prohibited the domestic dissemination of government-produced information (like Voice of America) to prevent propaganda. Discussion can include the controversial 2013 Modernization Act that repealed this ban, the arguments for transparency versus the risks of covert influence, and recent legislative attempts by Rep. Thomas Massie to reinstate the ..."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18614975-cinematic-presidency-and-political-branding.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18614975-cinematic-presidency-and-political-branding.mp3",
+      "guid": "agenda-18614975",
+      "title": "Cinematic Presidency and Political Branding",
+      "pubDate_rfc822": "Tue, 03 Feb 2026 01:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260203-Cinematic_Presidency_and_Political_Branding.mp3",
+      "length_bytes": 20063772,
+      "description_html": "The \"Cinematic Presidency\" and Political Branding We can explore how political figures are using high-budget entertainment to shape their narratives and bypass traditional journalism. This includes a comparison of the $75 million production and marketing budget for the documentary Melania against the Obamas' Higher Ground Productions ecosystem, which produces Academy Award-winning documentaries and scripted series like The G Word to frame government institutions positively."
     }
   }
 }
