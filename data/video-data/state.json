@@ -68,8 +68,16 @@
       "processed_at": "2026-02-03T02:56:44Z",
       "video_asset_name": "agenda-18593477_new-york-city-market-of-bodies-prostitution-crisis.mp4",
       "video_tag": "video-podcast"
+    },
+    "agenda-18615085": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18615085_12-billion-dollar-forever-campaign.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-03T14:25:01Z",
+      "video_asset_name": "agenda-18615085_12-billion-dollar-forever-campaign.mp4",
+      "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-03T02:56:44Z",
+  "updated_at": "2026-02-03T14:25:01Z",
   "version": 1
 }
