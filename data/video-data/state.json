@@ -1,5 +1,13 @@
 {
   "processed": {
+    "agenda-18591274": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18591274_2026-winter-storm-infrastructure-damage-widespread-power-out.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-03T20:04:20Z",
+      "video_asset_name": "agenda-18591274_2026-winter-storm-infrastructure-damage-widespread-power-out.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18592072": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18592072_why-nyc-rejected-record-safety-for-socialism.json",
@@ -47,6 +55,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-03T15:46:31Z",
+  "updated_at": "2026-02-03T20:04:20Z",
   "version": 1
 }
