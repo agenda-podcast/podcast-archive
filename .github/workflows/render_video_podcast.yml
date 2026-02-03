@@ -10,7 +10,7 @@ on:
       max_items:
         description: "Max NEW episodes to render (0 = no limit)"
         required: true
-        default: "1"
+        default: "2"
       dry_run:
         description: "If true, do not render, only print plan and write status/rss"
         required: true
@@ -60,17 +60,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
+      - name: Install image dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install pillow==10.4.0
+
       - name: Install YouTube upload dependencies
         if: ${{ inputs.upload_to_youtube == 'true' && inputs.dry_run != 'true' }}
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
           python -m pip install \
             google-api-python-client==2.161.0 \
             google-auth==2.37.0 \
             google-auth-oauthlib==1.2.1 \
             google-auth-httplib2==0.2.0 \
-            pillow==10.4.0
+            google-auth-httplib2==0.2.0
 
       - name: Render new videos
         env:

@@ -56,19 +56,29 @@ def ensure_png_canvas_16x9(
         canvas.paste(im, (x, y), im)
         canvas.save(dst_png)
         return
-    except Exception:
+    except Exception as e:
         # Fall back to ffmpeg. This encodes only a PNG (not a video), and runs once.
+        # Use a transparent pad background and force RGBA so ffmpeg does not lose alpha.
+        # NOTE: This path is used on runners where Pillow is not installed.
+        dst_png.parent.mkdir(parents=True, exist_ok=True)
+        vf = (
+            f"scale=-1:{out_h}:flags=lanczos,"
+            f"format=rgba,"
+            f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black@0.0,"
+            f"format=rgba"
+        )
         cmd = [
             "ffmpeg",
             "-y",
             "-i",
             str(src_png),
             "-vf",
-            f"scale=-1:{out_h}:flags=lanczos,pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=0x00000000",
+            vf,
             "-frames:v",
             "1",
             str(dst_png),
         ]
+        print(f"[frame][ffmpeg_fallback] err={type(e).__name__} cmd={' '.join(cmd)}")
         run(cmd)
 
 
