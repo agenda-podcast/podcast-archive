@@ -60,8 +60,16 @@
       "processed_at": "2026-02-03T02:23:15Z",
       "video_asset_name": "agenda-18593227_cooking-the-books-on-nyc-crime-arrest-avoidance-as-statistic.mp4",
       "video_tag": "video-podcast"
+    },
+    "agenda-18593477": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18593477_new-york-city-market-of-bodies-prostitution-crisis.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-03T02:56:44Z",
+      "video_asset_name": "agenda-18593477_new-york-city-market-of-bodies-prostitution-crisis.mp4",
+      "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-03T02:23:15Z",
+  "updated_at": "2026-02-03T02:56:44Z",
   "version": 1
 }
