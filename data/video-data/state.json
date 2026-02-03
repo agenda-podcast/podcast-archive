@@ -69,6 +69,14 @@
       "video_asset_name": "agenda-18593477_new-york-city-market-of-bodies-prostitution-crisis.mp4",
       "video_tag": "video-podcast"
     },
+    "agenda-18615036": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18615036_dark-money-surge-in-the-2024-election.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-03T15:46:31Z",
+      "video_asset_name": "agenda-18615036_dark-money-surge-in-the-2024-election.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18615085": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18615085_12-billion-dollar-forever-campaign.json",
@@ -78,6 +86,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-03T14:25:01Z",
+  "updated_at": "2026-02-03T15:46:31Z",
   "version": 1
 }
