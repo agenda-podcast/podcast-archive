@@ -440,8 +440,10 @@ def render_episode(
 
     # Step 5) Verification gates.
     final_dur = ffprobe_duration_sec(final_video)
+    # Allow tolerance for mux/container rounding (AAC + MP4) and timestamp
+    # quantization. In practice this can exceed 1 frame for long outputs.
     target_fps = 30.0
-    tol = (1.0 / target_fps) + 0.05
+    tol = max(0.25, (2.0 / target_fps) + 0.05)
     if one_pass:
         if abs(float(final_dur) - float(expected_total)) > tol:
             raise RuntimeError(
