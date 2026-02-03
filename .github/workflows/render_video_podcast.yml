@@ -6,11 +6,11 @@ on:
       render_one_pass:
         description: "If true, render final video in ONE ffmpeg pass (no per-clip encoding)"
         required: true
-        default: "false"
+        default: "true"
       max_items:
         description: "Max NEW episodes to render (0 = no limit)"
         required: true
-        default: "2"
+        default: "1"
       dry_run:
         description: "If true, do not render, only print plan and write status/rss"
         required: true
