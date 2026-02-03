@@ -21,7 +21,7 @@ on:
         default: ""
       upload_to_youtube:
         description: "If true, upload rendered videos to YouTube via OAuth (requires repository secrets)"
-        required: true
+        required: false
         default: "false"
       youtube_privacy:
         description: "YouTube privacyStatus: private|unlisted|public"
