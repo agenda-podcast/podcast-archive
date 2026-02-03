@@ -46,6 +46,14 @@
         "video_url": "https://www.youtube.com/watch?v=sMhhslmt5R0"
       }
     },
+    "agenda-18593227": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18593227_cooking-the-books-on-nyc-crime-arrest-avoidance-as-statistic.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-03T20:40:49Z",
+      "video_asset_name": "agenda-18593227_cooking-the-books-on-nyc-crime-arrest-avoidance-as-statistic.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18615036": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18615036_dark-money-surge-in-the-2024-election.json",
@@ -63,6 +71,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-03T20:14:41Z",
+  "updated_at": "2026-02-03T20:40:49Z",
   "version": 1
 }
