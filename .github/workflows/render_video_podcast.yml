@@ -10,7 +10,7 @@ on:
       max_items:
         description: "Max NEW episodes to render (0 = no limit)"
         required: true
-        default: "2"
+        default: "1"
       dry_run:
         description: "If true, do not render, only print plan and write status/rss"
         required: true
