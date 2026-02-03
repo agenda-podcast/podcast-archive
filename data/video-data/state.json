@@ -23,6 +23,14 @@
         "video_url": "https://www.youtube.com/watch?v=cpcdk4H8dXA"
       }
     },
+    "agenda-18592126": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18592126_us-big-cities-why-record-safety-feels-like-danger.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-03T20:14:41Z",
+      "video_asset_name": "agenda-18592126_us-big-cities-why-record-safety-feels-like-danger.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18592980": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18592980_failure-of-legalization-and-the-rise-of-disorder.json",
@@ -55,6 +63,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-03T20:04:20Z",
+  "updated_at": "2026-02-03T20:14:41Z",
   "version": 1
 }
