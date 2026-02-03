@@ -54,6 +54,14 @@
       "video_asset_name": "agenda-18593227_cooking-the-books-on-nyc-crime-arrest-avoidance-as-statistic.mp4",
       "video_tag": "video-podcast"
     },
+    "agenda-18593477": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18593477_new-york-city-market-of-bodies-prostitution-crisis.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-03T21:16:02Z",
+      "video_asset_name": "agenda-18593477_new-york-city-market-of-bodies-prostitution-crisis.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18615036": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18615036_dark-money-surge-in-the-2024-election.json",
@@ -71,6 +79,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-03T20:40:49Z",
+  "updated_at": "2026-02-03T21:16:02Z",
   "version": 1
 }
