@@ -52,8 +52,16 @@
       "processed_at": "2026-02-03T01:56:44Z",
       "video_asset_name": "agenda-18592980_failure-of-legalization-and-the-rise-of-disorder.mp4",
       "video_tag": "video-podcast"
+    },
+    "agenda-18593227": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18593227_cooking-the-books-on-nyc-crime-arrest-avoidance-as-statistic.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-03T02:23:15Z",
+      "video_asset_name": "agenda-18593227_cooking-the-books-on-nyc-crime-arrest-avoidance-as-statistic.mp4",
+      "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-03T01:56:44Z",
+  "updated_at": "2026-02-03T02:23:15Z",
   "version": 1
 }
