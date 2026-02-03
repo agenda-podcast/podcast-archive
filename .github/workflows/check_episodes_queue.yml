@@ -41,7 +41,7 @@ jobs:
             -f max_items=1 \
             -f dry_run=false \
             -f force_guid="" \
-            -f upload_to_youtube=true \
+            -f upload_to_youtube=false \
             -f youtube_privacy=public \
             -f youtube_category_id=25
 
