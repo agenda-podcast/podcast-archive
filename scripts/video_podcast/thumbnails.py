@@ -89,7 +89,7 @@ def ensure_thumbnail_template(
     template_png: Optional[Path] = None,
     spec: ThumbnailSpec = ThumbnailSpec(),
 ) -> None:
-    """Create a 16:9 template with a square left image and black right panel.
+    """Create a 16:9 template with a square image on the right and black left panel.
 
     If left_image_path does not exist, a simple placeholder is used.
     """
@@ -111,6 +111,9 @@ def ensure_thumbnail_template(
     left_size = h
     right_w = w - left_size
 
+    # Image panel is the square on the right.
+    img_x0 = w - left_size
+
     canvas = Image.new("RGB", (w, h), (0, 0, 0))
     draw = ImageDraw.Draw(canvas)
 
@@ -122,16 +125,16 @@ def ensure_thumbnail_template(
         x0 = (sw - s) // 2
         y0 = (sh - s) // 2
         src_sq = src.crop((x0, y0, x0 + s, y0 + s)).resize((left_size, left_size))
-        canvas.paste(src_sq, (0, 0))
+        canvas.paste(src_sq, (img_x0, 0))
     else:
         # Placeholder: dark gray gradient box with label.
-        draw.rectangle((0, 0, left_size, left_size), fill=(25, 25, 25))
+        draw.rectangle((img_x0, 0, w, left_size), fill=(25, 25, 25))
         f = _load_font(("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",), size=36)
         msg = "PLACEHOLDER"
         tw = draw.textlength(msg, font=f)
-        draw.text(((left_size - tw) / 2, h * 0.45), msg, font=f, fill=(200, 200, 200))
+        draw.text((img_x0 + (left_size - tw) / 2, h * 0.45), msg, font=f, fill=(200, 200, 200))
 
-    # Right panel is already black.
+    # Left panel is already black.
     template_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(template_path)
 
@@ -152,10 +155,10 @@ def render_episode_thumbnail(
     """Render a per-episode thumbnail.
 
     Layout:
-      - left: square image from template
-      - right: black background
-      - right: title only (bold, large, white), auto-sized to fill the full
-        right panel. Episode description is intentionally not rendered.
+      - right: square image from template
+      - left: black background
+      - left: title only (bold, large, white), auto-sized to fill the full
+        left panel. Episode description is intentionally not rendered.
     """
 
     try:
@@ -181,13 +184,13 @@ def render_episode_thumbnail(
 
     draw = ImageDraw.Draw(img)
     left_size = h
-    right_x0 = left_size
-    right_w = w - left_size
+    img_x0 = w - left_size
+    title_w = w - left_size
 
     pad = 32
-    box_x0 = right_x0 + pad
-    box_x1 = w - pad
-    # Use the full right panel for title.
+    box_x0 = pad
+    box_x1 = title_w - pad
+    # Use the full left panel for title.
     title_box = (box_x0, pad, box_x1, h - pad)
     box_w = title_box[2] - title_box[0]
     box_h = title_box[3] - title_box[1]
