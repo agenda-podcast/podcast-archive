@@ -62,6 +62,14 @@
       "video_asset_name": "agenda-18593477_new-york-city-market-of-bodies-prostitution-crisis.mp4",
       "video_tag": "video-podcast"
     },
+    "agenda-18615004": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18615004_logistics-of-protests-in-nyc.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-03T21:41:08Z",
+      "video_asset_name": "agenda-18615004_logistics-of-protests-in-nyc.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18615036": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18615036_dark-money-surge-in-the-2024-election.json",
@@ -79,6 +87,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-03T21:16:02Z",
+  "updated_at": "2026-02-03T21:41:08Z",
   "version": 1
 }
