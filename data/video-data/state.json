@@ -194,7 +194,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-04T06:16:21Z",
       "video_asset_name": "agenda-18615781_obamas-cinematic-presidency.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T20:36:42Z",
+        "video_id": "cFvtlqPyZjY",
+        "video_url": "https://www.youtube.com/watch?v=cFvtlqPyZjY"
+      }
     },
     "agenda-18615786": {
       "clips_tag": "video-podcast-clips",
@@ -257,6 +264,6 @@
       }
     }
   },
-  "updated_at": "2026-02-04T20:35:38Z",
+  "updated_at": "2026-02-04T20:36:42Z",
   "version": 1
 }
