@@ -218,7 +218,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-04T04:54:09Z",
       "video_asset_name": "agenda-18621774_us-federal-government-advertising.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T20:33:06Z",
+        "video_id": "qClFCYeFJoc",
+        "video_url": "https://www.youtube.com/watch?v=qClFCYeFJoc"
+      }
     },
     "agenda-18621789": {
       "clips_tag": "video-podcast-clips",
@@ -236,6 +243,6 @@
       }
     }
   },
-  "updated_at": "2026-02-04T20:31:46Z",
+  "updated_at": "2026-02-04T20:33:06Z",
   "version": 1
 }
