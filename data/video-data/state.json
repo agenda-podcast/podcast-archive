@@ -52,7 +52,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-03T20:40:49Z",
       "video_asset_name": "agenda-18593227_cooking-the-books-on-nyc-crime-arrest-avoidance-as-statistic.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T00:07:03Z",
+        "video_id": "cZok_vdzSQY",
+        "video_url": "https://www.youtube.com/watch?v=cZok_vdzSQY"
+      }
     },
     "agenda-18593477": {
       "clips_tag": "video-podcast-clips",
@@ -103,6 +110,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-03T22:35:31Z",
+  "updated_at": "2026-02-04T00:07:03Z",
   "version": 1
 }
