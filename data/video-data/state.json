@@ -186,7 +186,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-04T06:41:13Z",
       "video_asset_name": "agenda-18615775_charity-becomes-a-political-weapon.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T20:37:35Z",
+        "video_id": "E6DMv-wQQEM",
+        "video_url": "https://www.youtube.com/watch?v=E6DMv-wQQEM"
+      }
     },
     "agenda-18615781": {
       "clips_tag": "video-podcast-clips",
@@ -264,6 +271,6 @@
       }
     }
   },
-  "updated_at": "2026-02-04T20:36:42Z",
+  "updated_at": "2026-02-04T20:37:35Z",
   "version": 1
 }
