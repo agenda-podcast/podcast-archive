@@ -6,7 +6,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-03T20:04:20Z",
       "video_asset_name": "agenda-18591274_2026-winter-storm-infrastructure-damage-widespread-power-out.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-02T23:36:19Z",
+        "video_id": "ZSsQ4NVgE5E",
+        "video_url": "https://www.youtube.com/watch?v=ZSsQ4NVgE5E"
+      }
     },
     "agenda-18592072": {
       "clips_tag": "video-podcast-clips",
@@ -29,7 +36,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-03T20:14:41Z",
       "video_asset_name": "agenda-18592126_us-big-cities-why-record-safety-feels-like-danger.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-02T23:36:19Z",
+        "video_id": "D9zZN7X_gQo",
+        "video_url": "https://www.youtube.com/watch?v=D9zZN7X_gQo"
+      }
     },
     "agenda-18592980": {
       "clips_tag": "video-podcast-clips",
