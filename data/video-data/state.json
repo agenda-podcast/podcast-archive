@@ -202,7 +202,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-04T05:50:04Z",
       "video_asset_name": "agenda-18615786_political-parties-are-just-financial-conglomerates.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T20:35:38Z",
+        "video_id": "spai95wQEtU",
+        "video_url": "https://www.youtube.com/watch?v=spai95wQEtU"
+      }
     },
     "agenda-18621769": {
       "clips_tag": "video-podcast-clips",
@@ -250,6 +257,6 @@
       }
     }
   },
-  "updated_at": "2026-02-04T20:34:13Z",
+  "updated_at": "2026-02-04T20:35:38Z",
   "version": 1
 }
