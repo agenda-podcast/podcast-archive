@@ -82,7 +82,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-03T22:35:31Z",
       "video_asset_name": "agenda-18614975_cinematic-presidency-and-political-branding.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T00:13:14Z",
+        "video_id": "q-8GxagzZlI",
+        "video_url": "https://www.youtube.com/watch?v=q-8GxagzZlI"
+      }
     },
     "agenda-18614990": {
       "clips_tag": "video-podcast-clips",
@@ -145,6 +152,6 @@
       }
     }
   },
-  "updated_at": "2026-02-04T00:12:24Z",
+  "updated_at": "2026-02-04T00:13:14Z",
   "version": 1
 }
