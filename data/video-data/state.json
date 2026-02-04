@@ -90,7 +90,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-03T22:11:10Z",
       "video_asset_name": "agenda-18614990_smith-mundt-act-and-domestic-propaganda.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T00:12:24Z",
+        "video_id": "1NFpq-cojDM",
+        "video_url": "https://www.youtube.com/watch?v=1NFpq-cojDM"
+      }
     },
     "agenda-18615004": {
       "clips_tag": "video-podcast-clips",
@@ -138,6 +145,6 @@
       }
     }
   },
-  "updated_at": "2026-02-04T00:11:29Z",
+  "updated_at": "2026-02-04T00:12:24Z",
   "version": 1
 }
