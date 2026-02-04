@@ -173,6 +173,14 @@
       "video_asset_name": "agenda-18615761_amazon-75-million-dollar-gamble.mp4",
       "video_tag": "video-podcast"
     },
+    "agenda-18615781": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18615781_obamas-cinematic-presidency.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-04T06:16:21Z",
+      "video_asset_name": "agenda-18615781_obamas-cinematic-presidency.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18615786": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18615786_political-parties-are-just-financial-conglomerates.json",
@@ -206,6 +214,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-04T05:50:04Z",
+  "updated_at": "2026-02-04T06:16:21Z",
   "version": 1
 }
