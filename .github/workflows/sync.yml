@@ -8,6 +8,8 @@ on:
 permissions:
   contents: write
   actions: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: podcast-archive-global
@@ -17,6 +19,10 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout
@@ -113,6 +119,22 @@ jobs:
           else
             echo "No changes"
           fi
+
+
+      - name: Configure Pages
+        if: ${{ success() }}
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: ${{ success() }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: feed
+
+      - name: Deploy to GitHub Pages
+        if: ${{ success() }}
+        id: deployment
+        uses: actions/deploy-pages@v4
 
       - name: Trigger Check episodes queue
         if: ${{ success() }}
