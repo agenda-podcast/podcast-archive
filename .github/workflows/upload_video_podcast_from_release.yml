@@ -106,19 +106,21 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-                      # RSS feeds live under ./feed (not ./rss).
-                      git add data/video-data feed
+            # RSS feeds live under ./feed (not ./rss).
+            # Include thumbnail template updates too (generated/updated during upload).
+            # Leaving it unstaged breaks the subsequent rebase step.
+            git add data/video-data feed data/thumbnail_template.png
             git commit -m "video: update youtube upload state"
             # Option 1: rebase onto latest main then push (retry).
             git fetch origin main
-            git rebase origin/main
+            git rebase --autostash origin/main
             for i in 1 2 3; do
               if git push; then
                 break
               fi
               echo "[git] push rejected; rebasing onto origin/main and retrying (\${i}/3)"
               git fetch origin main
-              git rebase origin/main
+              git rebase --autostash origin/main
               sleep 2
             done
           else
