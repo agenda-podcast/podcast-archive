@@ -67,7 +67,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-03T21:16:02Z",
       "video_asset_name": "agenda-18593477_new-york-city-market-of-bodies-prostitution-crisis.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T00:08:06Z",
+        "video_id": "XpREu2IPc88",
+        "video_url": "https://www.youtube.com/watch?v=XpREu2IPc88"
+      }
     },
     "agenda-18614975": {
       "clips_tag": "video-podcast-clips",
@@ -110,6 +117,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-04T00:07:03Z",
+  "updated_at": "2026-02-04T00:08:06Z",
   "version": 1
 }
