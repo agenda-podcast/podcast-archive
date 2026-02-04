@@ -106,7 +106,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-03T15:46:31Z",
       "video_asset_name": "agenda-18615036_dark-money-surge-in-the-2024-election.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T00:10:38Z",
+        "video_id": "zzDR_kFXoQQ",
+        "video_url": "https://www.youtube.com/watch?v=zzDR_kFXoQQ"
+      }
     },
     "agenda-18615085": {
       "clips_tag": "video-podcast-clips",
@@ -124,6 +131,6 @@
       }
     }
   },
-  "updated_at": "2026-02-04T00:09:32Z",
+  "updated_at": "2026-02-04T00:10:38Z",
   "version": 1
 }
