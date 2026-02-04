@@ -172,8 +172,16 @@
       "processed_at": "2026-02-04T03:53:27Z",
       "video_asset_name": "agenda-18615761_amazon-75-million-dollar-gamble.mp4",
       "video_tag": "video-podcast"
+    },
+    "agenda-18621789": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18621789_protest-industry-and-paid-agitators.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-04T04:20:37Z",
+      "video_asset_name": "agenda-18621789_protest-industry-and-paid-agitators.mp4",
+      "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-04T03:53:27Z",
+  "updated_at": "2026-02-04T04:20:37Z",
   "version": 1
 }
