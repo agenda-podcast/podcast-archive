@@ -226,9 +226,16 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-04T04:20:37Z",
       "video_asset_name": "agenda-18621789_protest-industry-and-paid-agitators.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T20:31:46Z",
+        "video_id": "uB8_REDCjTA",
+        "video_url": "https://www.youtube.com/watch?v=uB8_REDCjTA"
+      }
     }
   },
-  "updated_at": "2026-02-04T20:30:46Z",
+  "updated_at": "2026-02-04T20:31:46Z",
   "version": 1
 }
