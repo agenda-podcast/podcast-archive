@@ -210,7 +210,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-04T05:21:55Z",
       "video_asset_name": "agenda-18621769_partisan-disparities-in-digital-ad.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T20:34:13Z",
+        "video_id": "gvDI-Meo2wk",
+        "video_url": "https://www.youtube.com/watch?v=gvDI-Meo2wk"
+      }
     },
     "agenda-18621774": {
       "clips_tag": "video-podcast-clips",
@@ -243,6 +250,6 @@
       }
     }
   },
-  "updated_at": "2026-02-04T20:33:06Z",
+  "updated_at": "2026-02-04T20:34:13Z",
   "version": 1
 }
