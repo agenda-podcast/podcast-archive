@@ -98,7 +98,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-03T21:41:08Z",
       "video_asset_name": "agenda-18615004_logistics-of-protests-in-nyc.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-04T00:11:29Z",
+        "video_id": "wg6VP7oFjqA",
+        "video_url": "https://www.youtube.com/watch?v=wg6VP7oFjqA"
+      }
     },
     "agenda-18615036": {
       "clips_tag": "video-podcast-clips",
@@ -131,6 +138,6 @@
       }
     }
   },
-  "updated_at": "2026-02-04T00:10:38Z",
+  "updated_at": "2026-02-04T00:11:29Z",
   "version": 1
 }
