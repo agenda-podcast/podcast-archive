@@ -9,7 +9,7 @@
     <language>en-us</language>
     <copyright>© 2026 Agenda</copyright>
     <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
-    <lastBuildDate>Tue, 03 Feb 2026 03:22:44 +0000</lastBuildDate>
+    <lastBuildDate>Wed, 04 Feb 2026 03:22:18 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
 <itunes:owner>
 
@@ -22,6 +22,69 @@
     <itunes:explicit>false</itunes:explicit>
     <itunes:image href="https://agenda-podcast.github.io/podcast-archive/poster.jpg"/>
     <itunes:category text="News"><itunes:category text="Politics"/></itunes:category>
+    <item>
+      <title>Protest Industry and Paid Agitators</title>
+      <itunes:title>Protest Industry and Paid Agitators</itunes:title>
+      <guid isPermaLink="false">agenda-18621789</guid>
+      <pubDate>Wed, 04 Feb 2026 02:00:00 +0000</pubDate>
+      <description><![CDATA[We discuss reports and allegations regarding the professionalization of protests, including warnings about "paid agitators" and "crowd-for-hire" companies influencing demonstrations. This topic touches on the commercial aspects of dissent and the potential for foreign influence in domestic protests. Support the show]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260204-Protest_Industry_and_Paid_Agitators.mp3" length="22839528" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>US Federal Government Advertising</title>
+      <itunes:title>US Federal Government Advertising</itunes:title>
+      <guid isPermaLink="false">agenda-18621774</guid>
+      <pubDate>Wed, 04 Feb 2026 02:00:00 +0000</pubDate>
+      <description><![CDATA[US Federal Government Advertising and Public Relations Spending. We look at how the federal government spends approximately $1.5 billion annually on advertising and public relations. This includes a breakdown of top spenders like the Department of Defense (recruitment) and the Department of Health and Human Services, and the ethical debates surrounding the use of taxpayer funds for "self-promotion" or domestic influence campaigns. Support the show]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260204-US_Federal_Government_Advertising.mp3" length="26855380" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Partisan Disparities in Digital Ad</title>
+      <itunes:title>Partisan Disparities in Digital Ad</itunes:title>
+      <guid isPermaLink="false">agenda-18621769</guid>
+      <pubDate>Wed, 04 Feb 2026 02:00:00 +0000</pubDate>
+      <description><![CDATA[Partisan Disparities in Digital Ad Strategy - We analyze the Tech for Campaigns report indicating a "strategy gap" where Republicans treated political persuasion as an "always-on" game with heavy digital investment, while Democrats treated it as a seasonal sprint. This includes data on how commercial advertisers allocate 78% of budgets to digital while political campaigns lag at 36%. Support the show]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260204-Partisan_Disparities_in_Digital_Ad.mp3" length="21170928" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Political Parties Are Just Financial Conglomerates</title>
+      <itunes:title>Political Parties Are Just Financial Conglomerates</itunes:title>
+      <guid isPermaLink="false">agenda-18615786</guid>
+      <pubDate>Wed, 04 Feb 2026 02:00:00 +0000</pubDate>
+      <description><![CDATA[Political Fundraising: Hybrid PACs and Small-Donor Platforms We can examine the dominance of hybrid PACs like ActBlue and WinRed, which process billions of dollars in donations and serve as the financial engines for their respective parties. Discussion can include how these platforms facilitate the flow of money between grassroots donors, candidate committees, and other political organizations. Support the show]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260204-Political_Parties_Are_Just_Financial_Conglomerates.mp3" length="23716332" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Obamas Cinematic Presidency</title>
+      <itunes:title>Obamas Cinematic Presidency</itunes:title>
+      <guid isPermaLink="false">agenda-18615781</guid>
+      <pubDate>Wed, 04 Feb 2026 02:00:00 +0000</pubDate>
+      <description><![CDATA[Higher Ground Productions’ Content Strategy We can analyze how the Obamas’ production company utilizes a multi-year Netflix deal to produce content that aligns with their political values under the guise of entertainment. This includes projects like American Factory (labor rights), Crip Camp (disability advocacy), and children's programming like Waffles + Mochi (public health), effectively maintaining cultural influence post-presidency. Support the show]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260204-Obamas_Cinematic_Presidency.mp3" length="22320720" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Charity Becomes A Political Weapon</title>
+      <itunes:title>Charity Becomes A Political Weapon</itunes:title>
+      <guid isPermaLink="false">agenda-18615775</guid>
+      <pubDate>Wed, 04 Feb 2026 02:00:00 +0000</pubDate>
+      <description><![CDATA[501(c)(3) vs. 501(c)(4): The Tax Code of Political Influence We can analyze the distinct rules governing different types of non-profit organizations. Topics include the absolute prohibition on political campaign intervention for 501(c)(3) charities (the "Johnson Amendment") versus the ability of 501(c)(4) social welfare organizations to engage in partisan activity as a secondary purpose, effectively acting as "dark money" conduits. Support the show]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260204-Charity_Becomes_A_Political_Weapon.mp3" length="21389103" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Amazon 75 Million Dollar Gamble</title>
+      <itunes:title>Amazon 75 Million Dollar Gamble</itunes:title>
+      <guid isPermaLink="false">agenda-18615761</guid>
+      <pubDate>Tue, 03 Feb 2026 04:00:00 +0000</pubDate>
+      <description><![CDATA[The Financial Structure of the Melania Documentary We can detail the unprecedented financial deal behind the 2026 Melania documentary, including the $40 million licensing fee paid by Amazon MGM Studios and the reported $28 million personal payout to the former First Lady. This topic can also cover the film's reception, its "blackout" by critics, and the box office performance relative to its massive budget.   Support the show]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260203-Amazon_75_Million_Dollar_Gamble.mp3" length="22295023" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
     <item>
       <title>12 Billion Dollar Forever Campaign</title>
       <itunes:title>12 Billion Dollar Forever Campaign</itunes:title>
