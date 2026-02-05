@@ -15,7 +15,18 @@ from .ffmpeg_ops import (
 from .model import Episode
 from .releases import download_clips_for_guid
 from .sources import apply_sensitive_query_policy, build_tiered_queries, search_assets
-from .util import ffprobe_duration_sec, ffprobe_video_dims, now_iso, rand_for_guid, safe_slug, sha256_file, download, save_json
+from .util import (
+    ffprobe_duration_sec,
+    ffprobe_video_dims,
+    now_iso,
+    rand_for_guid,
+    safe_slug,
+    sha256_file,
+    download,
+    save_json,
+    infer_asset_page_url,
+    make_timecoded_url,
+)
 
 
 CLIP_SEC_T2 = 30.0
@@ -460,6 +471,33 @@ def render_episode(
     manifest_out = out_manifests_dir / manifest_asset
     shutil.copyfile(final_video, video_out)
 
+    intro_silence_sec = float(ffprobe_duration_sec(intro_outro_mp4))
+
+    segments_timeline: list[dict] = []
+    t_abs = intro_silence_sec
+    for s, p in zip(segments, prov):
+        src_start = float(s.get("start_sec", 0.0))
+        src_dur = float(s.get("dur_sec", 0.0))
+        src = str(p.get("source", ""))
+        asset_id = str(p.get("asset_id", ""))
+        page_url = infer_asset_page_url(src, asset_id, str(p.get("page_url", "")))
+        segments_timeline.append(
+            {
+                "kind": p.get("kind", ""),
+                "file": p.get("file", ""),
+                "source": src,
+                "asset_id": asset_id,
+                "page_url": page_url,
+                "page_url_timecoded": make_timecoded_url(page_url, src_start),
+                "src_start_sec": round(src_start, 3),
+                "src_end_sec": round(src_start + src_dur, 3),
+                "src_dur_sec": round(src_dur, 3),
+                "out_abs_start_sec": round(t_abs, 3),
+                "out_abs_end_sec": round(t_abs + src_dur, 3),
+            }
+        )
+        t_abs += src_dur
+
     manifest = {
         "guid": ep.guid,
         "title": ep.title,
@@ -474,8 +512,8 @@ def render_episode(
         "render_mode": "one_pass" if one_pass else "per_clip",
         "video_sha256": sha256_file(video_out),
         "audio_duration_sec": round(float(audio_dur), 3),
-        "intro_silence_sec": round(float(ffprobe_duration_sec(intro_outro_mp4)), 3),
-        "outro_silence_sec": round(float(ffprobe_duration_sec(intro_outro_mp4)), 3),
+        "intro_silence_sec": round(float(intro_silence_sec), 3),
+        "outro_silence_sec": round(float(intro_silence_sec), 3),
         "expected_total_sec": round(float(expected_total) if one_pass else 0.0, 3),
         "final_duration_sec": round(float(final_dur), 3),
         "clip_sec_t2": CLIP_SEC_T2,
@@ -487,6 +525,7 @@ def render_episode(
         "used_release_clips": used_release_clips,
         "used_release_clips_count": used_release_clips_count,
         "duration_log": duration_log,
+        "segments_timeline": segments_timeline,
         "trimmed_last": trimmed,
         "final_ffmpeg_cmd": " ".join([str(x) for x in ffmpeg_cmd]) if ffmpeg_cmd else "",
         "query_policy": query_policy,

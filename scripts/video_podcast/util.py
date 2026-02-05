@@ -453,6 +453,42 @@ def ffprobe_video_dims(p: Path) -> Tuple[int, int]:
         return 0, 0
 
 
+def infer_asset_page_url(source: str, asset_id: str, fallback: str = "") -> str:
+    """Return a stable public page URL for known stock-video sources.
+
+    This is used for auditability (e.g. mapping "pexels-34056946.mp4" ->
+    the public page). For unknown sources, we keep the provided fallback.
+    """
+    src = (source or "").strip().lower()
+    aid = (asset_id or "").strip()
+    if not aid:
+        return fallback
+    if src == "pexels":
+        # Pexels supports a stable numeric id form.
+        return f"https://www.pexels.com/video/{aid}/"
+    if src == "pixabay":
+        # Pixabay uses an id-* URL ...
+        return f"https://pixabay.com/videos/id-{aid}/"
+    return fallback
+
+
+def make_timecoded_url(page_url: str, start_sec: float, end_sec: float) -> str:
+    """Attach time information ...
+
+    Not all providers support time anchors; we still record the numbers in a
+    standard query string for human use.
+    """
+    if not page_url:
+        return ""
+    try:
+        s = max(0.0, float(start_sec))
+        e = max(s, float(end_sec))
+    except Exception:
+        return page_url
+    # Use integer seconds ...
+    return f"{page_url}?t={int(s)}&t_end={int(e)}"
+
+
 def http_get_json(url: str, headers: Dict[str, str], timeout_sec: int = 30) -> Dict[str, Any]:
     req = urllib.request.Request(url, headers=headers, method="GET")
     with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
