@@ -170,6 +170,33 @@
       "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260205-America_250_years_Ultimate_Birthday_Plan.mp3",
       "length_bytes": 20007344,
       "description_html": "🎆 The Ultimate Birthday Bash: America 250 If you thought the Fourth of July was big before, prepare for Sail4th 250. To celebrate America’s semiquincentennial (that’s 250 years!), New York Harbor is hosting the largest international maritime gathering in U.S. history from July 3–9, 2026. • The Parade of Sail: On July 4, over 60 majestic tall ships from 20 nations and 40 naval vessels will glide under the Verrazzano Bridge and past the Statue of Liberty,. • Sky High: Look up! The U.S. Navy Blu..."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18631206-theater-life-in-new-york-city-2026.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18631206-theater-life-in-new-york-city-2026.mp3",
+      "guid": "agenda-18631206",
+      "title": "Theater Life in New York City 2026",
+      "pubDate_rfc822": "Thu, 05 Feb 2026 18:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260205-Theater_Life_in_New_York_City_2026.mp3",
+      "length_bytes": 22328571,
+      "description_html": "Star-Studded Plays: • The Wizard Returns: Fresh off a Tony win, Daniel Radcliffe stars in the interactive solo play \"Every Brilliant Thing\" at the Hudson Theatre (previews Feb 21), listing everything that makes life worth living,. • A Heavy Hitter: Arthur Miller’s \"Death of a Salesman\" returns to the Winter Garden Theatre (previews March 6) with a heavyweight cast: Nathan Lane as Willy Loman and Laurie Metcalf as Linda Loman,. • Hollywood Talent:     ◦ Adrien Brody and Tessa Thompso..."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18631183-new-york-city-musical-extravaganzas-2026.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18631183-new-york-city-musical-extravaganzas-2026.mp3",
+      "guid": "agenda-18631183",
+      "title": "New York City Musical Extravaganzas 2026",
+      "pubDate_rfc822": "Thu, 05 Feb 2026 18:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260205-New_York_City_Musical_Extravaganzas_2026.mp3",
+      "length_bytes": 19368491,
+      "description_html": "The Musical Extravaganzas: • The Jellicle Ball is Back: Andrew Lloyd Webber’s Cats is being reborn as \"Cats: The Jellicle Ball\" at the Broadhurst Theatre (previews March 18). This isn't your grandma's feline musical; it’s reimagined within the Harlem Ballroom scene with a runway instead of a junkyard, starring the legendary André De Shields,. • Near, Far, Wherever You Are: The hilarious musical parody \"Titanique\"—which retells the Titanic story through the lens of Céline Dion—is finally crash..."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18631161-usa-soccer-world-cup-this-year.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18631161-usa-soccer-world-cup-this-year.mp3",
+      "guid": "agenda-18631161",
+      "title": "USA Soccer World Cup this Year",
+      "pubDate_rfc822": "Thu, 05 Feb 2026 18:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260205-USA_Soccer_World_Cup_this_Year.mp3",
+      "length_bytes": 18579155,
+      "description_html": "⚽ The World’s Biggest Game Comes to Town Soccer fans, this is your Super Bowl times a thousand. The FIFA World Cup 2026 is taking over North America, and New York/New Jersey is at the center of the action. • The Final: The tournament culminates right here, with the FIFA World Cup Final match taking place at MetLife Stadium (temporarily dubbed \"New York New Jersey Stadium\") on July 19, 2026. • Fan Fests: Expect the city to turn into one giant watch party. Liberty State Park will host the offic..."
     }
   }
 }

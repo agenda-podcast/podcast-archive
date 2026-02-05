@@ -9,7 +9,7 @@
     <language>en-us</language>
     <copyright>© 2026 Agenda</copyright>
     <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
-    <lastBuildDate>Thu, 05 Feb 2026 18:11:40 +0000</lastBuildDate>
+    <lastBuildDate>Thu, 05 Feb 2026 19:05:27 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
 <itunes:owner>
 
@@ -29,6 +29,33 @@
       <pubDate>Thu, 05 Feb 2026 18:00:00 +0000</pubDate>
       <description><![CDATA[🎆 The Ultimate Birthday Bash: America 250 If you thought the Fourth of July was big before, prepare for Sail4th 250. To celebrate America’s semiquincentennial (that’s 250 years!), New York Harbor is hosting the largest international maritime gathering in U.S. history from July 3–9, 2026. • The Parade of Sail: On July 4, over 60 majestic tall ships from 20 nations and 40 naval vessels will glide under the Verrazzano Bridge and past the Statue of Liberty,. • Sky High: Look up! The U.S. Navy Blu...]]></description>
       <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260205-America_250_years_Ultimate_Birthday_Plan.mp3" length="20007344" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Theater Life in New York City 2026</title>
+      <itunes:title>Theater Life in New York City 2026</itunes:title>
+      <guid isPermaLink="false">agenda-18631206</guid>
+      <pubDate>Thu, 05 Feb 2026 18:00:00 +0000</pubDate>
+      <description><![CDATA[Star-Studded Plays: • The Wizard Returns: Fresh off a Tony win, Daniel Radcliffe stars in the interactive solo play "Every Brilliant Thing" at the Hudson Theatre (previews Feb 21), listing everything that makes life worth living,. • A Heavy Hitter: Arthur Miller’s "Death of a Salesman" returns to the Winter Garden Theatre (previews March 6) with a heavyweight cast: Nathan Lane as Willy Loman and Laurie Metcalf as Linda Loman,. • Hollywood Talent:     ◦ Adrien Brody and Tessa Thompso...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260205-Theater_Life_in_New_York_City_2026.mp3" length="22328571" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>New York City Musical Extravaganzas 2026</title>
+      <itunes:title>New York City Musical Extravaganzas 2026</itunes:title>
+      <guid isPermaLink="false">agenda-18631183</guid>
+      <pubDate>Thu, 05 Feb 2026 18:00:00 +0000</pubDate>
+      <description><![CDATA[The Musical Extravaganzas: • The Jellicle Ball is Back: Andrew Lloyd Webber’s Cats is being reborn as "Cats: The Jellicle Ball" at the Broadhurst Theatre (previews March 18). This isn't your grandma's feline musical; it’s reimagined within the Harlem Ballroom scene with a runway instead of a junkyard, starring the legendary André De Shields,. • Near, Far, Wherever You Are: The hilarious musical parody "Titanique"—which retells the Titanic story through the lens of Céline Dion—is finally crash...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260205-New_York_City_Musical_Extravaganzas_2026.mp3" length="19368491" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>USA Soccer World Cup this Year</title>
+      <itunes:title>USA Soccer World Cup this Year</itunes:title>
+      <guid isPermaLink="false">agenda-18631161</guid>
+      <pubDate>Thu, 05 Feb 2026 18:00:00 +0000</pubDate>
+      <description><![CDATA[⚽ The World’s Biggest Game Comes to Town Soccer fans, this is your Super Bowl times a thousand. The FIFA World Cup 2026 is taking over North America, and New York/New Jersey is at the center of the action. • The Final: The tournament culminates right here, with the FIFA World Cup Final match taking place at MetLife Stadium (temporarily dubbed "New York New Jersey Stadium") on July 19, 2026. • Fan Fests: Expect the city to turn into one giant watch party. Liberty State Park will host the offic...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260205-USA_Soccer_World_Cup_this_Year.mp3" length="18579155" type="audio/mpeg"/>
       <itunes:explicit>false</itunes:explicit>
     </item>
     <item>
