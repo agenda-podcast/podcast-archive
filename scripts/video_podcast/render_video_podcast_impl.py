@@ -14,7 +14,7 @@ from .ffmpeg_ops import (
 )
 from .model import Episode
 from .releases import download_clips_for_guid
-from .sources import apply_sensitive_query_policy, build_tiered_queries, search_assets
+from .sources import apply_sensitive_query_policy, build_tiered_queries, search_assets, search_assets_page
 from .util import (
     ffprobe_duration_sec,
     ffprobe_video_dims,
@@ -316,24 +316,65 @@ def render_episode(
                     if not any(str(it.get("query") or "") == q for it in tiered_final):
                         tiered_final.append({"tier": 3, "query": q})
 
-                assets = search_assets(pexels_key, pixabay_key, tiered_final)
-                if not assets:
-                    raise RuntimeError("no candidate assets found")
+                # Fetch tier-1 assets using the episode-title query only.
+                # Keep requesting more pages until we have enough qualified duration (or we hit an API/page limit).
+                primary_query = ""
+                for it in tiered_final:
+                    if int(it.get("tier") or 3) == 1:
+                        primary_query = str(it.get("query") or "").strip()
+                        break
+                if not primary_query:
+                    primary_query = str(ep.title or "").strip()
+
+                seen_asset_keys: set[str] = set()
+                page = 1
+                max_pages = 10
+                picks: List[Dict[str, Any]] = []
+
+                def _extend_picks_from_page(page_num: int) -> int:
+                    new_assets = search_assets_page(pexels_key, pixabay_key, primary_query, page=page_num, tier=1)
+                    added = 0
+                    for a in new_assets:
+                        k = "%s-%s" % (a.get("source"), a.get("asset_id"))
+                        if k in seen_asset_keys:
+                            continue
+                        seen_asset_keys.add(k)
+                        picks.append(a)
+                        added += 1
+                    return added
+
+                _extend_picks_from_page(page)
+                if not picks:
+                    raise RuntimeError("no tier-1 assets found")
 
                 raw_dir = work / "raw"
                 raw_dir.mkdir(parents=True, exist_ok=True)
 
-                picks = [a for a in assets if int(a.get("tier") or 3) == 1]
                 rng.shuffle(picks)
-                if not picks:
-                    raise RuntimeError("no tier-1 assets found")
-
                 pick_i = 0
                 clip_i = 1
                 main_total = 0.0
-                max_iters = max(len(picks) * 5, int(audio_dur / 5.0) + 10)
+                allow_repeat = False
+                max_iters = max(2000, int(audio_dur / 2.0) + 200)
                 while main_total < audio_dur and pick_i < max_iters:
-                    a = picks[pick_i % len(picks)]
+                    # If we haven't reached target duration yet, keep paging for more assets.
+                    if not allow_repeat and pick_i >= len(picks):
+                        if page < max_pages:
+                            page += 1
+                            added = _extend_picks_from_page(page)
+                            if added > 0:
+                                rng.shuffle(picks)
+                                continue
+                        # No more new assets available (or page cap hit) -> repeat existing.
+                        allow_repeat = True
+
+                    if not picks:
+                        raise RuntimeError("no tier-1 assets found")
+
+                    if allow_repeat:
+                        a = picks[pick_i % len(picks)]
+                    else:
+                        a = picks[pick_i]
                     pick_i += 1
                     asset_key = "%s-%s" % (a["source"], a["asset_id"])
                     src_path = raw_dir / ("%s.mp4" % asset_key)

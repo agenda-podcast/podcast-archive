@@ -312,8 +312,13 @@ def build_tiered_queries(title: str, desc: str, max_q: int = 12) -> List[Dict[st
     return ded
 
 
-def pexels_search(api_key: str, q: str, per_page: int = 12) -> List[Dict[str, Any]]:
-    url = "https://api.pexels.com/videos/search?query=%s&per_page=%d" % (urllib.parse.quote(q), per_page)
+def pexels_search(api_key: str, q: str, per_page: int = 12, page: int = 1) -> List[Dict[str, Any]]:
+    # Pexels supports pagination via the `page` query parameter.
+    url = "https://api.pexels.com/videos/search?query=%s&per_page=%d&page=%d" % (
+        urllib.parse.quote(q),
+        int(per_page),
+        int(page),
+    )
     j = http_get_json(url, headers={"Authorization": api_key, "User-Agent": USER_AGENT})
     vids = j.get("videos") or []
     out: List[Dict[str, Any]] = []
@@ -351,11 +356,12 @@ def pexels_search(api_key: str, q: str, per_page: int = 12) -> List[Dict[str, An
     return out
 
 
-def pixabay_search(api_key: str, q: str, per_page: int = 20) -> List[Dict[str, Any]]:
-    url = "https://pixabay.com/api/videos/?key=%s&q=%s&per_page=%d" % (
+def pixabay_search(api_key: str, q: str, per_page: int = 20, page: int = 1) -> List[Dict[str, Any]]:
+    url = "https://pixabay.com/api/videos/?key=%s&q=%s&per_page=%d&page=%d" % (
         urllib.parse.quote(api_key),
         urllib.parse.quote(q),
         per_page,
+        int(page),
     )
     j = http_get_json(url, headers={"User-Agent": USER_AGENT})
     hits = j.get("hits") or []
@@ -456,4 +462,48 @@ def search_assets(pexels_key: str, pixabay_key: str, queries: List[Any]) -> List
 
     out = dedupe_assets(assets)
     out.sort(key=lambda a: (int(a.get("tier") or 3), str(a.get("source") or ""), str(a.get("asset_id") or "")))
+    return out
+
+
+def search_assets_page(
+    pexels_key: str,
+    pixabay_key: str,
+    q: str,
+    *,
+    tier: int = 1,
+    page: int = 1,
+    pexels_per_page: int = 10,
+    pixabay_per_page: int = 15,
+) -> List[Dict[str, Any]]:
+    """Fetch a single paginated page of assets for a single query.
+
+    This is used by the render pipeline to keep requesting *more* results for
+    the same query (tier-1 episode title) until duration is covered.
+    """
+    qq = _normalize_spaces(str(q or ""))
+    if not qq:
+        return []
+
+    assets: List[Dict[str, Any]] = []
+
+    time.sleep(0.2)
+    try:
+        for a in pexels_search(pexels_key, qq, per_page=int(pexels_per_page), page=int(page)):
+            a["tier"] = int(tier)
+            a["query"] = qq
+            assets.append(a)
+    except Exception:
+        pass
+
+    time.sleep(0.2)
+    try:
+        for a in pixabay_search(pixabay_key, qq, per_page=int(pixabay_per_page), page=int(page)):
+            a["tier"] = int(tier)
+            a["query"] = qq
+            assets.append(a)
+    except Exception:
+        pass
+
+    out = dedupe_assets(assets)
+    out.sort(key=lambda a: (str(a.get("source") or ""), str(a.get("asset_id") or "")))
     return out
