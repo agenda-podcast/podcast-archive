@@ -344,7 +344,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-06T06:00:34Z",
       "video_asset_name": "agenda-18633897_new-york-s-2026-artquake.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-06T06:30:06Z",
+        "video_id": "GNMcpoKIeGw",
+        "video_url": "https://www.youtube.com/watch?v=GNMcpoKIeGw"
+      }
     },
     "agenda-18633902": {
       "clips_tag": "video-podcast-clips",
@@ -377,6 +384,6 @@
       }
     }
   },
-  "updated_at": "2026-02-06T06:28:55Z",
+  "updated_at": "2026-02-06T06:30:06Z",
   "version": 1
 }
