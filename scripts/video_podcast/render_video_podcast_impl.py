@@ -529,7 +529,11 @@ def render_episode(
                 "source": src,
                 "asset_id": asset_id,
                 "page_url": page_url,
-                "page_url_timecoded": make_timecoded_url(page_url, src_start),
+                "page_url_timecoded": make_timecoded_url(
+                    page_url,
+                    src_start,
+                    src_start + src_dur,
+                ),
                 "src_start_sec": round(src_start, 3),
                 "src_end_sec": round(src_start + src_dur, 3),
                 "src_dur_sec": round(src_dur, 3),
