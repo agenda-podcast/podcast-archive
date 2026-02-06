@@ -330,6 +330,14 @@
         "video_url": "https://www.youtube.com/watch?v=LzcVaDQysgQ"
       }
     },
+    "agenda-18633888": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18633888_gaga-bon-jovi-punjabi-in-madison-square-garden-2026.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-06T06:26:24Z",
+      "video_asset_name": "agenda-18633888_gaga-bon-jovi-punjabi-in-madison-square-garden-2026.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18633897": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18633897_new-york-s-2026-artquake.json",
@@ -355,6 +363,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-06T06:00:34Z",
+  "updated_at": "2026-02-06T06:26:24Z",
   "version": 1
 }
