@@ -352,7 +352,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-06T05:30:58Z",
       "video_asset_name": "agenda-18633902_nyc-concerts-2026-barclays-center-vs-stadiums.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-06T06:28:55Z",
+        "video_id": "edFJ_zTDej8",
+        "video_url": "https://www.youtube.com/watch?v=edFJ_zTDej8"
+      }
     },
     "agenda-18633907": {
       "clips_tag": "video-podcast-clips",
@@ -370,6 +377,6 @@
       }
     }
   },
-  "updated_at": "2026-02-06T06:28:01Z",
+  "updated_at": "2026-02-06T06:28:55Z",
   "version": 1
 }
