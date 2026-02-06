@@ -307,9 +307,16 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-06T01:22:39Z",
       "video_asset_name": "agenda-18631206_theater-life-in-new-york-city-2026.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-06T02:13:02Z",
+        "video_id": "LzcVaDQysgQ",
+        "video_url": "https://www.youtube.com/watch?v=LzcVaDQysgQ"
+      }
     }
   },
-  "updated_at": "2026-02-06T02:11:56Z",
+  "updated_at": "2026-02-06T02:13:02Z",
   "version": 1
 }
