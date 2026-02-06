@@ -299,7 +299,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-06T01:49:04Z",
       "video_asset_name": "agenda-18631183_new-york-city-musical-extravaganzas-2026.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-06T02:14:07Z",
+        "video_id": "nOgrV6voHRA",
+        "video_url": "https://www.youtube.com/watch?v=nOgrV6voHRA"
+      }
     },
     "agenda-18631206": {
       "clips_tag": "video-podcast-clips",
@@ -317,6 +324,6 @@
       }
     }
   },
-  "updated_at": "2026-02-06T02:13:02Z",
+  "updated_at": "2026-02-06T02:14:07Z",
   "version": 1
 }
