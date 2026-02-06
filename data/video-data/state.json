@@ -278,6 +278,14 @@
       "video_asset_name": "agenda-18631082_america-250-years-ultimate-birthday-plan.mp4",
       "video_tag": "video-podcast"
     },
+    "agenda-18631161": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18631161_usa-soccer-world-cup-this-year.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-06T02:10:32Z",
+      "video_asset_name": "agenda-18631161_usa-soccer-world-cup-this-year.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18631183": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18631183_new-york-city-musical-extravaganzas-2026.json",
@@ -295,6 +303,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-06T01:49:04Z",
+  "updated_at": "2026-02-06T02:10:32Z",
   "version": 1
 }
