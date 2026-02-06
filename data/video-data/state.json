@@ -360,9 +360,16 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-06T05:00:37Z",
       "video_asset_name": "agenda-18633907_2026-ny-fashion-week-or-comic-con.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-06T06:28:01Z",
+        "video_id": "6RI4USIlxyA",
+        "video_url": "https://www.youtube.com/watch?v=6RI4USIlxyA"
+      }
     }
   },
-  "updated_at": "2026-02-06T06:26:24Z",
+  "updated_at": "2026-02-06T06:28:01Z",
   "version": 1
 }
