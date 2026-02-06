@@ -330,6 +330,14 @@
         "video_url": "https://www.youtube.com/watch?v=LzcVaDQysgQ"
       }
     },
+    "agenda-18633902": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18633902_nyc-concerts-2026-barclays-center-vs-stadiums.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-06T05:30:58Z",
+      "video_asset_name": "agenda-18633902_nyc-concerts-2026-barclays-center-vs-stadiums.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18633907": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18633907_2026-ny-fashion-week-or-comic-con.json",
@@ -339,6 +347,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-06T05:00:37Z",
+  "updated_at": "2026-02-06T05:30:58Z",
   "version": 1
 }
