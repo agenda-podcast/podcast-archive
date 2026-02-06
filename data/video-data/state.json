@@ -336,7 +336,14 @@
       "manifest_tag": "video-podcast-manifests",
       "processed_at": "2026-02-06T06:26:24Z",
       "video_asset_name": "agenda-18633888_gaga-bon-jovi-punjabi-in-madison-square-garden-2026.mp4",
-      "video_tag": "video-podcast"
+      "video_tag": "video-podcast",
+      "youtube": {
+        "category_id": "25",
+        "privacy_status": "public",
+        "uploaded_at": "2026-02-06T06:30:58Z",
+        "video_id": "6AI3RqxTJGQ",
+        "video_url": "https://www.youtube.com/watch?v=6AI3RqxTJGQ"
+      }
     },
     "agenda-18633897": {
       "clips_tag": "video-podcast-clips",
@@ -384,6 +391,6 @@
       }
     }
   },
-  "updated_at": "2026-02-06T06:30:06Z",
+  "updated_at": "2026-02-06T06:30:58Z",
   "version": 1
 }
