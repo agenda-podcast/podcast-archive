@@ -329,8 +329,16 @@
         "video_id": "LzcVaDQysgQ",
         "video_url": "https://www.youtube.com/watch?v=LzcVaDQysgQ"
       }
+    },
+    "agenda-18633907": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18633907_2026-ny-fashion-week-or-comic-con.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-06T05:00:37Z",
+      "video_asset_name": "agenda-18633907_2026-ny-fashion-week-or-comic-con.mp4",
+      "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-06T02:15:05Z",
+  "updated_at": "2026-02-06T05:00:37Z",
   "version": 1
 }
