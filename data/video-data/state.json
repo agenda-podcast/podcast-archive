@@ -330,6 +330,14 @@
         "video_url": "https://www.youtube.com/watch?v=LzcVaDQysgQ"
       }
     },
+    "agenda-18633897": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18633897_new-york-s-2026-artquake.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-06T06:00:34Z",
+      "video_asset_name": "agenda-18633897_new-york-s-2026-artquake.mp4",
+      "video_tag": "video-podcast"
+    },
     "agenda-18633902": {
       "clips_tag": "video-podcast-clips",
       "manifest_asset_name": "agenda-18633902_nyc-concerts-2026-barclays-center-vs-stadiums.json",
@@ -347,6 +355,6 @@
       "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-06T05:30:58Z",
+  "updated_at": "2026-02-06T06:00:34Z",
   "version": 1
 }
