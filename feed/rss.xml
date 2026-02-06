@@ -9,7 +9,7 @@
     <language>en-us</language>
     <copyright>© 2026 Agenda</copyright>
     <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
-    <lastBuildDate>Fri, 06 Feb 2026 04:20:21 +0000</lastBuildDate>
+    <lastBuildDate>Fri, 06 Feb 2026 04:30:55 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
 <itunes:owner>
 
@@ -22,6 +22,42 @@
     <itunes:explicit>false</itunes:explicit>
     <itunes:image href="https://agenda-podcast.github.io/podcast-archive/poster.jpg"/>
     <itunes:category text="News"><itunes:category text="Politics"/></itunes:category>
+    <item>
+      <title>2026 NY Fashion Week or Comic Con</title>
+      <itunes:title>2026 NY Fashion Week or Comic Con</itunes:title>
+      <guid isPermaLink="false">agenda-18633907</guid>
+      <pubDate>Fri, 06 Feb 2026 04:00:00 +0000</pubDate>
+      <description><![CDATA[• New York Fashion Week: The fashion elite descend on the city in February (11-16) and September (9-14) to define the next season's trends,. • New York Comic Con: Geek culture takes over the Javits Center for its 20th Anniversary from October 8-11. • Free Shakespeare: The Delacorte Theater in Central Park reopens with "Romeo and Juliet" and "The Winter's Tale" for its summer season. Support the show]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260206-2026_NY_Fashion_Week_or_Comic_Con.mp3" length="20990368" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>NYC Concerts 2026: Barclays Center vs. Stadiums</title>
+      <itunes:title>NYC Concerts 2026: Barclays Center vs. Stadiums</itunes:title>
+      <guid isPermaLink="false">agenda-18633902</guid>
+      <pubDate>Fri, 06 Feb 2026 04:00:00 +0000</pubDate>
+      <description><![CDATA[Barclays Center (Brooklyn): • Pop Royalty: Ariana Grande returns to the stage after a long hiatus with "The Eternal Sunshine Tour," playing five nights in July (July 12-19),. • EDM Takeover: Martin Garrix brings his "Americas Tour" for a three-night run in June (June 11-13),. • Throwback: R&amp;B legends New Edition (March 14) and B2K (March 28) are bringing the nostalgia to Brooklyn,. Stadium Spectacles (MetLife &amp; UBS): • Thunderstruck: Hard rock legends AC/DC are bringing their "Power U...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260206-NYC_Concerts_2026_Barclays_Center_vs._Stadiums.mp3" length="18849086" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>New York’s 2026 ArtQuake</title>
+      <itunes:title>New York’s 2026 ArtQuake</itunes:title>
+      <guid isPermaLink="false">agenda-18633897</guid>
+      <pubDate>Fri, 06 Feb 2026 04:00:00 +0000</pubDate>
+      <description><![CDATA[🎨 Art &amp; Fashion: The Met Goes Meta The art world is matching the energy with groundbreaking exhibitions and fashion history in the making. • The Met Gala &amp; Exhibition: The 2026 theme is "Costume Art." It explores the body as art, paired with 5,000 years of history. The exhibition opens May 10, inaugurating the new Condé M. Nast Galleries right off the Great Hall.     ◦ The Hosts: The Gala on May 4 will be co-chaired by Beyoncé, Nicole Kidman, Venus Williams, and Anna Wintour...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260206-New_York_s_2026_ArtQuake.mp3" length="20617321" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Gaga, Bon Jovi, Punjabi in Madison Square Garden 2026</title>
+      <itunes:title>Gaga, Bon Jovi, Punjabi in Madison Square Garden 2026</itunes:title>
+      <guid isPermaLink="false">agenda-18633888</guid>
+      <pubDate>Fri, 06 Feb 2026 04:00:00 +0000</pubDate>
+      <description><![CDATA[Madison Square Garden (The Garden): • Harry’s House (Again): Harry Styles is practically moving in. His "Together, Together" tour will play 30 shows from August 26 through October 31. Yes, thirty. • Gaga Returns: Lady Gaga brings her avant-garde "The MAYHEM Ball" to MSG for dates in March and April,. • Living on a Prayer: Bon Jovi hits the Garden for a residency with the "Forever Tour" in July (dates include July 7, 9, 12, 14),. • Punjabi Superstar: Diljit Dosanjh brings his "Aura World Tour"...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260206-Gaga_Bon_Jovi_Punjabi_in_Madison_Square_Garden_2026.mp3" length="20084481" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
     <item>
       <title>America 250 years! Ultimate Birthday Plan</title>
       <itunes:title>America 250 years! Ultimate Birthday Plan</itunes:title>
