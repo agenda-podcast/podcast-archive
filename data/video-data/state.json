@@ -269,8 +269,16 @@
         "video_id": "uB8_REDCjTA",
         "video_url": "https://www.youtube.com/watch?v=uB8_REDCjTA"
       }
+    },
+    "agenda-18631082": {
+      "clips_tag": "video-podcast-clips",
+      "manifest_asset_name": "agenda-18631082_america-250-years-ultimate-birthday-plan.json",
+      "manifest_tag": "video-podcast-manifests",
+      "processed_at": "2026-02-06T00:52:59Z",
+      "video_asset_name": "agenda-18631082_america-250-years-ultimate-birthday-plan.mp4",
+      "video_tag": "video-podcast"
     }
   },
-  "updated_at": "2026-02-04T20:37:35Z",
+  "updated_at": "2026-02-06T00:52:59Z",
   "version": 1
 }
