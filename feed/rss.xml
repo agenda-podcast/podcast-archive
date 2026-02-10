@@ -9,7 +9,7 @@
     <language>en-us</language>
     <copyright>© 2026 Agenda</copyright>
     <description><![CDATA[“Agenda” is a sharp, no-nonsense news podcast that breaks down the stories shaping our world.Each episode delivers clear, concise insights into the day’s biggest headlines — without the noise, hype, or spin.We explain what’s happening, why it matters, and how it fits into the bigger picture.Fast. Focused. Insightful.Whether you want a quick briefing or deeper context, “Agenda” keeps you informed and ahead of the curve.]]></description>
-    <lastBuildDate>Fri, 06 Feb 2026 04:30:55 +0000</lastBuildDate>
+    <lastBuildDate>Tue, 10 Feb 2026 16:14:47 +0000</lastBuildDate>
     <itunes:author>Agenda</itunes:author>
 <itunes:owner>
 
@@ -22,6 +22,15 @@
     <itunes:explicit>false</itunes:explicit>
     <itunes:image href="https://agenda-podcast.github.io/podcast-archive/poster.jpg"/>
     <itunes:category text="News"><itunes:category text="Politics"/></itunes:category>
+    <item>
+      <title>Street prostitution in New York City</title>
+      <itunes:title>Street prostitution in New York City</itunes:title>
+      <guid isPermaLink="false">agenda-18644654</guid>
+      <pubDate>Sun, 08 Feb 2026 19:00:00 +0000</pubDate>
+      <description><![CDATA[We examining the systemic public safety failures and organized crime networks surrounding open-air prostitution on Roosevelt Avenue in Queens. We highlight how these illicit markets serve as revenue engines for gangs, leading to increased violence, narcotics trafficking, and a degraded quality of life for local families. They argue that city management has failed to protect residents, specifically pointing to the psychological toll on children who witness solicitation near schools. To combat ...]]></description>
+      <enclosure url="https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260208-Street_prostitution_in_New_York_City.mp3" length="24252963" type="audio/mpeg"/>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
     <item>
       <title>2026 NY Fashion Week or Comic Con</title>
       <itunes:title>2026 NY Fashion Week or Comic Con</itunes:title>

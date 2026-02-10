@@ -233,6 +233,15 @@
       "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260206-Gaga_Bon_Jovi_Punjabi_in_Madison_Square_Garden_2026.mp3",
       "length_bytes": 20084481,
       "description_html": "Madison Square Garden (The Garden): • Harry’s House (Again): Harry Styles is practically moving in. His \"Together, Together\" tour will play 30 shows from August 26 through October 31. Yes, thirty. • Gaga Returns: Lady Gaga brings her avant-garde \"The MAYHEM Ball\" to MSG for dates in March and April,. • Living on a Prayer: Bon Jovi hits the Garden for a residency with the \"Forever Tour\" in July (dates include July 7, 9, 12, 14),. • Punjabi Superstar: Diljit Dosanjh brings his \"Aura World Tour\"..."
+    },
+    "enclosure:https://www.buzzsprout.com/2562524/episodes/18644654-street-prostitution-in-new-york-city.mp3": {
+      "source_key": "enclosure:https://www.buzzsprout.com/2562524/episodes/18644654-street-prostitution-in-new-york-city.mp3",
+      "guid": "agenda-18644654",
+      "title": "Street prostitution in New York City",
+      "pubDate_rfc822": "Sun, 08 Feb 2026 19:00:00 +0000",
+      "audio_url": "https://github.com/agenda-podcast/podcast-archive/releases/download/audio-archive/20260208-Street_prostitution_in_New_York_City.mp3",
+      "length_bytes": 24252963,
+      "description_html": "We examining the systemic public safety failures and organized crime networks surrounding open-air prostitution on Roosevelt Avenue in Queens. We highlight how these illicit markets serve as revenue engines for gangs, leading to increased violence, narcotics trafficking, and a degraded quality of life for local families. They argue that city management has failed to protect residents, specifically pointing to the psychological toll on children who witness solicitation near schools. To combat ..."
     }
   }
 }
