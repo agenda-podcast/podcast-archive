@@ -1,37 +1,39 @@
 name: Render Video Podcast
 
-on:
-  workflow_dispatch:
-    inputs:
-      render_one_pass:
-        description: "If true, render final video in ONE ffmpeg pass (no per-clip encoding)"
-        required: true
-        default: "true"
-      max_items:
-        description: "Max NEW episodes to render (0 = no limit)"
-        required: true
-        default: "1"
-      dry_run:
-        description: "If true, do not render, only print plan and write status/rss"
-        required: true
-        default: "false"
-      force_guid:
-        description: "If set, process only this guid (even if already processed)"
-        required: false
-        default: ""
-      upload_to_youtube:
-        description: "If true, upload rendered videos to YouTube via OAuth (requires repository secrets)"
-        required: false
-        default: "false"
-      youtube_privacy:
-        description: "YouTube privacyStatus: private|unlisted|public"
-        required: true
-        default: "private"
-      youtube_category_id:
-        description: "YouTube categoryId (25 = News & Politics)"
-        required: true
-        default: "25"
-
+# DISABLED: all original workflow event dispatch rules are commented out.
+# on:
+#   workflow_dispatch:
+#     inputs:
+#       render_one_pass:
+#         description: "If true, render final video in ONE ffmpeg pass (no per-clip encoding)"
+#         required: true
+#         default: "true"
+#       max_items:
+#         description: "Max NEW episodes to render (0 = no limit)"
+#         required: true
+#         default: "1"
+#       dry_run:
+#         description: "If true, do not render, only print plan and write status/rss"
+#         required: true
+#         default: "false"
+#       force_guid:
+#         description: "If set, process only this guid (even if already processed)"
+#         required: false
+#         default: ""
+#       upload_to_youtube:
+#         description: "If true, upload rendered videos to YouTube via OAuth (requires repository secrets)"
+#         required: false
+#         default: "false"
+#       youtube_privacy:
+#         description: "YouTube privacyStatus: private|unlisted|public"
+#         required: true
+#         default: "private"
+#       youtube_category_id:
+#         description: "YouTube categoryId (25 = News & Politics)"
+#         required: true
+#         default: "25"
+# 
+on: {}
 permissions:
   contents: write
   actions: write

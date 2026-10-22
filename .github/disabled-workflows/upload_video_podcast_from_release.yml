@@ -1,33 +1,35 @@
 name: Upload Rendered Video Podcast From Releases
 
-on:
-  workflow_dispatch:
-    inputs:
-      video_tag:
-        description: "GitHub Release tag that holds MP4 assets"
-        required: true
-        default: "video-podcast"
-      manifest_tag:
-        description: "GitHub Release tag that holds manifest JSON assets"
-        required: true
-        default: "video-podcast-manifests"
-      max_items:
-        description: "Max items to upload in this run (0 = no limit)"
-        required: true
-        default: "1"
-      force_guid:
-        description: "If set, upload only this guid (even if already uploaded)"
-        required: false
-        default: ""
-      youtube_privacy:
-        description: "YouTube privacyStatus: private|unlisted|public"
-        required: true
-        default: "private"
-      youtube_category_id:
-        description: "YouTube categoryId (25 = News & Politics)"
-        required: true
-        default: "25"
-
+# DISABLED: all original workflow event dispatch rules are commented out.
+# on:
+#   workflow_dispatch:
+#     inputs:
+#       video_tag:
+#         description: "GitHub Release tag that holds MP4 assets"
+#         required: true
+#         default: "video-podcast"
+#       manifest_tag:
+#         description: "GitHub Release tag that holds manifest JSON assets"
+#         required: true
+#         default: "video-podcast-manifests"
+#       max_items:
+#         description: "Max items to upload in this run (0 = no limit)"
+#         required: true
+#         default: "1"
+#       force_guid:
+#         description: "If set, upload only this guid (even if already uploaded)"
+#         required: false
+#         default: ""
+#       youtube_privacy:
+#         description: "YouTube privacyStatus: private|unlisted|public"
+#         required: true
+#         default: "private"
+#       youtube_category_id:
+#         description: "YouTube categoryId (25 = News & Politics)"
+#         required: true
+#         default: "25"
+# 
+on: {}
 permissions:
   contents: write
   actions: write

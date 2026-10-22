@@ -1,8 +1,10 @@
 name: Check episodes queue
 
-on:
-  workflow_dispatch:
-
+# DISABLED: all original workflow event dispatch rules are commented out.
+# on:
+#   workflow_dispatch:
+# 
+on: {}
 concurrency:
   group: podcast-archive-global
   cancel-in-progress: false

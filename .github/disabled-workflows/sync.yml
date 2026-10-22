@@ -1,10 +1,12 @@
 name: Sync Podcast
 
-on:
-  workflow_dispatch: {}
-  #schedule:
-    #- cron: "0 * * * *"
-
+# DISABLED: all original workflow event dispatch rules are commented out.
+# on:
+#   workflow_dispatch: {}
+#   #schedule:
+#     #- cron: "0 * * * *"
+# 
+on: {}
 permissions:
   contents: write
   actions: write
